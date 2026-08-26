@@ -349,3 +349,116 @@ export function Mandi() {
     </>)}
   </>);
 }
+
+
+/* ------------------------------------------------------------ METRO LINES */
+const linePool = [
+  { id: 'ovp-lines-de', label: 'Overpass DE', async run({ city }) { return lines(city, 0); } },
+  { id: 'ovp-lines-ku', label: 'Overpass Kumi', async run({ city }) { return lines(city, 1); } },
+];
+async function lines(city, epi) {
+  const [s, w, n, e] = NETWORKS[city] || NETWORKS.Delhi;
+  const q = `[out:json][timeout:30];relation["route"~"subway|light_rail"](${s},${w},${n},${e});out tags 80;`;
+  const r = await fetch(EPS[epi], { method: 'POST', body: 'data=' + encodeURIComponent(q),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const d = await r.json();
+  const seen = new Set();
+  const out = (d.elements || []).map((x) => {
+    const t = x.tags || {};
+    const name = t.name || t.ref || '';
+    if (!name) return null;
+    const key = (t.colour || '') + name.replace(/\s*\(.*\)/, '');
+    if (seen.has(key)) return null;
+    seen.add(key);
+    return { name, colour: t.colour || t.color || '', from: t.from || '', to: t.to || '',
+      operator: t.operator || '', ref: t.ref || '', network: t.network || '' };
+  }).filter(Boolean);
+  if (!out.length) throw new Error('no lines');
+  return out;
+}
+
+/* ------------------------------------------------------------ BUS ROUTES */
+const busPool = [
+  { id: 'ovp-bus-de', label: 'Overpass DE', async run(p) { return busRoutes(p, 0); } },
+  { id: 'ovp-bus-ku', label: 'Overpass Kumi', async run(p) { return busRoutes(p, 1); } },
+];
+async function busRoutes({ lat, lon, radius }, epi) {
+  const q = `[out:json][timeout:30];relation["route"="bus"](around:${radius},${lat},${lon});out tags 120;`;
+  const r = await fetch(EPS[epi], { method: 'POST', body: 'data=' + encodeURIComponent(q),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const d = await r.json();
+  const seen = new Set();
+  const out = (d.elements || []).map((x) => {
+    const t = x.tags || {};
+    const ref = t.ref || t.name || '';
+    if (!ref || seen.has(ref)) return null;
+    seen.add(ref);
+    return { ref, name: t.name || '', from: t.from || '', to: t.to || '',
+      operator: t.operator || '', via: t.via || '' };
+  }).filter(Boolean);
+  if (!out.length) throw new Error('no bus routes nearby');
+  return out.sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
+}
+
+export function MetroLines() {
+  const [city, setCity] = useState('Delhi');
+  const l = useData('metrolines', linePool, { city }, { ttl: 6048e5, deps: [city] });
+  return (<>
+    <div className="cats">{Object.keys(NETWORKS).map((c) =>
+      <button key={c} className={`cat ${city === c ? 'on' : ''}`} onClick={() => setCity(c)}>{c}</button>)}</div>
+    {l.loading && <Spin t="Loading metro lines" />}
+    {l.error && <Err error={l.error} retry={() => l.run()} />}
+    {l.data && (<>
+      <div className="dim sm" style={{ margin: '10px 0 8px' }}>{l.data.length} lines · {city}</div>
+      <div className="list">
+        {l.data.map((x, i) => (
+          <div className="col" key={i}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <span style={{ width: 13, height: 13, borderRadius: 4, flex: '0 0 auto',
+                background: x.colour || 'var(--green)', border: '1px solid var(--line2)' }} />
+              <b>{x.name}</b>
+            </div>
+            {(x.from || x.to) && <span className="dim sm">{x.from} → {x.to}</span>}
+            {x.operator && <span className="dim sm">{x.operator}</span>}
+          </div>))}
+      </div>
+      <Src meta={l.meta} />
+    </>)}
+  </>);
+}
+
+export function BusRoutes() {
+  const { loc } = useLoc();
+  const [radius, setRadius] = useState(3000);
+  const [q, setQ] = useState('');
+  const b = useData('bus', busPool, { lat: loc.lat, lon: loc.lon, radius },
+    { ttl: 864e5, deps: [loc.lat, loc.lon, radius] });
+  const list = (b.data || []).filter((x) =>
+    !q || (x.ref + x.name + x.from + x.to).toLowerCase().includes(q.toLowerCase()));
+  return (<>
+    <LocBar />
+    <Chips items={[{v:2000,l:'2 km'},{v:3000,l:'3 km'},{v:5000,l:'5 km'},{v:10000,l:'10 km'}]}
+      value={radius} onPick={setRadius} />
+    {b.loading && <Spin t="Finding bus routes near you" />}
+    {b.error && <Err error={b.error} retry={() => b.run()} />}
+    {b.data && (<>
+      <Search value={q} onChange={setQ} ph="Filter route number or stop…" />
+      <div className="dim sm" style={{ marginBottom: 8 }}>{list.length} routes within {radius/1000} km</div>
+      <div className="list">
+        {list.slice(0, 80).map((x, i) => (
+          <div className="row" key={i}>
+            <span style={{ minWidth: 52, padding: '5px 8px', borderRadius: 8, textAlign: 'center',
+              background: 'var(--s3)', color: 'var(--green)', fontWeight: 800, fontSize: 12.5,
+              flex: '0 0 auto' }}>{x.ref}</span>
+            <div className="main">
+              <b style={{ fontSize: 13 }}>{x.from && x.to ? `${x.from} → ${x.to}` : x.name}</b>
+              {x.operator && <span className="dim sm">{x.operator}</span>}
+            </div>
+          </div>))}
+      </div>
+      <Src meta={b.meta} />
+    </>)}
+  </>);
+}

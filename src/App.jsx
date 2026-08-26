@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import * as O from './tools/offline';
 import * as L from './tools/live';
-import { Music } from './tools/music';
+import { Music } from './tools/music2';
 import * as T from './tools/transit';
 import * as C from './tools/convert';
 import { LocProvider } from './core/geo';
+import { PlayerProvider, usePlayer } from './core/player';
+import { MiniPlayer, FullPlayer } from './ui/PlayerUI';
+import { Downloader } from './tools/downloader';
 import { providerStats } from './core/engine';
 
 /* ------------------------------------------------------------------ registry
@@ -83,6 +86,9 @@ const TOOLS = [
   { id:'metro',     n:'Metro',         i:'🚇', c:'Travel', t:'live', d:'12 city networks',      C:T.Metro },
   { id:'nearby',    n:'Near Me',       i:'📍', c:'Travel', t:'live', d:'ATM, food, fuel…',      C:T.Nearby },
   { id:'guide',     n:'Travel Guide',  i:'🧭', c:'Travel', t:'live', d:'City info + SOS',       C:T.TravelGuide },
+  { id:'dl',        n:'Downloader',    i:'⬇️', c:'Media',  t:'live', d:'Video/audio/thumb',    C:Downloader },
+  { id:'metrolines',n:'Metro Lines',   i:'🚈', c:'Travel', t:'live', d:'Real DMRC lines',      C:T.MetroLines },
+  { id:'bus',       n:'Bus Routes',    i:'🚌', c:'Travel', t:'live', d:'Routes near you',      C:T.BusRoutes },
   { id:'mandi',     n:'Mandi Prices',  i:'🌾', c:'India',  t:'live', d:'Daily commodity rates', C:T.Mandi },
 
   // ---------- Converters ----------
@@ -128,7 +134,8 @@ export default function App() {
 
   return (
    <LocProvider>
-    <div className="app">
+    <PlayerProvider>
+    <Shell>
       <header className="topbar">
         {tool
           ? <button className="iconbtn" onClick={() => go('')}>‹</button>
@@ -203,9 +210,17 @@ export default function App() {
         <button className={route === 'clock' ? 'on' : ''} onClick={() => go('clock')}><span>🕐</span><small>Clock</small></button>
         <button className={route === 'currency' ? 'on' : ''} onClick={() => go('currency')}><span>💱</span><small>Money</small></button>
       </nav>
-    </div>
+      <MiniPlayer />
+      <FullPlayer />
+    </Shell>
+    </PlayerProvider>
    </LocProvider>
   );
+}
+
+function Shell({ children }) {
+  const p = usePlayer();
+  return <div className={`app ${p?.track ? 'has-mini' : ''}`}>{children}</div>;
 }
 
 function StatusPanel({ onClose, offCount, total }) {
