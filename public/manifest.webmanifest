@@ -1,0 +1,13 @@
+{
+  "name": "OmniTools — 100+ tools",
+  "short_name": "OmniTools",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "description": "100+ free tools. No login. Works offline.",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
