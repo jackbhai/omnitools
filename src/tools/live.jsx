@@ -1,13 +1,18 @@
 /** Live tools — every one backed by a multi-provider pool. */
 import React, { useEffect, useState } from 'react';
 import * as P from '../core/providers';
+import { useLoc, LocBar } from '../core/geo';
 import { useData, useDebounced, Spin, Err, Empty, Src, Search, Card, Stat, Chips, Field, Copy, fmt, wmo } from '../ui/kit';
 
 const IST = 'Asia/Kolkata';
 
 /* ---------------------------------------------------------------- WEATHER */
 export function Weather() {
-  const [loc, setLoc] = useState({ lat: 28.6139, lon: 77.209, name: 'New Delhi' });
+  // Location comes from the global auto-detector (GPS → IP → default), so the
+  // user never has to type a city.
+  const { loc: auto } = useLoc();
+  const [loc, setLoc] = useState(auto);
+  useEffect(() => { setLoc(auto); }, [auto.lat, auto.lon]);   // eslint-disable-line
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
   const w = useData('weather', P.weather, { lat: loc.lat, lon: loc.lon }, { ttl: 3e5, deps: [loc.lat, loc.lon] });
@@ -19,11 +24,9 @@ export function Weather() {
     : v <= 60 ? 'var(--warn)' : v <= 100 ? '#fb923c' : 'var(--bad)';
 
   return (<>
-    <Search value={q} onChange={setQ} ph="Search any city…" />
+    <LocBar />
+    <Search value={q} onChange={setQ} ph="Or search another city…" />
     <div className="btnrow">
-      <button className="cat" onClick={() => navigator.geolocation?.getCurrentPosition(
-        (p) => setLoc({ lat: +p.coords.latitude.toFixed(4), lon: +p.coords.longitude.toFixed(4), name: 'My location' }),
-        () => {}, { timeout: 8000 })}>📍 My location</button>
       {['New Delhi','Amritsar','Mumbai','Lahore','Bengaluru'].map((c) =>
         <button key={c} className="cat" onClick={() => setQ(c)}>{c}</button>)}
     </div>

@@ -117,7 +117,8 @@ body{
   background:var(--s2);border:1px solid var(--line);color:var(--fg2);cursor:pointer;
   white-space:nowrap;
 }
-.cat.on{background:var(--grad);color:#000;border-color:transparent;font-weight:700}
+.cat.on{background-color:#00E08A;background-image:var(--grad);color:#00110A;
+  border-color:transparent;font-weight:700}
 
 /* ---------------- tool grid ---------------- */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(102px,1fr));gap:10px}
@@ -170,7 +171,8 @@ a.col,a.row{color:inherit;text-decoration:none}
 
 /* ---------------- controls ---------------- */
 .btn{
-  background:var(--grad);color:#000;border:0;padding:12px 18px;border-radius:12px;
+  background-color:#00E08A;background-image:var(--grad);color:#00110A;
+  border:0;padding:12px 18px;border-radius:12px;
   font-family:var(--font-body);font-size:14px;font-weight:700;cursor:pointer;
 }
 .btn:active{transform:scale(.97)}
@@ -241,3 +243,89 @@ a.col,a.row{color:inherit;text-decoration:none}
   .hero h1{font-size:52px}
   .grid{grid-template-columns:repeat(auto-fill,minmax(116px,1fr))}
 }
+
+/* ============================================================
+   NATIVE CONTROL CONTRAST FIX
+   Browsers render <option>, date/color/range widgets with their own
+   light-mode defaults => black text on our black surface = invisible.
+   These rules force every native control into the dark theme.
+   ============================================================ */
+input,select,textarea,button,optgroup,option{
+  font-family:var(--font-body);
+  color:var(--fg);
+  color-scheme:dark;                 /* makes UA widgets render dark */
+}
+select{
+  -webkit-appearance:none;appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--green) 50%),
+                   linear-gradient(135deg,var(--green) 50%,transparent 50%);
+  background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat;
+  padding-right:38px !important;
+}
+/* the dropdown list itself is drawn by the OS - force dark there too */
+select option,select optgroup{
+  background:#0E1412 !important;
+  color:#E8FFF4 !important;
+}
+input[type="date"],input[type="time"],input[type="datetime-local"],input[type="month"]{
+  background:var(--s1);color:var(--fg);
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator{
+  filter:invert(1) sepia(1) saturate(5) hue-rotate(100deg);cursor:pointer;
+}
+input[type="date"]::-webkit-datetime-edit-text,
+input[type="date"]::-webkit-datetime-edit-month-field,
+input[type="date"]::-webkit-datetime-edit-day-field,
+input[type="date"]::-webkit-datetime-edit-year-field{color:var(--fg)}
+input[type="color"]{
+  -webkit-appearance:none;appearance:none;border:1px solid var(--line);
+  background:var(--s1);cursor:pointer;padding:4px;
+}
+input[type="color"]::-webkit-color-swatch-wrapper{padding:0}
+input[type="color"]::-webkit-color-swatch{border:0;border-radius:8px}
+input[type="range"]{
+  -webkit-appearance:none;appearance:none;background:transparent;
+  accent-color:var(--green);height:26px;
+}
+input[type="range"]::-webkit-slider-runnable-track{
+  height:5px;border-radius:3px;background:var(--line2);
+}
+input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:19px;height:19px;border-radius:50%;
+  background:var(--green);margin-top:-7px;box-shadow:0 0 9px rgba(0,255,156,.55);
+  border:0;cursor:pointer;
+}
+input[type="range"]::-moz-range-track{height:5px;border-radius:3px;background:var(--line2)}
+input[type="range"]::-moz-range-thumb{
+  width:19px;height:19px;border:0;border-radius:50%;background:var(--green);
+  box-shadow:0 0 9px rgba(0,255,156,.55);cursor:pointer;
+}
+input::placeholder,textarea::placeholder{color:var(--fg3);opacity:1}
+/* autofill in Chrome paints a white box with black text */
+input:-webkit-autofill,input:-webkit-autofill:focus{
+  -webkit-text-fill-color:var(--fg);
+  -webkit-box-shadow:0 0 0 1000px var(--s1) inset;
+  caret-color:var(--fg);
+}
+/* anything the browser renders inside our cards inherits readable colour */
+.card,.list,.out,.state{color:var(--fg)}
+details summary{color:var(--cyan)}
+
+.locbar{
+  display:flex;align-items:center;gap:10px;background:var(--s1);
+  border:1px solid var(--line);border-radius:14px;padding:11px 13px;margin-bottom:12px;
+}
+.locbar b{color:var(--fg)}
+
+/* Gradient surfaces must always carry an opaque fallback colour, otherwise the
+   dark text sits on a transparent (= black) background and disappears. */
+.btn,.cat.on,.tag.g{background-color:#00E08A}
+.btn.ghost{background-color:var(--s2);background-image:none;color:var(--fg)}
+.gradtext{background-color:transparent}
+@supports not (background-clip:text){
+  .gradtext{-webkit-text-fill-color:var(--green);color:var(--green)}
+}
+/* Safety net: never allow pure-black text anywhere on the dark shell. */
+button:not(.btn):not(.cat.on){color:var(--fg)}

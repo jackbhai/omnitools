@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import * as O from './tools/offline';
 import * as L from './tools/live';
 import { Music } from './tools/music';
+import * as T from './tools/transit';
+import * as C from './tools/convert';
+import { LocProvider } from './core/geo';
 import { providerStats } from './core/engine';
 
 /* ------------------------------------------------------------------ registry
@@ -75,9 +78,23 @@ const TOOLS = [
   { id:'temp',      n:'Temperature',   i:'🌡️', c:'Convert', t:'off', d:'C/F/K/R',              C:O.TempConvert },
   { id:'color',     n:'Colour Tool',   i:'🎨', c:'Convert', t:'off', d:'HEX/RGB/HSL + WCAG',    C:O.ColorTool },
   { id:'bmi',       n:'BMI',           i:'⚖️', c:'Convert', t:'off', d:'Health index',          C:O.BmiCalc },
+  // ---------- Transport & Travel ----------
+  { id:'trains',    n:'Trains',        i:'🚆', c:'Travel', t:'live', d:'Indian Railways',       C:T.Trains },
+  { id:'metro',     n:'Metro',         i:'🚇', c:'Travel', t:'live', d:'12 city networks',      C:T.Metro },
+  { id:'nearby',    n:'Near Me',       i:'📍', c:'Travel', t:'live', d:'ATM, food, fuel…',      C:T.Nearby },
+  { id:'guide',     n:'Travel Guide',  i:'🧭', c:'Travel', t:'live', d:'City info + SOS',       C:T.TravelGuide },
+  { id:'mandi',     n:'Mandi Prices',  i:'🌾', c:'India',  t:'live', d:'Daily commodity rates', C:T.Mandi },
+
+  // ---------- Converters ----------
+  { id:'imgconv',   n:'Image Convert', i:'🖼️', c:'Convert', t:'off', d:'JPG/PNG/WEBP + resize', C:C.ImageConvert },
+  { id:'img2pdf',   n:'Images → PDF',  i:'📄', c:'Convert', t:'off', d:'Multi-page PDF',        C:C.ImagesToPdf },
+  { id:'audioconv', n:'Audio → WAV',   i:'🎼', c:'Convert', t:'off', d:'Decode any format',     C:C.AudioConvert },
+  { id:'vidframe',  n:'Video Frames',  i:'🎞️', c:'Convert', t:'off', d:'Extract as JPG',        C:C.VideoFrames },
+  { id:'dataconv',  n:'Data Convert',  i:'🔀', c:'Convert', t:'off', d:'JSON/CSV/XML',          C:C.DataConvert },
+  { id:'txtfile',   n:'Text → File',   i:'💾', c:'Convert', t:'off', d:'Save as any type',      C:C.TextToFile },
 ];
 
-const CATS = ['All', 'India', 'Music', 'Time', 'Money', 'Learn', 'Media', 'Space', 'Text', 'Dev', 'Generate', 'Convert'];
+const CATS = ['All', 'India', 'Travel', 'Convert', 'Music', 'Time', 'Money', 'Learn', 'Media', 'Space', 'Text', 'Dev', 'Generate'];
 
 export default function App() {
   const [route, setRoute] = useState(() => location.hash.slice(1) || '');
@@ -110,6 +127,7 @@ export default function App() {
   const offCount = TOOLS.filter((t) => t.t === 'off').length;
 
   return (
+   <LocProvider>
     <div className="app">
       <header className="topbar">
         {tool
@@ -186,6 +204,7 @@ export default function App() {
         <button className={route === 'currency' ? 'on' : ''} onClick={() => go('currency')}><span>💱</span><small>Money</small></button>
       </nav>
     </div>
+   </LocProvider>
   );
 }
 

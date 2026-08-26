@@ -5,3 +5,6 @@ shots
 .DS_Store
 dbg.py
 shot.py
+lt.py
+livetest.py
+contrast.py
