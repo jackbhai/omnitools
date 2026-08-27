@@ -11,6 +11,7 @@ import { Downloader } from './tools/downloader';
 import * as A from './tools/ahm7';
 import * as MP from './tools/metro-planner';
 import * as BP from './tools/bus-planner';
+import * as TR from './tools/trains2';
 import { providerStats } from './core/engine';
 
 /* ------------------------------------------------------------------ registry
@@ -85,7 +86,7 @@ const TOOLS = [
   { id:'color',     n:'Colour Tool',   i:'🎨', c:'Convert', t:'off', d:'HEX/RGB/HSL + WCAG',    C:O.ColorTool },
   { id:'bmi',       n:'BMI',           i:'⚖️', c:'Convert', t:'off', d:'Health index',          C:O.BmiCalc },
   // ---------- Transport & Travel ----------
-  { id:'trains',    n:'Trains',        i:'🚆', c:'Travel', t:'live', d:'Indian Railways',       C:T.Trains },
+  { id:'trains',    n:'Trains',        i:'🚆', c:'Travel', t:'live', d:'Between stations',      C:TR.TrainsBetween },
   { id:'metro',     n:'Metro',         i:'🚇', c:'Travel', t:'live', d:'12 city networks',      C:T.Metro },
   { id:'nearby',    n:'Near Me',       i:'📍', c:'Travel', t:'live', d:'ATM, food, fuel…',      C:T.Nearby },
   { id:'guide',     n:'Travel Guide',  i:'🧭', c:'Travel', t:'live', d:'City info + SOS',       C:T.TravelGuide },
@@ -100,6 +101,8 @@ const TOOLS = [
   { id:'certs',     n:'Certificates',  i:'🏆', c:'AHM7', t:'live', d:'Templates',             C:A.Certificates },
   { id:'telenor',   n:'Telenor Quiz',  i:'📶', c:'AHM7', t:'live', d:'Daily answers',         C:A.Telenor },
   { id:'dl',        n:'Downloader',    i:'⬇️', c:'Media',  t:'live', d:'Video/audio/thumb',    C:Downloader },
+  { id:'trainlive', n:'Live Train',     i:'🔴', c:'Travel', t:'live', d:'Running status',       C:TR.TrainLive },
+  { id:'trainsch',  n:'Train Schedule', i:'📋', c:'Travel', t:'live', d:'Full route + coaches',  C:TR.TrainSchedule },
   { id:'busplan',   n:'Bus Route',      i:'🚌', c:'Travel', t:'off',  d:'Fare + changes',       C:BP.BusPlanner },
   { id:'buslist',   n:'Bus Routes',     i:'🗒️', c:'Travel', t:'off',  d:'383 DTC routes',       C:BP.BusRoutesList },
   { id:'metroplan', n:'Metro Route',    i:'🗺️', c:'Travel', t:'off',  d:'Fare + interchanges',  C:MP.MetroPlanner },
