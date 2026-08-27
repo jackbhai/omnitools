@@ -89,6 +89,22 @@ export function Trains() {
   </>);
 }
 
+
+/** Overpass POST with a hard deadline so a slow mirror can't hang the UI. */
+async function ovp(endpoint, query, ms = 12000) {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), ms);
+  try {
+    const r = await fetch(endpoint, {
+      method: 'POST', signal: c.signal,
+      body: 'data=' + encodeURIComponent(query),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
 /* ------------------------------------------------------------ METRO */
 const NETWORKS = {
   Delhi:      [28.40, 76.80, 28.90, 77.40],
@@ -114,10 +130,7 @@ async function overpass(city, endpoint) {
   const [s, w, n, e] = NETWORKS[city] || NETWORKS.Delhi;
   const q = `[out:json][timeout:25];(node["railway"="station"]["station"="subway"](${s},${w},${n},${e});` +
             `node["railway"="station"]["subway"="yes"](${s},${w},${n},${e}););out body 300;`;
-  const r = await fetch(endpoint, { method: 'POST', body: 'data=' + encodeURIComponent(q),
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  const d = await r.json();
+  const d = await ovp(endpoint, q);
   const seen = new Set();
   const out = (d.elements || []).filter((x) => x.tags?.name).map((x) => ({
     name: x.tags.name, line: x.tags.line || x.tags.network || '', lat: x.lat, lon: x.lon,
@@ -194,12 +207,9 @@ const nearbyPool = [
 ];
 
 async function near({ lat, lon, filter, radius }) {
-  const q = `[out:json][timeout:25];(node${filter}(around:${radius},${lat},${lon});` +
-            `way${filter}(around:${radius},${lat},${lon}););out center 60;`;
-  const r = await fetch(endpointOf(), { method: 'POST', body: 'data=' + encodeURIComponent(q),
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  const d = await r.json();
+  // nodes-only keeps Overpass fast; ways rarely matter for these amenities
+  const q = `[out:json][timeout:18];node${filter}(around:${radius},${lat},${lon});out 60;`;
+  const d = await ovp(endpointOf(), q, 11000);
   const out = (d.elements || []).map((x) => {
     const la = x.lat ?? x.center?.lat, lo = x.lon ?? x.center?.lon;
     if (!la) return null;
@@ -308,43 +318,52 @@ export function TravelGuide() {
 /* ------------------------------------------------------------ MANDI PRICES */
 const DGI_KEY = '579b464db66ec23bdd000001cdd3946e44ce4aad7209ff7b23ac571b'; // public sample key
 const mandiPool = [
-  { id: 'datagovin', label: 'data.gov.in', async run({ state }) {
-      const u = `https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070` +
-        `?api-key=${DGI_KEY}&format=json&limit=60` + (state ? `&filters%5Bstate%5D=${encodeURIComponent(state)}` : '');
-      const d = await jget(u);
+  { id: 'datagovin', label: 'data.gov.in', async run() {
+      // NOTE: the public sample key returns a small page and server-side
+      // filters[state] frequently yields 0 rows, so we pull a page and filter
+      // in the client instead of trusting the filter param.
+      const d = await jget(`https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070` +
+        `?api-key=${DGI_KEY}&format=json&limit=500`);
       const rec = d.records || [];
-      if (!rec.length) throw new Error('no records');
+      if (!rec.length) throw new Error('no records published right now');
       return rec.map((r) => ({ commodity: r.commodity, market: r.market, district: r.district,
         state: r.state, min: +r.min_price, max: +r.max_price, modal: +r.modal_price,
         date: r.arrival_date, variety: r.variety })); } },
 ];
 
 export function Mandi() {
-  const [state, setState] = useState('Delhi');
+  const [state, setState] = useState('All');
   const [q, setQ] = useState('');
-  const m = useData('mandi', mandiPool, { state }, { ttl: 36e5, deps: [state] });
-  const list = (m.data || []).filter((x) => !q ||
-    (x.commodity + x.market).toLowerCase().includes(q.toLowerCase()));
-  const STATES = ['Delhi','Punjab','Haryana','Uttar Pradesh','Rajasthan','Maharashtra','Gujarat','Bihar','Karnataka','Madhya Pradesh'];
+  const m = useData('mandi', mandiPool, {}, { ttl: 18e5 });
+  const rows = m.data || [];
+  const states = ['All', ...[...new Set(rows.map((r) => r.state).filter(Boolean))].sort()];
+  const list = rows
+    .filter((x) => state === 'All' || x.state === state)
+    .filter((x) => !q || (x.commodity + x.market + x.district).toLowerCase().includes(q.toLowerCase()));
   return (<>
-    <div className="cats">{STATES.map((s) =>
-      <button key={s} className={`cat ${state === s ? 'on' : ''}`} onClick={() => setState(s)}>{s}</button>)}</div>
     {m.loading && <Spin t="Loading mandi prices" />}
     {m.error && <Err error={m.error} retry={() => m.run()} />}
     {m.data && (<>
-      <Search value={q} onChange={setQ} ph="Filter commodity or market…" />
-      <div className="dim sm" style={{ marginBottom: 8 }}>{list.length} entries · ₹ per quintal</div>
-      <div className="list">
-        {list.slice(0, 60).map((x, i) => (
-          <div className="col" key={i}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <b>{x.commodity}</b>
-              <b style={{ color: 'var(--green)' }}>₹{fmt(x.modal)}</b>
-            </div>
-            <span className="dim sm">{x.market}, {x.district} · {x.variety}</span>
-            <span className="dim sm">Range ₹{fmt(x.min)} – ₹{fmt(x.max)} · {x.date}</span>
-          </div>))}
+      <div className="cats">{states.map((s2) =>
+        <button key={s2} className={`cat ${state === s2 ? 'on' : ''}`} onClick={() => setState(s2)}>{s2}</button>)}</div>
+      <Search value={q} onChange={setQ} ph="Filter commodity, market or district…" />
+      <div className="dim sm" style={{ marginBottom: 8 }}>
+        {list.length} entries · ₹ per quintal
+        {rows.length < 30 && <> · <span style={{ color: 'var(--warn)' }}>
+          the government feed publishes only a few markets at a time</span></>}
       </div>
+      {list.length === 0
+        ? <Empty t="No entries for this filter" />
+        : <div className="list">
+            {list.map((x, i) => (
+              <div className="col" key={i}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <b>{x.commodity}</b><b style={{ color: 'var(--green)' }}>₹{fmt(x.modal)}</b>
+                </div>
+                <span className="dim sm">{x.market}, {x.district} · {x.state}</span>
+                <span className="dim sm">Range ₹{fmt(x.min)} – ₹{fmt(x.max)} · {x.date}</span>
+              </div>))}
+          </div>}
       <Src meta={m.meta} />
     </>)}
   </>);
@@ -359,10 +378,7 @@ const linePool = [
 async function lines(city, epi) {
   const [s, w, n, e] = NETWORKS[city] || NETWORKS.Delhi;
   const q = `[out:json][timeout:30];relation["route"~"subway|light_rail"](${s},${w},${n},${e});out tags 80;`;
-  const r = await fetch(EPS[epi], { method: 'POST', body: 'data=' + encodeURIComponent(q),
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  const d = await r.json();
+  const d = await ovp(EPS[epi], q);
   const seen = new Set();
   const out = (d.elements || []).map((x) => {
     const t = x.tags || {};
@@ -372,34 +388,10 @@ async function lines(city, epi) {
     if (seen.has(key)) return null;
     seen.add(key);
     return { name, colour: t.colour || t.color || '', from: t.from || '', to: t.to || '',
-      operator: t.operator || '', ref: t.ref || '', network: t.network || '' };
+      operator: t.operator || '', ref: t.ref || '' };
   }).filter(Boolean);
   if (!out.length) throw new Error('no lines');
   return out;
-}
-
-/* ------------------------------------------------------------ BUS ROUTES */
-const busPool = [
-  { id: 'ovp-bus-de', label: 'Overpass DE', async run(p) { return busRoutes(p, 0); } },
-  { id: 'ovp-bus-ku', label: 'Overpass Kumi', async run(p) { return busRoutes(p, 1); } },
-];
-async function busRoutes({ lat, lon, radius }, epi) {
-  const q = `[out:json][timeout:30];relation["route"="bus"](around:${radius},${lat},${lon});out tags 120;`;
-  const r = await fetch(EPS[epi], { method: 'POST', body: 'data=' + encodeURIComponent(q),
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  const d = await r.json();
-  const seen = new Set();
-  const out = (d.elements || []).map((x) => {
-    const t = x.tags || {};
-    const ref = t.ref || t.name || '';
-    if (!ref || seen.has(ref)) return null;
-    seen.add(ref);
-    return { ref, name: t.name || '', from: t.from || '', to: t.to || '',
-      operator: t.operator || '', via: t.via || '' };
-  }).filter(Boolean);
-  if (!out.length) throw new Error('no bus routes nearby');
-  return out.sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
 }
 
 export function MetroLines() {
@@ -427,6 +419,26 @@ export function MetroLines() {
       <Src meta={l.meta} />
     </>)}
   </>);
+}
+
+/* ------------------------------------------------------------ BUS ROUTES */
+const busPool = [
+  { id: 'ovp-bus-de', label: 'Overpass DE', async run(p) { return busRoutes(p, 0); } },
+  { id: 'ovp-bus-ku', label: 'Overpass Kumi', async run(p) { return busRoutes(p, 1); } },
+];
+async function busRoutes({ lat, lon, radius }, epi) {
+  const q = `[out:json][timeout:30];relation["route"="bus"](around:${radius},${lat},${lon});out tags 120;`;
+  const d = await ovp(EPS[epi], q);
+  const seen = new Set();
+  const out = (d.elements || []).map((x) => {
+    const t = x.tags || {};
+    const ref = t.ref || t.name || '';
+    if (!ref || seen.has(ref)) return null;
+    seen.add(ref);
+    return { ref, name: t.name || '', from: t.from || '', to: t.to || '', operator: t.operator || '' };
+  }).filter(Boolean);
+  if (!out.length) throw new Error('no bus routes nearby');
+  return out.sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
 }
 
 export function BusRoutes() {

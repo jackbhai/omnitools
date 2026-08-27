@@ -4,7 +4,8 @@
  * something is loaded) that expands into a full-screen player.
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { resolveStream, lyricsPool } from './ytmusic';
+import { lyricsPool } from './ytmusic';
+import { resolveAudio, prefetchAudio } from './audio-resolve';
 import { resolve } from './engine';
 
 const Ctx = createContext(null);
@@ -76,7 +77,8 @@ export function PlayerProvider({ children }) {
   const [comp, setComp] = useState(false);
   const [rate, setRate] = useState(1);
   const [sleep, setSleep] = useState(0);
-  const [yt, setYt] = useState(null);   // active YouTube id (IFrame mode)
+  const [yt, setYt] = useState(null);
+  const [stage, setStage] = useState('');   // active YouTube id (IFrame mode)
 
   /* ---- play a track (resolving the stream if needed) ---- */
   const play = useCallback(async (t, list) => {
@@ -85,21 +87,54 @@ export function PlayerProvider({ children }) {
     if (list) { setQueue(list); setIdx(list.findIndex((x) => (x.id ?? x.url) === (t.id ?? t.url))); }
     setTrack(t); setLoading(true);
 
-    // YouTube tracks -> official IFrame player (direct extraction is blocked by
-    // CORS and the Piped extractor is unreliable; the embed always works).
+    // YouTube tracks -> resolve to a DIRECT audio stream (no ads, keeps
+    // playing in the background). The IFrame is only a last-resort fallback
+    // if every proxy path fails.
     if (t.needsResolve && t.id) {
-      el.pause(); el.removeAttribute('src'); el.load();
-      setYt(t.id); setPlaying(true); setLoading(false);
-      if ('mediaSession' in navigator) {
-        try {
-          navigator.mediaSession.metadata = new MediaMetadata({
-            title: t.title || '', artist: t.artist || '',
-            artwork: t.art ? [{ src: t.art, sizes: '512x512' }] : [] });
-        } catch {}
+      setYt(null);
+      try {
+        setLoading(true);
+        const r = await resolveAudio(t.id, { onProgress: setStage });
+        const meta = { ...t, art: t.art || r.art, artist: t.artist || r.artist, dlUrl: r.audio };
+        setTrack(meta);
+        el.src = r.audio;
+        el.playbackRate = rate;
+        chain.attach(el); chain.resume();
+        await el.play();
+        setPlaying(true); setStage(''); setLoading(false);
+        if ('mediaSession' in navigator) {
+          try {
+            navigator.mediaSession.metadata = new MediaMetadata({
+              title: meta.title || '', artist: meta.artist || '',
+              artwork: meta.art ? [{ src: meta.art, sizes: '512x512' }] : [] });
+          } catch {}
+        }
+        // warm the next track so skipping feels instant
+        if (list) {
+          const i = list.findIndex((x) => x.id === t.id);
+          if (i >= 0 && list[i + 1]?.id) prefetchAudio(list[i + 1].id);
+        }
+        resolve('lyrics', lyricsPool, { title: meta.title || '', artist: meta.artist || '' }, { ttl: 864e5 })
+          .then((r2) => setLyrics(r2.data)).catch(() => setLyrics(null));
+        return;
+      } catch (e) {
+        console.warn('[player] direct audio failed:', e && e.message, e);
+        // If the stream resolved but autoplay was blocked, keep the audio
+        // element loaded so a tap on play works - do NOT drop to the embed.
+        if (el.src && (e?.name === 'NotAllowedError' || /gesture|interact/i.test(e?.message || ''))) {
+          setStage(''); setLoading(false); setPlaying(false);
+          setErr('Tap play to start (browser blocked autoplay)');
+          return;
+        }
+        // Fallback: official embed. Has ads, but the song still plays.
+        setStage(''); setLoading(false);
+        el.pause(); el.removeAttribute('src'); el.load();
+        setYt(t.id); setPlaying(true);
+        setErr('Ad-free stream unavailable — using embed fallback');
+        resolve('lyrics', lyricsPool, { title: t.title || '', artist: t.artist || '' }, { ttl: 864e5 })
+          .then((r2) => setLyrics(r2.data)).catch(() => setLyrics(null));
+        return;
       }
-      resolve('lyrics', lyricsPool, { title: t.title || '', artist: t.artist || '' }, { ttl: 864e5 })
-        .then((r) => setLyrics(r.data)).catch(() => setLyrics(null));
-      return;
     }
     setYt(null);
     try {
@@ -177,7 +212,7 @@ export function PlayerProvider({ children }) {
   }, []);
 
   const value = {
-    audio, yt, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, err, lyrics,
+    audio, yt, stage, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, err, lyrics,
     eq, preset, bass, treb, comp, rate, sleep,
     play, toggle, step, seek, setShuffle, setRepeat, setFull, setSleep, applyPreset,
     setEqBand: (i, v) => { const n = [...eq]; n[i] = v; setEq(n); chain.band(i, v); setPreset('Custom'); },

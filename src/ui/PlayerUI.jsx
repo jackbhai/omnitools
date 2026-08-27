@@ -27,7 +27,8 @@ export function MiniPlayer() {
         <div className="mini-txt">
           <b>{p.track.title || p.track.name}</b>
           <span>{p.err ? <em style={{ color: 'var(--bad)' }}>{p.err}</em>
-            : p.loading ? 'Loading…' : (p.track.artist || p.track.country || '')}</span>
+            : p.loading ? (p.stage || 'Loading ad-free audio…')
+            : (p.track.artist || p.track.country || '')}</span>
         </div>
         <button className="mini-btn" onClick={(e) => { e.stopPropagation(); p.step(-1); }}>⏮</button>
         <button className="mini-btn play" onClick={(e) => { e.stopPropagation(); p.toggle(); }}>

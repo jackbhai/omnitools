@@ -17,10 +17,8 @@ import { jget } from './engine';
 
 /* Multiple Piped mirrors — if one dies the pool moves on. */
 const PIPED = [
-  'https://api.piped.private.coffee',
-  'https://pipedapi.kavin.rocks',
-  'https://pipedapi.adminforge.de',
-  'https://pipedapi.reallyaweso.me',
+  'https://api.piped.private.coffee',   // verified: CORS *, returns results
+  'https://pipedapi.kavin.rocks',       // backup (intermittent)
 ];
 
 const secs = (t) => (typeof t === 'number' && t > 0 ? t : null);

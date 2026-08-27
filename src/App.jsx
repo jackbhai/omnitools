@@ -8,6 +8,7 @@ import { LocProvider } from './core/geo';
 import { PlayerProvider, usePlayer } from './core/player';
 import { MiniPlayer, FullPlayer } from './ui/PlayerUI';
 import { Downloader } from './tools/downloader';
+import * as A from './tools/ahm7';
 import { providerStats } from './core/engine';
 
 /* ------------------------------------------------------------------ registry
@@ -86,6 +87,16 @@ const TOOLS = [
   { id:'metro',     n:'Metro',         i:'🚇', c:'Travel', t:'live', d:'12 city networks',      C:T.Metro },
   { id:'nearby',    n:'Near Me',       i:'📍', c:'Travel', t:'live', d:'ATM, food, fuel…',      C:T.Nearby },
   { id:'guide',     n:'Travel Guide',  i:'🧭', c:'Travel', t:'live', d:'City info + SOS',       C:T.TravelGuide },
+  { id:'manga',     n:'Manga',         i:'📖', c:'AHM7', t:'live', d:'Read & search',         C:A.Manga },
+  { id:'novels',    n:'Novels',        i:'📕', c:'AHM7', t:'live', d:'Story library',         C:A.Novels },
+  { id:'med',       n:'Medicine',      i:'💊', c:'AHM7', t:'live', d:'Drug database',         C:A.Medicine },
+  { id:'courses',   n:'Courses',       i:'🎓', c:'AHM7', t:'live', d:'1000+ free courses',    C:A.Courses },
+  { id:'tempmail',  n:'Temp Mail',     i:'📨', c:'AHM7', t:'live', d:'Disposable inbox',      C:A.TempMail },
+  { id:'wikipdf',   n:'Wiki → PDF',    i:'📄', c:'AHM7', t:'live', d:'Article as PDF',        C:A.WikiPdf },
+  { id:'hand',      n:'Handwriting',   i:'✍️', c:'AHM7', t:'live', d:'Text → handwriting',    C:A.Handwriting },
+  { id:'websnap',   n:'Screenshot',    i:'📸', c:'AHM7', t:'live', d:'Capture any site',      C:A.WebSnap },
+  { id:'certs',     n:'Certificates',  i:'🏆', c:'AHM7', t:'live', d:'Templates',             C:A.Certificates },
+  { id:'telenor',   n:'Telenor Quiz',  i:'📶', c:'AHM7', t:'live', d:'Daily answers',         C:A.Telenor },
   { id:'dl',        n:'Downloader',    i:'⬇️', c:'Media',  t:'live', d:'Video/audio/thumb',    C:Downloader },
   { id:'metrolines',n:'Metro Lines',   i:'🚈', c:'Travel', t:'live', d:'Real DMRC lines',      C:T.MetroLines },
   { id:'bus',       n:'Bus Routes',    i:'🚌', c:'Travel', t:'live', d:'Routes near you',      C:T.BusRoutes },
@@ -100,7 +111,7 @@ const TOOLS = [
   { id:'txtfile',   n:'Text → File',   i:'💾', c:'Convert', t:'off', d:'Save as any type',      C:C.TextToFile },
 ];
 
-const CATS = ['All', 'India', 'Travel', 'Convert', 'Music', 'Time', 'Money', 'Learn', 'Media', 'Space', 'Text', 'Dev', 'Generate'];
+const CATS = ['All', 'AHM7', 'India', 'Travel', 'Convert', 'Music', 'Time', 'Money', 'Learn', 'Media', 'Space', 'Text', 'Dev', 'Generate'];
 
 export default function App() {
   const [route, setRoute] = useState(() => location.hash.slice(1) || '');
@@ -166,6 +177,7 @@ export default function App() {
               <span className="pill on">● {offCount} work offline</span>
               <span className="pill">⚡ Auto-failover</span>
               <span className="pill">🔒 No tracking</span>
+              <span className="pill" title="deployed build">⬢ {__BUILD__}</span>
             </div>
           </div>
 

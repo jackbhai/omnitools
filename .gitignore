@@ -9,3 +9,7 @@ lt.py
 livetest.py
 contrast.py
 t2.py
+qa.py
+audiotest.py
+full_audit.py
+verify2.py

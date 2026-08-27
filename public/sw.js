@@ -1,18 +1,56 @@
-/* Offline shell — cache-first for app assets so offline tools keep working. */
-const C = 'omni-v1';
-self.addEventListener('install', (e) => { self.skipWaiting(); });
+/* Service worker — NETWORK-FIRST for the app shell.
+ *
+ * The previous version was cache-first for everything, which meant a returning
+ * visitor kept getting an OLD index.html (and therefore an old JS bundle) even
+ * after a successful deploy. That made new features look like they never
+ * shipped. Now:
+ *   - navigations / index.html  -> network first, cache only as offline fallback
+ *   - hashed assets (immutable) -> cache first (safe: filename changes per build)
+ *   - everything cross-origin   -> never touched
+ */
+const V = 'omni-v3';
+
+self.addEventListener('install', () => self.skipWaiting());
+
 self.addEventListener('activate', (e) => e.waitUntil(
-  caches.keys().then((k) => Promise.all(k.filter((x) => x !== C).map((x) => caches.delete(x))))
-    .then(() => self.clients.claim())));
+  caches.keys()
+    .then((keys) => Promise.all(keys.filter((k) => k !== V).map((k) => caches.delete(k))))
+    .then(() => self.clients.claim())
+));
+
+self.addEventListener('message', (e) => { if (e.data === 'skip-waiting') self.skipWaiting(); });
+
 self.addEventListener('fetch', (e) => {
-  const u = new URL(e.request.url);
-  if (e.request.method !== 'GET') return;
-  if (u.origin !== location.origin) return;           // never cache API calls
-  e.respondWith(
-    caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-      const copy = res.clone();
-      caches.open(C).then((c) => c.put(e.request, copy)).catch(() => {});
-      return res;
-    }).catch(() => caches.match('./index.html')))
-  );
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== location.origin) return;          // API calls untouched
+
+  const isShell = req.mode === 'navigate' || url.pathname.endsWith('/') ||
+                  url.pathname.endsWith('index.html');
+  const isHashed = /\/assets\/.+-[A-Za-z0-9_]{8,}\.(js|css)$/.test(url.pathname);
+
+  if (isShell) {
+    e.respondWith(
+      fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(V).then((c) => c.put(req, copy)).catch(() => {});
+        return res;
+      }).catch(() => caches.match(req).then((h) => h || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  if (isHashed) {
+    e.respondWith(
+      caches.match(req).then((hit) => hit || fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(V).then((c) => c.put(req, copy)).catch(() => {});
+        return res;
+      }))
+    );
+    return;
+  }
+
+  e.respondWith(fetch(req).catch(() => caches.match(req)));
 });
