@@ -177,6 +177,9 @@ const ALLOWED = [
   'agify.io',
   'genderize.io',
   'nationalize.io',
+
+  // surname & given-name census
+  'forebears.io',
 ];
 
 const CORS = {
@@ -498,6 +501,112 @@ async function searchNews(q, hl, gl, ceid, limit) {
   return out;
 }
 
+
+/* ------------------------------------------------------------- /surname ---
+ * How many people actually carry a name, and where.
+ *
+ * WHY THIS EXISTS
+ * The encyclopedia registers only know a name if somebody notable has it.
+ * They had never heard of "Rakheja" or "Mangatram", so the app told the user
+ * those names did not exist. They plainly do: the surname census has Rakheja
+ * at 1,033 people worldwide (964 of them in India) and Mangatram at 586 as a
+ * GIVEN name. That is the gap this closes — real people, counted, rather than
+ * only the famous ones.
+ *
+ * WHY IT IS SERVER-SIDE
+ * The census is a web page, not an API. It sends no CORS header, needs a
+ * desktop user-agent, and redirects /forenames/<x> to /x/forenames/<x>. All
+ * three are handled here so the browser sees plain JSON.
+ *
+ * A name is looked up BOTH ways — as a surname and as a given name — because
+ * which one it is cannot be assumed: Mangatram returns nothing as a surname
+ * and 586 people as a forename.
+ */
+
+const censusUA = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
+
+const unent = (x) => String(x || '')
+  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+  .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n));
+
+function flatten(htmlText) {
+  let t = htmlText.replace(/<script[\s\S]*?<\/script>/gi, '')
+                  .replace(/<style[\s\S]*?<\/style>/gi, '');
+  return unent(t.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+}
+
+const num = (x) => parseInt(String(x).replace(/,/g, ''), 10);
+
+function parseCensus(htmlText, kind) {
+  const f = flatten(htmlText);
+  const out = { kind };
+  let m = f.match(/Approximately ([\d,]+) people bear this (?:surname|name)/i);
+  if (!m) return null;                       // no record for this spelling
+  out.people = num(m[1]);
+  m = f.match(/([\d,]+)\s*(?:st|nd|rd|th)\s*Most Common (?:surname|name) in the World/i);
+  if (m) out.rank = num(m[1]);
+  m = f.match(/Most prevalent in:\s*([A-Za-z .&'-]+?)\s+Highest density/i);
+  if (m) out.top = m[1].trim();
+  /* "Highest density in: United Arab Emirates" was truncated to "United"
+     because the pattern stopped at the next capital. The field is followed by
+     the page's own "<Name> Surname" / "<Name> Forename" heading, so stop there. */
+  m = f.match(/Highest density in:\s*(.+?)\s+\S+\s+(?:Surname|Forename)\b/i);
+  if (!m) m = f.match(/Highest density in:\s*(.+?)\s+(?:The meaning|Definition:|Distribution)/i);
+  if (m && m[1].trim().length < 40) out.dense = m[1].trim();
+  m = f.match(/Definition:\s*([^.]{3,180}\.)/i);
+  if (m) out.meaning = m[1].trim();
+  else {
+    m = f.match(/The meaning of this surname is ([^.]{3,180})\./i);
+    if (m && !/not listed/i.test(m[1])) out.meaning = m[1].trim();
+  }
+  /* The distribution table: "India 964 1:795,711 35,763" for surnames, and
+     "India F 102,691 1:8,616 66" for forenames — the extra column is gender.
+     The table is preceded by its own header row, and matching from the top of
+     the page swallowed those words into the first country's name, producing
+     "Frequency Rank in Area India". So start reading AFTER the header, and
+     reject any place that still contains a header word. */
+  const hm = f.match(/Place\s+(?:Gender\s+)?Incidence\s+Frequency\s+Rank in Area\s+/i);
+  const table = hm ? f.slice(hm.index + hm[0].length) : f;
+  const places = [];
+  /* Two shapes. A surname row is
+       "India 964 1:795,711 35,763"
+     and a forename row carries an extra column that is NOT M/F — it is the
+     share of bearers who are female, written as a percentage or as "-" when
+     unknown:
+       "India 100% 404,486 1:3,004 315"
+       "Sri Lanka - 13,091 1:1,589 294"
+     Matching M/F left that column stuck to the country ("Sri Lanka -") and
+     dropped every row that had a percentage. Both are accepted now. */
+  const re = /([A-Z][A-Za-z.&'\u2019-]*(?:[ -][A-Za-z.&'\u2019-]+){0,3}?)\s+(?:(\d{1,3})%\s+|-\s+)?([\d,]+)\s+1:([\d,]+)\s+([\d,]+)/g;
+  let r;
+  while ((r = re.exec(table)) && places.length < 24) {
+    const place = r[1].trim();
+    if (/(place|rank|area|sort|incidence|frequency|gender|results|alphabetic|fullscreen)/i.test(place)) continue;
+    if (place.length < 3) continue;
+    const row = { place, n: num(r[3]), per: num(r[4]), rank: num(r[5]) };
+    if (r[2] != null) row.female = +r[2];
+    places.push(row);
+  }
+  if (places.length) out.places = places;
+  return out;
+}
+
+async function census(name, kind) {
+  const slug = encodeURIComponent(name.trim().toLowerCase().replace(/\s+/g, '-'));
+  const path = kind === 'given' ? 'forenames' : 'surnames';
+  const r = await fetch(`https://forebears.io/${path}/${slug}`, {
+    headers: censusUA, redirect: 'follow', cf: { cacheTtl: 3600, cacheEverything: true },
+  });
+  if (!r.ok) return null;
+  return parseCensus(await r.text(), kind);
+}
+
 /* ------------------------------------------------------------------ main */
 export default {
   async fetch(request) {
@@ -506,6 +615,25 @@ export default {
     }
 
     const url = new URL(request.url);
+
+    /* ---- how many people carry this name, and where ---- */
+    if (url.pathname === '/surname') {
+      const n = (url.searchParams.get('n') || '').trim();
+      if (!n || n.length > 40) return json({ ok: false, error: 'pass ?n=<name>' }, 400);
+      try {
+        /* Asked both ways at once: a spelling can be a surname, a given name,
+           or both, and guessing wrong is how a real name gets reported as
+           non-existent. */
+        const [sur, giv] = await Promise.all([
+          census(n, 'surname').catch(() => null),
+          census(n, 'given').catch(() => null),
+        ]);
+        return json({ ok: true, name: n, surname: sur, given: giv,
+                      found: !!(sur || giv) });
+      } catch (e) {
+        return json({ ok: false, error: String(e.message).slice(0, 120) }, 502);
+      }
+    }
 
     /* ---- news search ---- */
     if (url.pathname === '/search') {

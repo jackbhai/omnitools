@@ -239,6 +239,33 @@ export async function meaning(raw) {
   return null;
 }
 
+
+/* --------------------------------------------------------------- census
+ * How many people actually carry this name, and in which countries.
+ *
+ * This is the layer that makes the tool honest about ordinary names. The
+ * encyclopedia registers only know a name if somebody notable carries it, so
+ * they had never heard of "Rakheja" or "Mangatram" and the app used to report
+ * that no register had them — which read as "this is not a real name". Both
+ * plainly are: Rakheja is carried by 1,033 people worldwide, 964 of them in
+ * India; Mangatram by 586, as a GIVEN name rather than a surname.
+ *
+ * Every name is therefore asked BOTH ways, because which one it is cannot be
+ * assumed. The relay does the fetching: the census is a web page with no CORS
+ * header that needs a desktop user-agent and follows a redirect.
+ */
+export async function census(raw) {
+  const name = raw.trim();
+  if (!name) return null;
+  const b = proxyBase();
+  if (!b) return null;
+  try {
+    const d = await getJson(`${b}/surname?n=${enc(name)}`, { ms: 30000 });
+    if (!d.ok || !d.found) return null;
+    return { surname: d.surname || null, given: d.given || null };
+  } catch { return null; }
+}
+
 /* ------------------------------------------------------------- statistics */
 
 /**
@@ -425,11 +452,17 @@ export async function facets() {
 export async function deepLookup(raw) {
   const name = raw.trim();
   if (!name) throw new Error('Type a name first');
-  const [entry, live] = await Promise.all([
+  const [entry, live, cen] = await Promise.all([
     directoryEntry(name).catch(() => null),
     lookup(name).catch(() => null),
+    census(name).catch(() => null),
   ]);
-  return { entry, ...(live || { query: titleCase(name), facts: [], best: null, wiki: null, stats: { countries: [] }, sources: [] }) };
+  const base = live || { query: titleCase(name), facts: [], best: null, wiki: null,
+                         stats: { countries: [] }, sources: [] };
+  const sources = [...(base.sources || [])];
+  if (entry) sources.unshift('directory');
+  if (cen) sources.push('population census');
+  return { entry, census: cen, ...base, sources };
 }
 
 export const countryName = (cc) => COUNTRY_NAMES[cc] || cc;

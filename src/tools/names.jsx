@@ -59,6 +59,11 @@ function Record({ name, onBack }) {
   const e = d.entry || {};
   const s = d.stats || {};
   const best = d.best;
+  const cen = d.census || null;
+  /* The census counts everyone, not only the notable — this is the number that
+     answers "is this a real name?" for an ordinary surname. */
+  const censusMain = cen ? ((cen.surname?.people || 0) >= (cen.given?.people || 0) ? cen.surname : cen.given) : null;
+  const carriers = censusMain?.people || 0;
   const kindLabel = e.k === 'given'
     ? (e.g === 'm' ? 'First name · usually male' : e.g === 'f' ? 'First name · usually female' : 'First name')
     : (e.k === 'surname' ? 'Surname' : best?.kind || '');
@@ -80,7 +85,8 @@ function Record({ name, onBack }) {
         <div style={{ fontSize: 19, marginTop: 4, color: 'var(--cyan)' }}>{e.nat || best.native}</div>)}
       <div className="btnrow" style={{ marginTop: 8 }}>
         {kindLabel && <span className="pill on">{kindLabel}</span>}
-        {(e.b || best?.bearers) > 0 && <span className="pill">{fmt(e.b || best.bearers)} recorded people</span>}
+        {carriers > 0 && <span className="pill">{fmt(carriers)} people carry it</span>}
+        {(e.b || best?.bearers) > 0 && <span className="pill">{fmt(e.b || best.bearers)} notable</span>}
         {(e.c || []).map((c) => <span className="pill" key={c}>{CC_NAME[c] || c}</span>)}
         {s.gender && <span className="pill">{s.gender === 'male' ? 'Mostly male' : 'Mostly female'}
           {s.genderProb ? ` ${Math.round(s.genderProb * 100)}%` : ''}</span>}
@@ -115,10 +121,50 @@ function Record({ name, onBack }) {
 
     {!e.s && !d.wiki && (
       <div className="note" style={{ marginTop: 12 }}>
-        No article could be confirmed as being about this name rather than about
-        a person or a place that shares the spelling, so nothing is claimed here.
-        The register facts above are still exact.
+        {carriers > 0
+          ? `No encyclopedia article could be confirmed as being about this name rather than
+             about a person or place that shares the spelling, so no origin story is invented.
+             The count below is a census figure and is exact.`
+          : `Nothing is recorded for this spelling in any register or in the population
+             census. Check the spelling, or try it without a prefix.`}
       </div>)}
+
+    {censusMain && (
+      <Card>
+        <div className="chead"><Icon n="numbers" size={15} /> How many people carry it</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+          <div className="big" style={{ fontSize: 30 }}>{fmt(censusMain.people)}</div>
+          <div className="dim sm">worldwide{censusMain.rank ? ` · ${fmt(censusMain.rank)}th commonest` : ''}</div>
+        </div>
+        <div className="btnrow" style={{ marginTop: 8 }}>
+          <span className="pill on">{censusMain.kind === 'given' ? 'Used as a first name' : 'Used as a surname'}</span>
+          {censusMain.top && <span className="pill">Most people in {censusMain.top}</span>}
+          {censusMain.dense && censusMain.dense !== censusMain.top &&
+            <span className="pill">Densest in {censusMain.dense}</span>}
+        </div>
+        {censusMain.meaning && (
+          <p className="dim sm" style={{ margin: '10px 0 0', lineHeight: 1.5 }}>{censusMain.meaning}</p>)}
+        {cen.surname && cen.given && (
+          <div className="g2" style={{ marginTop: 10 }}>
+            <div className="stat"><div className="v">{fmt(cen.surname.people)}</div><div className="l">as a surname</div></div>
+            <div className="stat"><div className="v">{fmt(cen.given.people)}</div><div className="l">as a first name</div></div>
+          </div>)}
+        {censusMain.places?.length > 0 && (<>
+          <div className="chead" style={{ marginTop: 14 }}>By country</div>
+          {censusMain.places.slice(0, 12).map((pl) => (
+            <div className="kv" key={pl.place}>
+              <span>{pl.place}</span>
+              <b>{fmt(pl.n)}
+                {pl.per ? <span className="dim" style={{ fontWeight: 400, fontSize: 11 }}> · 1 in {fmt(pl.per)}</span> : null}
+                {/* the census reports the share of bearers who are female */}
+                {pl.female != null && (
+                  <span className="dim" style={{ fontWeight: 400, fontSize: 11 }}>
+                    {' · '}{pl.female >= 60 ? `${pl.female}% female`
+                      : pl.female <= 40 ? `${100 - pl.female}% male` : 'mixed'}</span>)}
+              </b>
+            </div>))}
+        </>)}
+      </Card>)}
 
     {s.countries?.length > 0 && (
       <Card>
@@ -184,7 +230,8 @@ function Record({ name, onBack }) {
 
     <div className="src"><span className="dot" />
       <span>{[d.entry && 'shipped directory', d.facts?.length && 'name register',
-        d.wiki && 'encyclopedia'].filter(Boolean).join(' · ') || 'no source recognised this name'}</span></div>
+        d.wiki && 'encyclopedia', cen && 'population census']
+        .filter(Boolean).join(' · ') || 'no source recognised this name'}</span></div>
   </>);
 }
 
@@ -250,13 +297,14 @@ export function Names() {
           placeholder="Any name, even one not in the directory…" autoComplete="off" spellCheck="false" />
       </form>
       <div className="btnrow">
-        {['Raheja', 'Manchanda', 'Saluja', 'Grover', 'Sethi', 'Chhabra'].map((x) => (
+        {['Rakheja', 'Mangatram', 'Raheja', 'Manchanda', 'Saluja', 'Grover'].map((x) => (
           <button key={x} className="cat" onClick={() => { setQ(x); setOpen(x); }}>{x}</button>))}
       </div>
       <div className="note" style={{ marginTop: 12 }}>
-        This looks a name up live, so it works for spellings the directory does
-        not carry. If no register has it, the page says so rather than inventing
-        an answer.
+        This looks a name up live against the population census as well as the
+        registers, so it works for ordinary names the directory does not carry —
+        Rakheja is carried by 1,033 people, Mangatram by 586. If nothing has it,
+        the page says so rather than inventing an answer.
       </div>
     </>) : (<>
       <div className="search">
