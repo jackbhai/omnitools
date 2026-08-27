@@ -14,6 +14,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { jget, resolve } from './engine';
 import * as P from './providers';
+import { Icon } from '../ui/icons';
 
 const KEY = 'omni:loc';
 const FALLBACK = { lat: 28.6139, lon: 77.209, name: 'New Delhi', region: 'Delhi', country: 'India', src: 'default' };
@@ -118,7 +119,7 @@ export function LocBar({ compact }) {
       </div>
       {loc.src !== 'gps' && (
         <button className="btn sm" onClick={requestGps} disabled={status === 'locating'}>
-          {status === 'locating' ? '…' : '📍 Use GPS'}
+          {status === 'locating' ? '…' : '<Icon n="pin" size={17} /> Use GPS'}
         </button>)}
     </div>
   );

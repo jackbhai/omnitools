@@ -10,6 +10,7 @@ import React, { useEffect, useState } from 'react';
 import { jget, resolve } from '../core/engine';
 import { useLoc, LocBar } from '../core/geo';
 import { useData, Spin, Err, Empty, Src, Search, Card, Chips, Field, Stat, fmt } from '../ui/kit';
+import { Icon } from '../ui/icons';
 
 /* ------------------------------------------------------------ TRAINS */
 const STATIONS = [
@@ -54,7 +55,7 @@ export function Trains() {
       </Field>
     </div>
     <div className="btnrow">
-      <button className="btn" onClick={() => t.run({ from, to })}>🚆 Search trains</button>
+      <button className="btn" onClick={() => t.run({ from, to })}><Icon n="train" size={17} /> Search trains</button>
       <button className="btn ghost" onClick={() => { setFrom(to); setTo(from); t.run({ from: to, to: from }); }}>⇄ Swap</button>
     </div>
     {t.loading && <Spin t="Searching Indian Railways" />}
@@ -163,7 +164,7 @@ export function Metro() {
     {m.data && (<>
       {near.length > 0 && dist(near[0]) < 60 && (
         <Card>
-          <div className="chead">📍 Nearest to you</div>
+          <div className="chead"><Icon n="pin" size={17} /> Nearest to you</div>
           {near.map((x, i) => (
             <div className="kv" key={i}><span>{x.name}</span>
               <b style={{ color: 'var(--green)' }}>{dist(x).toFixed(1)} km</b></div>))}
@@ -174,7 +175,7 @@ export function Metro() {
         {list.slice(0, 120).map((x, i) => (
           <a className="row" key={i} target="_blank" rel="noreferrer"
             href={`https://www.openstreetmap.org/?mlat=${x.lat}&mlon=${x.lon}#map=17/${x.lat}/${x.lon}`}>
-            <span style={{ fontSize: 17 }}>🚇</span>
+            <span style={{ fontSize: 17 }}><Icon n="metro" size={17} /></span>
             <div className="main"><b>{x.name}</b>
               {x.line && <span className="dim sm">{x.line}</span>}</div>
             <span className="dim sm">{dist(x) < 500 ? dist(x).toFixed(1) + ' km' : ''}</span>
@@ -187,18 +188,18 @@ export function Metro() {
 
 /* ------------------------------------------------------------ NEARBY */
 const AMENITIES = [
-  { v: 'atm',       l: '🏧 ATM',      q: '["amenity"="atm"]' },
-  { v: 'hospital',  l: '🏥 Hospital', q: '["amenity"~"hospital|clinic"]' },
-  { v: 'pharmacy',  l: '💊 Pharmacy', q: '["amenity"="pharmacy"]' },
-  { v: 'fuel',      l: '⛽ Fuel',     q: '["amenity"="fuel"]' },
-  { v: 'restaurant',l: '🍽 Food',     q: '["amenity"~"restaurant|fast_food|cafe"]' },
-  { v: 'bus',       l: '🚌 Bus stop', q: '["highway"="bus_stop"]' },
-  { v: 'railway',   l: '🚉 Station',  q: '["railway"="station"]' },
-  { v: 'police',    l: '👮 Police',   q: '["amenity"="police"]' },
-  { v: 'toilets',   l: '🚻 Toilets',  q: '["amenity"="toilets"]' },
-  { v: 'hotel',     l: '🏨 Hotel',    q: '["tourism"~"hotel|guest_house|hostel"]' },
-  { v: 'attraction',l: '🎡 Sights',   q: '["tourism"~"attraction|museum|viewpoint"]' },
-  { v: 'temple',    l: '🛕 Worship',  q: '["amenity"="place_of_worship"]' },
+  { v: 'atm',       l: 'ATM', i:'bank',      q: '["amenity"="atm"]' },
+  { v: 'hospital',  l: 'Hospital', i:'heart', q: '["amenity"~"hospital|clinic"]' },
+  { v: 'pharmacy',  l: '<Icon n="pill" size={18} /> Pharmacy', q: '["amenity"="pharmacy"]' },
+  { v: 'fuel',      l: 'Fuel', i:'drop',     q: '["amenity"="fuel"]' },
+  { v: 'restaurant',l: 'Food', i:'smile',     q: '["amenity"~"restaurant|fast_food|cafe"]' },
+  { v: 'bus',       l: '<Icon n="bus" size={17} /> Bus stop', q: '["highway"="bus_stop"]' },
+  { v: 'railway',   l: '<Icon n="train" size={17} /> Station',  q: '["railway"="station"]' },
+  { v: 'police',    l: 'Police', i:'shield',   q: '["amenity"="police"]' },
+  { v: 'toilets',   l: 'Toilets', i:'info',  q: '["amenity"="toilets"]' },
+  { v: 'hotel',     l: 'Hotel', i:'home',    q: '["tourism"~"hotel|guest_house|hostel"]' },
+  { v: 'attraction',l: 'Sights', i:'camera',   q: '["tourism"~"attraction|museum|viewpoint"]' },
+  { v: 'temple',    l: 'Worship',  q: '["amenity"="place_of_worship"]' },
 ];
 
 const nearbyPool = [
@@ -306,7 +307,7 @@ export function TravelGuide() {
         <Src meta={g.meta} />
       </Card>)}
     <Card>
-      <div className="chead">🚨 Emergency numbers — India</div>
+      <div className="chead">Emergency numbers — India</div>
       {EMERGENCY.India.map(([n, l]) => (
         <div className="kv" key={n}><span>{l}</span>
           <a href={`tel:${n}`} style={{ color: 'var(--green)', fontWeight: 800, fontSize: 16, textDecoration: 'none' }}>{n}</a>

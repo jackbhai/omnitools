@@ -16,6 +16,7 @@ import { useLoc } from '../core/geo';
 import * as M from '../core/metro-route';
 import * as B from '../core/bus-route';
 import { Card, Empty, Spin } from '../ui/kit';
+import { Icon } from '../ui/icons';
 
 const WALK_KMH = 5;
 const walkMin = (km) => Math.round((km / WALK_KMH) * 60);
@@ -60,7 +61,7 @@ function buildOptions(a, b) {
       if (r) {
         const w = walkMin(sA.km) + walkMin(sB.km);
         out.push({
-          mode: 'Metro', icon: '🚇',
+          mode: 'Metro', icon: '<Icon n="metro" size={17} />',
           minutes: r.minutes + w, fare: r.fare, changes: r.changes,
           km: +(r.km + sA.km + sB.km).toFixed(2), walkMin: w,
           legs: [
@@ -84,7 +85,7 @@ function buildOptions(a, b) {
       if (r) {
         const w = walkMin(sA.km) + walkMin(sB.km);
         out.push({
-          mode: 'Bus', icon: '🚌',
+          mode: 'Bus', icon: '<Icon n="bus" size={17} />',
           minutes: r.minutes + w, fare: r.fare, changes: r.changes,
           km: +(r.km + sA.km + sB.km).toFixed(2), walkMin: w,
           legs: [
@@ -145,7 +146,7 @@ function buildOptions(a, b) {
           }
         }
         if (legs.some((l) => l.kind === 'bus')) {
-          out.push({ mode: 'Bus + Metro', icon: '🚌🚇', minutes: mins, fare, changes,
+          out.push({ mode: 'Bus + Metro', icon: '<Icon n="bus" size={17} /><Icon n="metro" size={17} />', minutes: mins, fare, changes,
             km: +km.toFixed(2), walkMin: legs.filter((l) => l.kind === 'walk')
               .reduce((s, l) => s + l.min, 0), legs, detail: core });
         }
@@ -161,25 +162,18 @@ function Picker({ label, value, onPick, onNear }) {
   const [open, setOpen] = useState(false);
   const hits = useMemo(() => searchAll(q), [q]);
   return (
-    <div className="fld" style={{ position: 'relative' }}>
-      <label>{label}</label>
-      <div style={{ display: 'flex', gap: 6 }}>
-        <input value={open ? q : (value?.n || '')} placeholder="Metro station or bus stop…"
+    <div className="fld" style={{ position: 'relative' }}><label>{label}</label><div style={{ display: 'flex', gap: 6 }}><input value={open ? q : (value?.n || '')} placeholder="Metro station or bus stop…"
           onFocus={() => { setOpen(true); setQ(''); }}
           onChange={(e) => { setQ(e.target.value); setOpen(true); }}
-          onBlur={() => setTimeout(() => setOpen(false), 180)} />
-        <button className="btn ghost sm" style={{ flex: '0 0 auto' }}
-          onMouseDown={(e) => e.preventDefault()} onClick={onNear}>📍</button>
-      </div>
+          onBlur={() => setTimeout(() => setOpen(false), 180)} /><button className="btn ghost sm" style={{ flex: '0 0 auto' }}
+          onMouseDown={(e) => e.preventDefault()} onClick={onNear}><Icon n="pin" size={17} /></button></div>
       {open && hits.length > 0 && (
         <div className="list" style={{ position: 'absolute', top: '100%', left: 0, right: 0,
           zIndex: 40, marginTop: 4, maxHeight: 260, overflowY: 'auto' }}>
           {hits.map((h, i) => (
             <button key={i} className="col" style={{ background: 'none', border: 0,
               textAlign: 'left', width: '100%', cursor: 'pointer' }}
-              onMouseDown={(e) => { e.preventDefault(); onPick(h); setOpen(false); setQ(''); }}>
-              <b style={{ fontSize: 13.5 }}>{h.kind === 'metro' ? '🚇' : '🚌'} {h.n}</b>
-            </button>))}
+              onMouseDown={(e) => { e.preventDefault(); onPick(h); setOpen(false); setQ(''); }}><b style={{ fontSize: 13.5 }}>{h.kind === 'metro' ? '<Icon n="metro" size={17} />' : '<Icon n="bus" size={17} />'} {h.n}</b></button>))}
         </div>)}
     </div>);
 }
@@ -215,101 +209,46 @@ export function MultiModal() {
     else if (bs) setter({ n: bs.n, kind: 'bus' });
   };
 
-  return (<>
-    <Picker label="From" value={from} onPick={(v) => { setFrom(v); setSel(0); }}
-      onNear={() => near(setFrom)} />
-    <div style={{ textAlign: 'center', margin: '-4px 0 4px' }}>
-      <button className="btn ghost sm" onClick={() => { const a = from; setFrom(to); setTo(a); setSel(0); }}>⇅ Swap</button>
-    </div>
-    <Picker label="To" value={to} onPick={(v) => { setTo(v); setSel(0); }}
+  return (<><Picker label="From" value={from} onPick={(v) => { setFrom(v); setSel(0); }}
+      onNear={() => near(setFrom)} /><div style={{ textAlign: 'center', margin: '-4px 0 4px' }}><button className="btn ghost sm" onClick={() => { const a = from; setFrom(to); setTo(a); setSel(0); }}>⇅ Swap</button></div><Picker label="To" value={to} onPick={(v) => { setTo(v); setSel(0); }}
       onNear={() => near(setTo)} />
 
     {(!from || !to) && <Empty t="Pick a start and destination — metro stations and bus stops both work" />}
     {options?.length === 0 && <Empty t="No metro or bus route found between these two points" />}
 
-    {ranked.length > 0 && (<>
-      <div className="btnrow">
-        {[['fast', '⚡ Fastest'], ['cheap', '💰 Cheapest'], ['easy', '😌 Fewest changes']].map(([v, l]) => (
+    {ranked.length > 0 && (<><div className="btnrow">
+        {[['fast', ' Fastest'], ['cheap', ' Cheapest'], ['easy', ' Fewest changes']].map(([v, l]) => (
           <button key={v} className={`cat ${sort === v ? 'on' : ''}`}
             onClick={() => { setSort(v); setSel(0); }}>{l}</button>))}
-      </div>
-
-      <div className="cats" style={{ marginTop: 10 }}>
+      </div><div className="cats" style={{ marginTop: 10 }}>
         {ranked.map((x, i) => (
           <button key={i} className={`cat ${sel === i ? 'on' : ''}`} onClick={() => setSel(i)}>
             {x.icon} {x.minutes}m · ₹{x.fare}
           </button>))}
-      </div>
-
-      <Card>
-        <div className="chead">{o.icon} {o.mode} · {from.n} → {to.n}</div>
-        <div className="g3">
-          <div className="stat"><div className="v">{o.minutes}</div><div className="l">Minutes</div></div>
-          <div className="stat"><div className="v">₹{o.fare}</div><div className="l">Fare</div></div>
-          <div className="stat"><div className="v">{o.changes}</div><div className="l">Changes</div></div>
-        </div>
-        <div className="g2" style={{ marginTop: 8 }}>
-          <div className="stat"><div className="v">{o.km}</div><div className="l">km total</div></div>
-          <div className="stat"><div className="v">{o.walkMin}</div><div className="l">min walking</div></div>
-        </div>
-      </Card>
+      </div><Card><div className="chead">{o.icon} {o.mode} · {from.n} → {to.n}</div><div className="g3"><div className="stat"><div className="v">{o.minutes}</div><div className="l">Minutes</div></div><div className="stat"><div className="v">₹{o.fare}</div><div className="l">Fare</div></div><div className="stat"><div className="v">{o.changes}</div><div className="l">Changes</div></div></div><div className="g2" style={{ marginTop: 8 }}><div className="stat"><div className="v">{o.km}</div><div className="l">km total</div></div><div className="stat"><div className="v">{o.walkMin}</div><div className="l">min walking</div></div></div></Card>
 
       {/* comparison table */}
       {ranked.length > 1 && (
-        <>
-          <div className="chead" style={{ marginTop: 14 }}>Compare all options</div>
-          <div className="list">
+        <><div className="chead" style={{ marginTop: 14 }}>Compare all options</div><div className="list">
             {ranked.map((x, i) => (
               <button key={i} className="row" style={{ background: i === sel ? 'rgba(0,255,156,.07)' : 'none',
                 border: 0, width: '100%', textAlign: 'left', cursor: 'pointer' }}
-                onClick={() => setSel(i)}>
-                <span style={{ fontSize: 17 }}>{x.icon}</span>
-                <div className="main"><b style={{ fontSize: 13 }}>{x.mode}</b>
-                  <span className="dim sm">{x.changes} change{x.changes !== 1 ? 's' : ''} · {x.km} km · {x.walkMin} min walk</span></div>
-                <div className="end">
-                  <b>{x.minutes} min</b><br />
-                  <span style={{ color: 'var(--green)', fontSize: 12 }}>₹{x.fare}</span>
-                </div>
-              </button>))}
-          </div>
-        </>)}
+                onClick={() => setSel(i)}><span style={{ fontSize: 17 }}>{x.icon}</span><div className="main"><b style={{ fontSize: 13 }}>{x.mode}</b><span className="dim sm">{x.changes} change{x.changes !== 1 ? 's' : ''} · {x.km} km · {x.walkMin} min walk</span></div><div className="end"><b>{x.minutes} min</b><br /><span style={{ color: 'var(--green)', fontSize: 12 }}>₹{x.fare}</span></div></button>))}
+          </div></>)}
 
-      <div className="chead" style={{ marginTop: 14 }}>Step by step</div>
-      <div className="list">
+      <div className="chead" style={{ marginTop: 14 }}>Step by step</div><div className="list">
         {o.legs.map((l, i) => (
           <div className="col" key={i}>
             {l.kind === 'walk' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <span style={{ fontSize: 17 }}>🚶</span>
-                <div className="main"><b style={{ fontSize: 13 }}>{l.text}</b>
-                  <span className="dim sm">{l.km} km · about {l.min} min</span></div>
-              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span style={{ fontSize: 17 }}></span><div className="main"><b style={{ fontSize: 13 }}>{l.text}</b><span className="dim sm">{l.km} km · about {l.min} min</span></div></div>
             ) : l.kind === 'metro' ? (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                  <span style={{ width: 12, height: 12, borderRadius: 3, flex: '0 0 auto',
-                    background: l.colour || 'var(--green)' }} />
-                  <b style={{ flex: 1 }}>🚇 {l.line}</b>
-                  <span className="tag">{l.count} stops</span>
-                </div>
-                <span className="dim sm" style={{ paddingLeft: 21 }}>{l.from} → {l.to} · {l.km} km</span>
-              </>
+              <><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span style={{ width: 12, height: 12, borderRadius: 3, flex: '0 0 auto',
+                    background: l.colour || 'var(--green)' }} /><b style={{ flex: 1 }}><Icon n="metro" size={17} /> {l.line}</b><span className="tag">{l.count} stops</span></div><span className="dim sm" style={{ paddingLeft: 21 }}>{l.from} → {l.to} · {l.km} km</span></>
             ) : (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                  <span style={{ padding: '3px 9px', borderRadius: 8, background: 'var(--s3)',
-                    color: 'var(--green)', fontWeight: 800, fontSize: 12.5 }}>{l.ref}</span>
-                  <b style={{ flex: 1, fontSize: 13 }}>🚌 Bus</b>
-                  <span className="tag">{l.count} stops</span>
-                </div>
-                <span className="dim sm" style={{ paddingLeft: 4 }}>{l.from} → {l.to} · {l.km} km</span>
-              </>)}
+              <><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span style={{ padding: '3px 9px', borderRadius: 8, background: 'var(--s3)',
+                    color: 'var(--green)', fontWeight: 800, fontSize: 12.5 }}>{l.ref}</span><b style={{ flex: 1, fontSize: 13 }}><Icon n="bus" size={17} /> Bus</b><span className="tag">{l.count} stops</span></div><span className="dim sm" style={{ paddingLeft: 4 }}>{l.from} → {l.to} · {l.km} km</span></>)}
           </div>))}
-      </div>
-
-      <div className="src"><span className="dot" />
-        <span>Metro: {M.STATIONS.length} stations, DMRC fares. Bus: {B.ROUTES.length} routes, DTC fares.
-          Walking estimated at {WALK_KMH} km/h.</span></div>
-    </>)}
+      </div><div className="src"><span className="dot" /><span>Metro: {M.STATIONS.length} stations, DMRC fares. Bus: {B.ROUTES.length} routes, DTC fares.
+          Walking estimated at {WALK_KMH} km/h.</span></div></>)}
   </>);
 }

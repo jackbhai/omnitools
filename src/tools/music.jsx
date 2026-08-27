@@ -13,6 +13,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as P from '../core/providers';
 import { useData, Spin, Err, Empty, Src, Search, Card, Chips, fmt } from '../ui/kit';
+import { Icon } from '../ui/icons';
 
 /* --------------------------------------------------------- audio engine */
 const BANDS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
@@ -200,115 +201,70 @@ export function Music() {
   };
 
   const TABS = [
-    { v: 'radio', l: '📻 Radio' }, { v: 'audius', l: '🎵 Tracks' },
-    { v: 'archive', l: '💿 Archive' }, { v: 'itunes', l: '🍎 Catalog' },
-    { v: 'offline', l: '⬇ Offline' },
+    { v: 'radio', l: '<Icon n="radio" size={17} /> Radio' }, { v: 'audius', l: '<Icon n="music" size={17} /> Tracks' },
+    { v: 'archive', l: '<Icon n="disc" size={17} /> Archive' }, { v: 'itunes', l: ' Catalog' },
+    { v: 'offline', l: '<Icon n="download" size={16} /> Offline' },
   ];
   const LANGS = ['punjabi', 'hindi', 'urdu', 'bhojpuri', 'tamil', 'bengali'];
 
-  return (<>
-    <audio ref={audio} crossOrigin="anonymous" preload="none"
+  return (<><audio ref={audio} crossOrigin="anonymous" preload="none"
       onTimeUpdate={(e) => { setPos(e.target.currentTime); setDur(e.target.duration || 0); }}
-      onEnded={() => setPlaying(false)} onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)} />
-
-    <div className="cats">{TABS.map((t) =>
-      <button key={t.v} className={`cat ${tab === t.v ? 'on' : ''}`} onClick={() => setTab(t.v)}>{t.l}</button>)}</div>
+      onEnded={() => setPlaying(false)} onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)} /><div className="cats">{TABS.map((t) =><button key={t.v} className={`cat ${tab === t.v ? 'on' : ''}`} onClick={() => setTab(t.v)}>{t.l}</button>)}</div>
 
     {tab === 'radio' && (
-      <div className="btnrow">{LANGS.map((l) =>
-        <button key={l} className={`cat ${q === l ? 'on' : ''}`}
+      <div className="btnrow">{LANGS.map((l) =><button key={l} className={`cat ${q === l ? 'on' : ''}`}
           onClick={() => { setQ(l); s.run({ q: l, mode: 'lang' }); }}>{l}</button>)}</div>)}
 
-    {tab !== 'radio' && tab !== 'offline' && (<>
-      <Search value={q} onChange={setQ} onSubmit={() => s.run({ q })} ph="Search songs, artists…" />
-      <div className="btnrow">{['punjabi','bollywood','pakistani','sufi','ghazal'].map((x) =>
-        <button key={x} className="cat" onClick={() => { setQ(x); s.run({ q: x }); }}>{x}</button>)}</div>
-    </>)}
+    {tab !== 'radio' && tab !== 'offline' && (<><Search value={q} onChange={setQ} onSubmit={() => s.run({ q })} ph="Search songs, artists…" /><div className="btnrow">{['punjabi','bollywood','pakistani','sufi','ghazal'].map((x) =><button key={x} className="cat" onClick={() => { setQ(x); s.run({ q: x }); }}>{x}</button>)}</div></>)}
 
     {/* ---------------- now playing ---------------- */}
     {track && (
-      <Card style={{ marginTop: 12, position: 'sticky', top: 64, zIndex: 30 }}>
-        <canvas ref={canvas} style={{ width: '100%', height: 48, display: playing ? 'block' : 'none' }} />
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: playing ? 8 : 0 }}>
+      <Card style={{ marginTop: 12, position: 'sticky', top: 64, zIndex: 30 }}><canvas ref={canvas} style={{ width: '100%', height: 48, display: playing ? 'block' : 'none' }} /><div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: playing ? 8 : 0 }}>
           {(track.art || track.fav)
             ? <img src={track.art || track.fav} alt="" style={{ width: 54, height: 54, borderRadius: 11, objectFit: 'cover' }}
                 onError={(e) => { e.target.style.display = 'none'; }} />
-            : <div style={{ width: 54, height: 54, borderRadius: 11, background: 'var(--s3)', display: 'grid', placeItems: 'center', fontSize: 22 }}>🎵</div>}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <b style={{ display: 'block', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {track.title || track.name}</b>
-            <span className="dim sm">{track.artist || track.country || track.src}</span>
-          </div>
-          <button className="iconbtn" onClick={toggle} style={{ background: 'var(--grad)', color: '#000', border: 0 }}>
-            {playing ? '⏸' : '▶'}</button>
-        </div>
+            : <div style={{ width: 54, height: 54, borderRadius: 11, background: 'var(--s3)', display: 'grid', placeItems: 'center', fontSize: 22 }}><Icon n="music" size={17} /></div>}
+          <div style={{ flex: 1, minWidth: 0 }}><b style={{ display: 'block', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {track.title || track.name}</b><span className="dim sm">{track.artist || track.country || track.src}</span></div><button className="iconbtn" onClick={toggle} style={{ background: 'var(--grad)', color: '#000', border: 0 }}>
+            {playing ? '⏸' : '▶'}</button></div>
         {dur > 0 && isFinite(dur) && (
           <input type="range" min="0" max={dur} value={pos} style={{ width: '100%', marginTop: 10 }}
             onChange={(e) => { audio.current.currentTime = +e.target.value; }} />)}
-        <div className="btnrow">
-          <button className="btn ghost sm" onClick={() => setShowEq((v) => !v)}>🎛 Equalizer</button>
-          {(track.dlUrl || (track.download && track.download !== 'archive')) && (<>
-            <a className="btn sm" href={track.dlUrl || track.download} download target="_blank" rel="noreferrer">⬇ Download</a>
-            <button className="btn ghost sm" disabled={saving === track.id} onClick={() => cacheTrack(track)}>
-              {saving === track.id ? 'Saving…' : '💾 Save offline'}</button>
-          </>)}
+        <div className="btnrow"><button className="btn ghost sm" onClick={() => setShowEq((v) => !v)}> Equalizer</button>
+          {(track.dlUrl || (track.download && track.download !== 'archive')) && (<><a className="btn sm" href={track.dlUrl || track.download} download target="_blank" rel="noreferrer"><Icon n="download" size={16} /> Download</a><button className="btn ghost sm" disabled={saving === track.id} onClick={() => cacheTrack(track)}>
+              {saving === track.id ? 'Saving…' : '<Icon n="save" size={18} /> Save offline'}</button></>)}
           {track.src === 'iTunes' && <span className="tag w">preview only</span>}
           {tab === 'radio' && <span className="tag c">live stream</span>}
-        </div>
-      </Card>)}
+        </div></Card>)}
 
     {/* ---------------- equalizer ---------------- */}
     {showEq && (
-      <Card style={{ marginTop: 12 }}>
-        <div className="chead">🎛 10-band equalizer</div>
-        <div className="btnrow" style={{ marginBottom: 12 }}>
-          {Object.keys(PRESETS).map((p) =>
-            <button key={p} className={`cat ${preset === p ? 'on' : ''}`} onClick={() => applyPreset(p)}>{p}</button>)}
-        </div>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', justifyContent: 'space-between' }}>
+      <Card style={{ marginTop: 12 }}><div className="chead"> 10-band equalizer</div><div className="btnrow" style={{ marginBottom: 12 }}>
+          {Object.keys(PRESETS).map((p) =><button key={p} className={`cat ${preset === p ? 'on' : ''}`} onClick={() => applyPreset(p)}>{p}</button>)}
+        </div><div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', justifyContent: 'space-between' }}>
           {BANDS.map((f, i) => (
-            <div key={f} style={{ flex: 1, textAlign: 'center' }}>
-              <input type="range" min="-12" max="12" step="1" value={eq[i]}
+            <div key={f} style={{ flex: 1, textAlign: 'center' }}><input type="range" min="-12" max="12" step="1" value={eq[i]}
                 onChange={(e) => { const v = +e.target.value; const n = [...eq]; n[i] = v; setEq(n);
                   engine.setBand(i, v); setPreset('Custom'); }}
-                style={{ writingMode: 'vertical-lr', direction: 'rtl', width: 20, height: 84, accentColor: '#00FF9C' }} />
-              <div style={{ fontSize: 8.5, color: 'var(--fg3)', marginTop: 4 }}>
-                {f >= 1000 ? f / 1000 + 'k' : f}</div>
-              <div style={{ fontSize: 8.5, color: 'var(--green)' }}>{eq[i] > 0 ? '+' : ''}{eq[i]}</div>
-            </div>))}
-        </div>
-        <div className="hr" />
-        <label className="dim sm">Bass {bass > 0 ? '+' : ''}{bass} dB</label>
-        <input type="range" min="-15" max="15" value={bass} style={{ width: '100%', accentColor: '#00FF9C' }}
-          onChange={(e) => { setBass(+e.target.value); engine.setBass(+e.target.value); }} />
-        <label className="dim sm">Treble {treble > 0 ? '+' : ''}{treble} dB</label>
-        <input type="range" min="-15" max="15" value={treble} style={{ width: '100%', accentColor: '#00E5FF' }}
-          onChange={(e) => { setTreble(+e.target.value); engine.setTreble(+e.target.value); }} />
-        <label className="dim sm">Speed {rate}×</label>
-        <input type="range" min="0.5" max="2" step="0.05" value={rate} style={{ width: '100%', accentColor: '#00FF9C' }}
+                style={{ writingMode: 'vertical-lr', direction: 'rtl', width: 20, height: 84, accentColor: '#00FF9C' }} /><div style={{ fontSize: 8.5, color: 'var(--fg3)', marginTop: 4 }}>
+                {f >= 1000 ? f / 1000 + 'k' : f}</div><div style={{ fontSize: 8.5, color: 'var(--green)' }}>{eq[i] > 0 ? '+' : ''}{eq[i]}</div></div>))}
+        </div><div className="hr" /><label className="dim sm">Bass {bass > 0 ? '+' : ''}{bass} dB</label><input type="range" min="-15" max="15" value={bass} style={{ width: '100%', accentColor: '#00FF9C' }}
+          onChange={(e) => { setBass(+e.target.value); engine.setBass(+e.target.value); }} /><label className="dim sm">Treble {treble > 0 ? '+' : ''}{treble} dB</label><input type="range" min="-15" max="15" value={treble} style={{ width: '100%', accentColor: '#00E5FF' }}
+          onChange={(e) => { setTreble(+e.target.value); engine.setTreble(+e.target.value); }} /><label className="dim sm">Speed {rate}×</label><input type="range" min="0.5" max="2" step="0.05" value={rate} style={{ width: '100%', accentColor: '#00FF9C' }}
           onChange={(e) => { setRate(+e.target.value); if (audio.current) { audio.current.playbackRate = +e.target.value;
-            audio.current.preservesPitch = true; } }} />
-        <div className="btnrow">
-          <button className={`cat ${comp ? 'on' : ''}`} onClick={() => { setComp(!comp); engine.setComp(!comp); }}>
-            🔊 Loudness</button>
-          <button className="cat" onClick={() => { applyPreset('Flat'); setBass(0); setTreble(0);
-            engine.setBass(0); engine.setTreble(0); setRate(1); }}>↺ Reset</button>
-        </div>
-      </Card>)}
+            audio.current.preservesPitch = true; } }} /><div className="btnrow"><button className={`cat ${comp ? 'on' : ''}`} onClick={() => { setComp(!comp); engine.setComp(!comp); }}>
+             Loudness</button><button className="cat" onClick={() => { applyPreset('Flat'); setBass(0); setTreble(0);
+            engine.setBass(0); engine.setTreble(0); setRate(1); }}> Reset</button></div></Card>)}
 
     {/* ---------------- offline library ---------------- */}
     {tab === 'offline' && (
       offline.length === 0 ? <Empty t="No saved tracks yet. Download from Archive or Audius." />
       : <div className="list" style={{ marginTop: 12 }}>
           {offline.map((o) => (
-            <div className="row" key={o.id}>
-              <div className="main"><b>{o.meta?.title || o.id}</b>
-                <span className="dim sm">{o.meta?.artist} · {(o.blob.size / 1048576).toFixed(1)} MB</span></div>
-              <button className="iconbtn" onClick={() => {
+            <div className="row" key={o.id}><div className="main"><b>{o.meta?.title || o.id}</b><span className="dim sm">{o.meta?.artist} · {(o.blob.size / 1048576).toFixed(1)} MB</span></div><button className="iconbtn" onClick={() => {
                 const url = URL.createObjectURL(o.blob);
                 play({ ...o.meta, id: o.id, stream: url, src: 'Offline' });
-              }}>▶</button>
-            </div>))}
+              }}>▶</button></div>))}
         </div>)}
 
     {/* ---------------- results ---------------- */}
@@ -316,8 +272,7 @@ export function Music() {
       {s.loading && <Spin t="Finding music" />}
       {s.error && <Err error={s.error} retry={() => s.run()} />}
       {s.data?.length === 0 && <Empty />}
-      {s.data?.length > 0 && (<>
-        <div className="list" style={{ marginTop: 12 }}>
+      {s.data?.length > 0 && (<><div className="list" style={{ marginTop: 12 }}>
           {s.data.map((t, i) => (
             <div className="row" key={t.id || i} onClick={() =>
               tab === 'archive' ? openArchive(t) : play({ ...t, dlUrl: t.download && t.download !== 'archive' ? t.download : null })}
@@ -327,30 +282,18 @@ export function Music() {
                     style={{ width: 42, height: 42, borderRadius: 9, objectFit: 'cover', flex: '0 0 auto', background: 'var(--s3)' }}
                     onError={(e) => { e.target.style.visibility = 'hidden'; }} />
                 : <div style={{ width: 42, height: 42, borderRadius: 9, background: 'var(--s3)', display: 'grid', placeItems: 'center', flex: '0 0 auto' }}>
-                    {tab === 'radio' ? '📻' : '🎵'}</div>}
-              <div className="main">
-                <b style={{ fontSize: 13.5 }}>{(t.title || t.name || '').slice(0, 48)}</b>
-                <span className="dim sm">
+                    {tab === 'radio' ? '<Icon n="radio" size={17} />' : '<Icon n="music" size={17} />'}</div>}
+              <div className="main"><b style={{ fontSize: 13.5 }}>{(t.title || t.name || '').slice(0, 48)}</b><span className="dim sm">
                   {t.artist || t.country || ''}
                   {t.bitrate ? ` · ${t.bitrate}kbps ${t.codec}` : ''}
                   {t.dur ? ` · ${Math.floor(t.dur / 60)}:${String(t.dur % 60).padStart(2, '0')}` : ''}
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: 5, alignItems: 'center', flex: '0 0 auto' }}>
-                {t.download && t.download !== 'archive' && <span className="tag g">⬇</span>}
-                {tab === 'archive' && <span className="tag g">⬇</span>}
+                </span></div><div style={{ display: 'flex', gap: 5, alignItems: 'center', flex: '0 0 auto' }}>
+                {t.download && t.download !== 'archive' && <span className="tag g"><Icon n="download" size={16} /></span>}
+                {tab === 'archive' && <span className="tag g"><Icon n="download" size={16} /></span>}
                 {tab === 'itunes' && <span className="tag w">30s</span>}
-                <span style={{ fontSize: 17 }}>▶</span>
-              </div>
-            </div>))}
-        </div>
-        <Src meta={s.meta} />
-      </>)}
+                <span style={{ fontSize: 17 }}>▶</span></div></div>))}
+        </div><Src meta={s.meta} /></>)}
     </>)}
 
-    <div className="src" style={{ marginTop: 14 }}>
-      <span className="dot" />
-      <span>Legal sources only. ⬇ shows where the licence permits download; live radio &amp; previews are play-only.</span>
-    </div>
-  </>);
+    <div className="src" style={{ marginTop: 14 }}><span className="dot" /><span>Legal sources only. <Icon n="download" size={16} /> shows where the licence permits download; live radio &amp; previews are play-only.</span></div></>);
 }

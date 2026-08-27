@@ -8,6 +8,7 @@
  */
 import React, { useCallback, useRef, useState } from 'react';
 import { Card, Chips, Copy, fmt } from '../ui/kit';
+import { Icon } from '../ui/icons';
 
 const human = (b) => b < 1024 ? b + ' B' : b < 1048576 ? (b/1024).toFixed(1) + ' KB' : (b/1048576).toFixed(2) + ' MB';
 
@@ -21,13 +22,8 @@ function Drop({ accept, multiple, onFiles, hint }) {
       onDragLeave={() => setOver(false)}
       onDrop={(e) => { e.preventDefault(); setOver(false); onFiles([...e.dataTransfer.files]); }}
       style={{ border: `2px dashed ${over ? 'var(--green)' : 'var(--line2)'}`, borderRadius: 16,
-        padding: '30px 16px', textAlign: 'center', cursor: 'pointer', background: over ? 'rgba(0,255,156,.05)' : 'var(--s1)' }}>
-      <div style={{ fontSize: 32 }}>📁</div>
-      <b style={{ display: 'block', marginTop: 8 }}>Tap or drop files</b>
-      <span className="dim sm">{hint}</span>
-      <input ref={ref} type="file" accept={accept} multiple={multiple} hidden
-        onChange={(e) => onFiles([...e.target.files])} />
-    </div>);
+        padding: '30px 16px', textAlign: 'center', cursor: 'pointer', background: over ? 'rgba(0,255,156,.05)' : 'var(--s1)' }}><div style={{ fontSize: 32 }}></div><b style={{ display: 'block', marginTop: 8 }}>Tap or drop files</b><span className="dim sm">{hint}</span><input ref={ref} type="file" accept={accept} multiple={multiple} hidden
+        onChange={(e) => onFiles([...e.target.files])} /></div>);
 }
 
 const dl = (blob, name) => {
@@ -66,20 +62,10 @@ export function ImageConvert() {
     setOut(res); setBusy(false);
   }, [files, fmtOut, quality, maxW]);
 
-  return (<>
-    <Drop accept="image/*" multiple hint="JPG · PNG · WEBP · GIF · BMP · AVIF" onFiles={(f) => { setFiles(f); setOut([]); }} />
-    {files.length > 0 && (<>
-      <div className="dim sm" style={{ margin: '10px 0' }}>{files.length} file(s) · {human(files.reduce((s, f) => s + f.size, 0))}</div>
-      <div className="fld"><label>Output format</label>
-        <Chips items={[{v:'image/webp',l:'WEBP'},{v:'image/jpeg',l:'JPG'},{v:'image/png',l:'PNG'}]}
-          value={fmtOut} onPick={setFmtOut} /></div>
-      <div className="fld"><label>Quality {Math.round(quality*100)}%</label>
-        <input type="range" min="0.1" max="1" step="0.05" value={quality} onChange={(e) => setQuality(+e.target.value)} /></div>
-      <div className="fld"><label>Max width {maxW || 'original'}</label>
-        <input type="range" min="0" max="4000" step="100" value={maxW} onChange={(e) => setMaxW(+e.target.value)} /></div>
-      <button className="btn" style={{ width: '100%' }} disabled={busy} onClick={convert}>
-        {busy ? 'Converting…' : `Convert ${files.length} file(s)`}</button>
-    </>)}
+  return (<><Drop accept="image/*" multiple hint="JPG · PNG · WEBP · GIF · BMP · AVIF" onFiles={(f) => { setFiles(f); setOut([]); }} />
+    {files.length > 0 && (<><div className="dim sm" style={{ margin: '10px 0' }}>{files.length} file(s) · {human(files.reduce((s, f) => s + f.size, 0))}</div><div className="fld"><label>Output format</label><Chips items={[{v:'image/webp',l:'WEBP'},{v:'image/jpeg',l:'JPG'},{v:'image/png',l:'PNG'}]}
+          value={fmtOut} onPick={setFmtOut} /></div><div className="fld"><label>Quality {Math.round(quality*100)}%</label><input type="range" min="0.1" max="1" step="0.05" value={quality} onChange={(e) => setQuality(+e.target.value)} /></div><div className="fld"><label>Max width {maxW || 'original'}</label><input type="range" min="0" max="4000" step="100" value={maxW} onChange={(e) => setMaxW(+e.target.value)} /></div><button className="btn" style={{ width: '100%' }} disabled={busy} onClick={convert}>
+        {busy ? 'Converting…' : `Convert ${files.length} file(s)`}</button></>)}
     {out.length > 0 && (
       <div className="list" style={{ marginTop: 12 }}>
         {out.map((o, i) => (
@@ -89,8 +75,7 @@ export function ImageConvert() {
               {o.error ? <span style={{ color: 'var(--bad)' }} className="sm">{o.error}</span>
               : <span className="dim sm">{human(o.before)} → {human(o.after)}
                   <span style={{ color: o.after < o.before ? 'var(--green)' : 'var(--warn)' }}>
-                    {' '}({o.after < o.before ? '−' : '+'}{Math.abs(Math.round((1 - o.after/o.before) * 100))}%)</span>
-                </span>}</div>
+                    {' '}({o.after < o.before ? '−' : '+'}{Math.abs(Math.round((1 - o.after/o.before) * 100))}%)</span></span>}</div>
             {o.blob && <button className="btn sm" onClick={() => dl(o.blob, o.name)}>⬇</button>}
           </div>))}
         {out.filter((o) => o.blob).length > 1 &&
@@ -124,17 +109,10 @@ export function ImagesToPdf() {
     setBusy(false);
   };
 
-  return (<>
-    <Drop accept="image/*" multiple hint="Select images in page order" onFiles={(f) => setFiles(f)} />
-    {files.length > 0 && (<>
-      <div className="dim sm" style={{ margin: '10px 0' }}>{files.length} page(s)</div>
-      <div className="list">{files.map((f, i) => (
-        <div className="row" key={i}><span className="dim mono">{i + 1}</span>
-          <div className="main"><b style={{ fontSize: 12.5 }}>{f.name}</b>
-            <span className="dim sm">{human(f.size)}</span></div></div>))}</div>
-      <button className="btn" style={{ width: '100%', marginTop: 12 }} disabled={busy} onClick={make}>
-        {busy ? 'Building…' : '📄 Create PDF'}</button>
-    </>)}
+  return (<><Drop accept="image/*" multiple hint="Select images in page order" onFiles={(f) => setFiles(f)} />
+    {files.length > 0 && (<><div className="dim sm" style={{ margin: '10px 0' }}>{files.length} page(s)</div><div className="list">{files.map((f, i) => (
+        <div className="row" key={i}><span className="dim mono">{i + 1}</span><div className="main"><b style={{ fontSize: 12.5 }}>{f.name}</b><span className="dim sm">{human(f.size)}</span></div></div>))}</div><button className="btn" style={{ width: '100%', marginTop: 12 }} disabled={busy} onClick={make}>
+        {busy ? 'Building…' : '📄 Create PDF'}</button></>)}
   </>);
 }
 
@@ -197,20 +175,11 @@ export function AudioConvert() {
     setBusy(false);
   };
 
-  return (<>
-    <Drop accept="audio/*" hint="MP3 · M4A · OGG · FLAC · WAV → WAV (lossless)" onFiles={(f) => { setFile(f[0]); setInfo(null); }} />
-    {file && (<>
-      <div className="dim sm" style={{ margin: '10px 0' }}>{file.name} · {human(file.size)}</div>
-      <button className="btn" style={{ width: '100%' }} disabled={busy} onClick={toWav}>
+  return (<><Drop accept="audio/*" hint="MP3 · M4A · OGG · FLAC · WAV → WAV (lossless)" onFiles={(f) => { setFile(f[0]); setInfo(null); }} />
+    {file && (<><div className="dim sm" style={{ margin: '10px 0' }}>{file.name} · {human(file.size)}</div><button className="btn" style={{ width: '100%' }} disabled={busy} onClick={toWav}>
         {busy ? 'Decoding…' : '🎵 Convert to WAV'}</button>
-      {info && <Card style={{ marginTop: 12 }}>
-        <div className="kv"><span>Channels</span><b>{info.ch}</b></div>
-        <div className="kv"><span>Sample rate</span><b>{fmt(info.rate)} Hz</b></div>
-        <div className="kv"><span>Duration</span><b>{info.dur.toFixed(1)}s</b></div>
-      </Card>}
-      <div className="src"><span className="dot warn" />
-        <span>Browser can decode almost any format but can only *encode* WAV without a 25 MB library.</span></div>
-    </>)}
+      {info && <Card style={{ marginTop: 12 }}><div className="kv"><span>Channels</span><b>{info.ch}</b></div><div className="kv"><span>Sample rate</span><b>{fmt(info.rate)} Hz</b></div><div className="kv"><span>Duration</span><b>{info.dur.toFixed(1)}s</b></div></Card>}
+      <div className="src"><span className="dot warn" /><span>Browser can decode almost any format but can only *encode* WAV without a 25 MB library.</span></div></>)}
   </>);
 }
 
@@ -261,23 +230,14 @@ export function VideoFrames() {
     URL.revokeObjectURL(v.src);
   };
 
-  return (<>
-    <Drop accept="video/*" hint="MP4 · WEBM · MOV → extract frames as JPG" onFiles={(f) => { setFile(f[0]); setFrames([]); }} />
-    {file && (<>
-      <div className="dim sm" style={{ margin: '10px 0' }}>{file.name} · {human(file.size)}</div>
-      <div className="fld"><label>Frames: {count}</label>
-        <input type="range" min="2" max="20" value={count} onChange={(e) => setCount(+e.target.value)} /></div>
-      <button className="btn" style={{ width: '100%' }} disabled={busy} onClick={grab}>
-        {busy ? 'Extracting…' : '🎬 Extract frames'}</button>
-    </>)}
+  return (<><Drop accept="video/*" hint="MP4 · WEBM · MOV → extract frames as JPG" onFiles={(f) => { setFile(f[0]); setFrames([]); }} />
+    {file && (<><div className="dim sm" style={{ margin: '10px 0' }}>{file.name} · {human(file.size)}</div><div className="fld"><label>Frames: {count}</label><input type="range" min="2" max="20" value={count} onChange={(e) => setCount(+e.target.value)} /></div><button className="btn" style={{ width: '100%' }} disabled={busy} onClick={grab}>
+        {busy ? 'Extracting…' : '🎬 Extract frames'}</button></>)}
     {frames.length > 0 && (
       <div className="grid" style={{ marginTop: 12, gridTemplateColumns: 'repeat(auto-fill,minmax(100px,1fr))' }}>
         {frames.map((f, i) => (
           <div key={i} className="tile" style={{ padding: 0, minHeight: 0, overflow: 'hidden' }}
-            onClick={() => dl(f.blob, `frame-${f.t}s.jpg`)}>
-            <img src={f.url} alt="" style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover' }} />
-            <small style={{ padding: 5 }}>{f.t}s ⬇</small>
-          </div>))}
+            onClick={() => dl(f.blob, `frame-${f.t}s.jpg`)}><img src={f.url} alt="" style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover' }} /><small style={{ padding: 5 }}>{f.t}s ⬇</small></div>))}
       </div>)}
   </>);
 }
@@ -313,19 +273,13 @@ export function DataConvert() {
         out = '<?xml version="1.0"?>\n<root>' + x(o) + '</root>';
       }
     }
-  } catch (e) { err = '⚠️ ' + e.message; }
-  return (<>
-    <Chips items={[{v:'json2csv',l:'JSON → CSV'},{v:'csv2json',l:'CSV → JSON'},{v:'json2xml',l:'JSON → XML'}]}
-      value={mode} onPick={setMode} />
-    <div className="fld"><label>Input</label>
-      <textarea value={inp} onChange={(e) => setInp(e.target.value)}
+  } catch (e) { err = '<Icon n="warn" size={16} /> ' + e.message; }
+  return (<><Chips items={[{v:'json2csv',l:'JSON → CSV'},{v:'csv2json',l:'CSV → JSON'},{v:'json2xml',l:'JSON → XML'}]}
+      value={mode} onPick={setMode} /><div className="fld"><label>Input</label><textarea value={inp} onChange={(e) => setInp(e.target.value)}
         placeholder={mode === 'csv2json' ? 'name,age\nAmit,30' : '[{"name":"Amit","age":30}]'} /></div>
     {err ? <div className="err"><p>{err}</p></div>
-      : out && <><div className="out">{out}</div>
-          <div className="btnrow"><Copy text={out} />
-            <button className="btn ghost sm" onClick={() => dl(new Blob([out]),
-              'converted.' + (mode === 'json2csv' ? 'csv' : mode === 'csv2json' ? 'json' : 'xml'))}>⬇ Download</button>
-          </div></>}
+      : out && <><div className="out">{out}</div><div className="btnrow"><Copy text={out} /><button className="btn ghost sm" onClick={() => dl(new Blob([out]),
+              'converted.' + (mode === 'json2csv' ? 'csv' : mode === 'csv2json' ? 'json' : 'xml'))}><Icon n="download" size={16} /> Download</button></div></>}
   </>);
 }
 
@@ -334,19 +288,8 @@ export function TextToFile() {
   const [text, setText] = useState('');
   const [name, setName] = useState('note');
   const [ext, setExt] = useState('txt');
-  return (<>
-    <div className="fld"><label>Content</label>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Type anything…" /></div>
-    <div className="g2">
-      <div className="fld"><label>File name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} /></div>
-      <div className="fld"><label>Extension</label>
-        <select value={ext} onChange={(e) => setExt(e.target.value)}>
-          {['txt','md','csv','json','html','xml','js','css','sql','yaml','log'].map((x) => <option key={x}>{x}</option>)}
-        </select></div>
-    </div>
-    <button className="btn" style={{ width: '100%' }} disabled={!text}
-      onClick={() => dl(new Blob([text], { type: 'text/plain' }), `${name}.${ext}`)}>⬇ Download file</button>
-    <div className="dim sm" style={{ marginTop: 8 }}>{text.length} characters · {human(new Blob([text]).size)}</div>
-  </>);
+  return (<><div className="fld"><label>Content</label><textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Type anything…" /></div><div className="g2"><div className="fld"><label>File name</label><input value={name} onChange={(e) => setName(e.target.value)} /></div><div className="fld"><label>Extension</label><select value={ext} onChange={(e) => setExt(e.target.value)}>
+          {['txt','md','csv','json','html','xml','js','css','sql','yaml','log'].map((x) =><option key={x}>{x}</option>)}
+        </select></div></div><button className="btn" style={{ width: '100%' }} disabled={!text}
+      onClick={() => dl(new Blob([text], { type: 'text/plain' }), `${name}.${ext}`)}><Icon n="download" size={16} /> Download file</button><div className="dim sm" style={{ marginTop: 8 }}>{text.length} characters · {human(new Blob([text]).size)}</div></>);
 }

@@ -5,6 +5,7 @@
 import React, { useState } from 'react';
 import * as T from '../core/trains';
 import { useData, Spin, Err, Empty, Src, Search, Card, Chips, fmt } from '../ui/kit';
+import { Icon } from '../ui/icons';
 
 const { fmtTime, delayLabel } = T;
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -217,7 +218,7 @@ export function TrainsBetween() {
     <StnPicker label="From" value={from} onPick={(c) => { setFrom(c); b.run({ from: c, to }); }} />
     <StnPicker label="To" value={to} onPick={(c) => { setTo(c); b.run({ from, to: c }); }} />
     <div className="btnrow">
-      <button className="btn" style={{ flex: 1 }} onClick={() => b.run({ from, to })}>🚆 Search</button>
+      <button className="btn" style={{ flex: 1 }} onClick={() => b.run({ from, to })}><Icon n="train" size={17} /> Search</button>
       <button className="btn ghost" onClick={() => { setFrom(to); setTo(from); b.run({ from: to, to: from }); }}>⇄</button>
     </div>
     <div className="dim sm" style={{ marginTop: 6 }}>

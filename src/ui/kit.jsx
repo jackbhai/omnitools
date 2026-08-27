@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { resolve } from '../core/engine';
+import { Icon } from './icons';
 
 /* ---------------------------------------------------------- data hook */
 export function useData(cap, pool, params, { auto = true, ttl, deps = [] } = {}) {
@@ -56,7 +57,10 @@ export function Err({ error, retry }) {
         <details>
           <summary>Tried {a.length} source{a.length > 1 ? 's' : ''}</summary>
           <ul>{a.map((x, i) => (
-            <li key={i}>{x.ok ? '✅' : '❌'} {x.label} · {x.ms}ms {x.error ? `— ${x.error}` : ''}</li>
+            <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon n={x.ok ? 'check' : 'x'} size={13}
+                style={{ color: x.ok ? 'var(--green)' : 'var(--bad)' }} />
+              {x.label} · {x.ms}ms {x.error ? `— ${x.error}` : ''}</li>
           ))}</ul>
         </details>
       )}
@@ -132,11 +136,25 @@ export function Copy({ text, label = 'Copy' }) {
 export const fmt = (n, d = 0) =>
   n == null || Number.isNaN(+n) ? '—' : (+n).toLocaleString('en-IN', { maximumFractionDigits: d });
 
+/**
+ * WMO weather codes -> [label, icon name].
+ *
+ * These used to hold emoji. An emoji is a different font on every device,
+ * so the forecast row looked different on each phone and could not take the
+ * theme colour. The second element is now a key into src/ui/icons.jsx and is
+ * rendered with <Icon n={...} />.
+ */
 export const WMO = {
-  0: ['Clear', '☀️'], 1: ['Mainly clear', '🌤️'], 2: ['Partly cloudy', '⛅'], 3: ['Overcast', '☁️'],
-  45: ['Fog', '🌫️'], 48: ['Rime fog', '🌫️'], 51: ['Light drizzle', '🌦️'], 53: ['Drizzle', '🌦️'],
-  55: ['Heavy drizzle', '🌧️'], 61: ['Light rain', '🌦️'], 63: ['Rain', '🌧️'], 65: ['Heavy rain', '🌧️'],
-  71: ['Light snow', '🌨️'], 73: ['Snow', '❄️'], 75: ['Heavy snow', '❄️'], 80: ['Showers', '🌦️'],
-  81: ['Showers', '🌧️'], 82: ['Violent showers', '⛈️'], 95: ['Thunderstorm', '⛈️'], 96: ['Storm', '⛈️'], 99: ['Severe storm', '⛈️'],
+  0:  ['Clear', 'sun'],           1:  ['Mainly clear', 'sun'],
+  2:  ['Partly cloudy', 'cloud'], 3:  ['Overcast', 'cloud'],
+  45: ['Fog', 'cloud'],           48: ['Rime fog', 'cloud'],
+  51: ['Light drizzle', 'drop'],  53: ['Drizzle', 'drop'],
+  55: ['Heavy drizzle', 'drop'],  61: ['Light rain', 'drop'],
+  63: ['Rain', 'drop'],           65: ['Heavy rain', 'drop'],
+  71: ['Light snow', 'drop'],     73: ['Snow', 'drop'],
+  75: ['Heavy snow', 'drop'],     80: ['Showers', 'drop'],
+  81: ['Showers', 'drop'],        82: ['Violent showers', 'drop'],
+  95: ['Thunderstorm', 'wind'],   96: ['Storm', 'wind'],
+  99: ['Severe storm', 'wind'],
 };
-export const wmo = (c) => WMO[c] || ['—', '🌡️'];
+export const wmo = (c) => WMO[c] || ['—', 'thermo'];

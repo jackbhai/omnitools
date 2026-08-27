@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePlayer, PRESETS, chain } from '../core/player';
+import { Icon } from './icons';
 
 const mmss = (s) => (!s || !isFinite(s)) ? '0:00'
   : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -23,17 +24,17 @@ export function MiniPlayer() {
       <div className="mini-row">
         {p.track.art
           ? <img src={p.track.art} alt="" onError={(e) => { e.target.style.visibility = 'hidden'; }} />
-          : <div className="mini-ph">🎵</div>}
+          : <div className="mini-ph"><Icon n="music" size={17} /></div>}
         <div className="mini-txt">
           <b>{p.track.title || p.track.name}</b>
           <span>{p.err ? <em style={{ color: 'var(--bad)' }}>{p.err}</em>
             : p.loading ? (p.stage || 'Loading ad-free audio…')
             : (p.track.artist || p.track.country || '')}</span>
         </div>
-        <button className="mini-btn" onClick={(e) => { e.stopPropagation(); p.step(-1); }}>⏮</button>
+        <button className="mini-btn" onClick={(e) => { e.stopPropagation(); p.step(-1); }}>‹‹</button>
         <button className="mini-btn play" onClick={(e) => { e.stopPropagation(); p.toggle(); }}>
           {p.loading ? '⋯' : p.playing ? '⏸' : '▶'}</button>
-        <button className="mini-btn" onClick={(e) => { e.stopPropagation(); p.step(1); }}>⏭</button>
+        <button className="mini-btn" onClick={(e) => { e.stopPropagation(); p.step(1); }}>››</button>
       </div>
     </div>
   </>);
@@ -93,7 +94,7 @@ export function FullPlayer() {
         <button className="iconbtn" onClick={() => p.setFull(false)}>⌄</button>
         <div className="full-ttl"><b>Now playing</b><span>{t.src || 'OmniTools'}</span></div>
         <button className="iconbtn" onClick={() => p.setSleep(p.sleep ? 0 : 30)}>
-          {p.sleep ? '⏰' : '🌙'}</button>
+          <Icon n={p.sleep ? 'timer' : 'clock'} size={17} /></button>
       </div>
 
       <div className="full-tabs">
@@ -112,7 +113,7 @@ export function FullPlayer() {
           ) : (
             <div className="art-wrap">
               {t.art ? <img src={t.art} alt="" className="art" onError={(e) => { e.target.style.display = 'none'; }} />
-                : <div className="art ph">🎵</div>}
+                : <div className="art ph"><Icon n="music" size={17} /></div>}
             </div>)}
           <canvas ref={cv} className="viz" style={{ display: p.playing ? 'block' : 'none' }} />
           <h2 className="full-name">{t.title || t.name}</h2>
@@ -154,8 +155,8 @@ export function FullPlayer() {
             <label className="dim sm">Speed {p.rate}×</label>
             <input type="range" min="0.5" max="2" step="0.05" value={p.rate} onChange={(e) => p.setRateV(+e.target.value)} />
             <div className="btnrow">
-              <button className={`cat ${p.comp ? 'on' : ''}`} onClick={() => p.setCompV(!p.comp)}>🔊 Loudness</button>
-              <button className="cat" onClick={() => { p.applyPreset('Flat'); p.setBassV(0); p.setTrebV(0); p.setRateV(1); }}>↺ Reset</button>
+              <button className={`cat ${p.comp ? 'on' : ''}`} onClick={() => p.setCompV(!p.comp)}><Icon n="radio" size={13} /> Loudness</button>
+              <button className="cat" onClick={() => { p.applyPreset('Flat'); p.setBassV(0); p.setTrebV(0); p.setRateV(1); }}><Icon n="refresh" size={13} /> Reset</button>
             </div>
           </div>)}
 
@@ -168,7 +169,7 @@ export function FullPlayer() {
                 <span className="dim mono" style={{ width: 20 }}>{i + 1}</span>
                 <div className="main"><b style={{ fontSize: 13 }}>{q.title || q.name}</b>
                   <span className="dim sm">{q.artist || ''}</span></div>
-                {i === p.idx && <span style={{ color: 'var(--green)' }}>♪</span>}
+                {i === p.idx && <span style={{ color: 'var(--green)', display:'grid', placeItems:'center' }}><Icon n="music" size={14} /></span>}
               </div>))}
           </div>)}
       </div>
@@ -178,19 +179,19 @@ export function FullPlayer() {
           onChange={(e) => p.seek(+e.target.value)} disabled={!p.dur} />
         <div className="times"><span>{mmss(p.pos)}</span><span>{mmss(p.dur)}</span></div>
         <div className="btns">
-          <button className={`cbtn ${p.shuffle ? 'act' : ''}`} onClick={() => p.setShuffle(!p.shuffle)}>🔀</button>
-          <button className="cbtn" onClick={() => p.step(-1)}>⏮</button>
+          <button className={`cbtn ${p.shuffle ? 'act' : ''}`} onClick={() => p.setShuffle(!p.shuffle)}><Icon n="swap" size={18} /></button>
+          <button className="cbtn" onClick={() => p.step(-1)}>‹‹</button>
           <button className="cbtn big" onClick={p.toggle}>{p.loading ? '⋯' : p.playing ? '⏸' : '▶'}</button>
-          <button className="cbtn" onClick={() => p.step(1)}>⏭</button>
+          <button className="cbtn" onClick={() => p.step(1)}>››</button>
           <button className={`cbtn ${p.repeat !== 'off' ? 'act' : ''}`}
             onClick={() => p.setRepeat(p.repeat === 'off' ? 'all' : p.repeat === 'all' ? 'one' : 'off')}>
-            {p.repeat === 'one' ? '🔂' : '🔁'}</button>
+            <Icon n="refresh" size={19} /></button>
         </div>
         <div className="btnrow" style={{ justifyContent: 'center' }}>
           <button className="btn ghost sm" onClick={() => p.seek(Math.max(0, p.pos - 10))}>−10s</button>
           <button className="btn ghost sm" onClick={() => p.seek(p.pos + 10)}>+10s</button>
           {p.sleep > 0 && <span className="tag w">sleep {p.sleep}m</span>}
-          {t.dlUrl && <a className="btn sm" href={t.dlUrl} download target="_blank" rel="noreferrer">⬇</a>}
+          {t.dlUrl && <a className="btn sm" href={t.dlUrl} download target="_blank" rel="noreferrer"><Icon n="download" size={16} /></a>}
         </div>
       </div>
     </div>);

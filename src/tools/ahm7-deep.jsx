@@ -15,6 +15,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { jget } from '../core/engine';
 import { useData, Spin, Err, Empty, Src, Search, Card, Copy, fmt } from '../ui/kit';
+import { Icon } from '../ui/icons';
 
 const B = 'https://ahm7xmakki.com/api/';
 const img = (u) => !u ? '' : u.startsWith('http') ? u : `https://ahm7xmakki.com${u}`;
@@ -60,9 +61,9 @@ export function Manga() {
       <div className="btnrow">
         <button className="btn ghost sm" onClick={() => setChapter(null)}>‹ Chapters</button>
         <button className="btn ghost sm" disabled={idx <= 0}
-          onClick={() => setChapter(all[idx - 1])}>⏮ Prev</button>
+          onClick={() => setChapter(all[idx - 1])}>‹‹ Prev</button>
         <button className="btn ghost sm" disabled={idx < 0 || idx >= all.length - 1}
-          onClick={() => setChapter(all[idx + 1])}>Next ⏭</button>
+          onClick={() => setChapter(all[idx + 1])}>Next ››</button>
       </div>
       <div className="chead" style={{ marginTop: 10 }}>{chapter.name}</div>
       {pgs.loading && <Spin t="Loading pages" />}
@@ -75,7 +76,7 @@ export function Manga() {
               background: 'var(--s2)', minHeight: 120 }} />))}
         <div className="btnrow" style={{ marginTop: 10 }}>
           <button className="btn" style={{ flex: 1 }} disabled={idx < 0 || idx >= all.length - 1}
-            onClick={() => { setChapter(all[idx + 1]); window.scrollTo(0, 0); }}>Next chapter ⏭</button>
+            onClick={() => { setChapter(all[idx + 1]); window.scrollTo(0, 0); }}>Next chapter ››</button>
         </div>
       </>)}
     </>);
@@ -135,7 +136,7 @@ export function Manga() {
             {x.cover ? <img src={x.cover} alt="" loading="lazy"
                 style={{ width: '100%', aspectRatio: '2/3', objectFit: 'cover' }} />
               : <div style={{ aspectRatio: '2/3', display: 'grid', placeItems: 'center',
-                  fontSize: 28, background: 'var(--s2)' }}>📖</div>}
+                  fontSize: 28, background: 'var(--s2)' }}><Icon n="book" size={20} /></div>}
             <div style={{ padding: 8, textAlign: 'left' }}>
               <b style={{ fontSize: 11.5, display: 'block' }}>{String(x.name).slice(0, 40)}</b>
               {x.status && <span className="dim" style={{ fontSize: 10 }}>{x.status}</span>}
@@ -188,9 +189,9 @@ export function Novels() {
     return (<>
       <div className="btnrow">
         <button className="btn ghost sm" onClick={() => setChapter(null)}>‹ Chapters</button>
-        <button className="btn ghost sm" disabled={idx <= 0} onClick={() => setChapter(all[idx - 1])}>⏮</button>
+        <button className="btn ghost sm" disabled={idx <= 0} onClick={() => setChapter(all[idx - 1])}>‹‹</button>
         <button className="btn ghost sm" disabled={idx < 0 || idx >= all.length - 1}
-          onClick={() => setChapter(all[idx + 1])}>⏭</button>
+          onClick={() => setChapter(all[idx + 1])}>››</button>
         <button className="btn ghost sm" onClick={() => setSize((s) => Math.max(13, s - 1))}>A−</button>
         <button className="btn ghost sm" onClick={() => setSize((s) => Math.min(24, s + 1))}>A+</button>
       </div>
@@ -205,7 +206,7 @@ export function Novels() {
         <div className="btnrow" style={{ marginTop: 10 }}>
           <Copy text={txt.data} label="Copy text" />
           <button className="btn" style={{ flex: 1 }} disabled={idx < 0 || idx >= all.length - 1}
-            onClick={() => { setChapter(all[idx + 1]); window.scrollTo(0, 0); }}>Next chapter ⏭</button>
+            onClick={() => { setChapter(all[idx + 1]); window.scrollTo(0, 0); }}>Next chapter ››</button>
         </div>
       </>)}
     </>);
@@ -259,7 +260,7 @@ export function Novels() {
             {x.cover?.url ? <img src={x.cover.url} alt="" loading="lazy"
                 style={{ width: 44, height: 60, borderRadius: 7, objectFit: 'cover', flex: '0 0 auto' }} />
               : <div style={{ width: 44, height: 60, borderRadius: 7, background: 'var(--s3)',
-                  display: 'grid', placeItems: 'center', flex: '0 0 auto' }}>📚</div>}
+                  display: 'grid', placeItems: 'center', flex: '0 0 auto' }}><Icon n="books" size={20} /></div>}
             <div className="main"><b style={{ fontSize: 13 }}>{x.title}</b>
               {x.authorName && <span className="dim sm">{x.authorName}</span>}
               {x.introduction && <span className="dim sm">{String(x.introduction).slice(0, 90)}</span>}</div>

@@ -17,6 +17,7 @@ import React, { useMemo, useState } from 'react';
 import { jget } from '../core/engine';
 import * as T from '../core/trains';
 import { useData, Spin, Err, Empty, Src, Card } from '../ui/kit';
+import { Icon } from '../ui/icons';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
@@ -205,7 +206,7 @@ export function TrainJourney() {
     <StnPicker label="To" value={to} onPick={setTo} />
     <div className="btnrow">
       <button className="btn" style={{ flex: 1 }} onClick={() => j.run({ from, to })}>
-        🧭 Find journeys</button>
+        <Icon n="compass" size={17} /> Find journeys</button>
       <button className="btn ghost" onClick={() => { setFrom(to); setTo(from); }}>⇄</button>
     </div>
     <div className="dim sm" style={{ marginTop: 6 }}>
@@ -218,7 +219,7 @@ export function TrainJourney() {
     {d && (<>
       {d.direct.length > 0 && (<>
         <div className="chead" style={{ marginTop: 14 }}>
-          ✅ Direct trains ({d.direct.length})</div>
+          <Icon n="check" size={16} /> Direct trains ({d.direct.length})</div>
         <div className="list">
           {d.direct.map((t, i) => <TrainCard key={i} t={t} showStops />)}
         </div>
@@ -226,7 +227,7 @@ export function TrainJourney() {
 
       {d.connections.length > 0 && (<>
         <div className="chead" style={{ marginTop: 16 }}>
-          🔄 With one change ({d.connections.length})</div>
+          <Icon n="refresh" size={15} /> With one change ({d.connections.length})</div>
         {d.connections.map((c, i) => (
           <Card key={i} style={{ marginTop: 10 }}>
             <div className="chead">
@@ -238,7 +239,7 @@ export function TrainJourney() {
               <TrainCard t={c.t1} showStops />
               <div className="col" style={{ background: 'rgba(255,209,102,.08)' }}>
                 <span style={{ color: 'var(--warn)', fontSize: 12.5, fontWeight: 600 }}>
-                  🔄 Change at {c.hub} — {Math.floor(c.wait / 60)}h {c.wait % 60}m to connect</span>
+                  <Icon n="refresh" size={15} /> Change at {c.hub} — {Math.floor(c.wait / 60)}h {c.wait % 60}m to connect</span>
               </div>
               <TrainCard t={c.t2} showStops />
             </div>

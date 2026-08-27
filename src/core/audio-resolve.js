@@ -178,6 +178,7 @@ export function resolveAudio(id, { onProgress } = {}) {
       expires: Date.now() + TTL,
     };
     cacheSet(id, rec);
+    notifyWarm(id);
     return { ...rec, via: 'AHM7' };
   })();
 
@@ -224,6 +225,17 @@ export function prefetchAudio(id) {
 
 /** How many of these ids are ready to play instantly. */
 export const warmCount = (ids = []) => ids.filter((i) => i && cacheGet(i)).length;
+
+/**
+ * Subscribers notified whenever a stream finishes resolving.
+ *
+ * Without this the "ready" badge never appeared: caching happens outside
+ * React, so nothing re-rendered when a background prefetch landed and the
+ * list kept showing every track as cold.
+ */
+const listeners = new Set();
+export function onWarm(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+function notifyWarm(id) { for (const f of listeners) { try { f(id); } catch {} } }
 
 /**
  * Warm the next N tracks of a queue so Next feels instant.

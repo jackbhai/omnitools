@@ -9,6 +9,7 @@ import React, { useRef, useState } from 'react';
 import { jget } from '../core/engine';
 import { ahm7Json } from '../core/audio-resolve';
 import { Card, Spin, Err, Chips, Copy, fmt } from '../ui/kit';
+import { Icon } from '../ui/icons';
 
 const PIPED = ['https://api.piped.private.coffee', 'https://pipedapi.kavin.rocks', 'https://pipedapi.adminforge.de'];
 /** Filenames must not contain path or reserved characters. */
@@ -160,9 +161,9 @@ export function Downloader() {
     </div>
     <div className="btnrow">
       <button className="btn" style={{ flex: 1 }} disabled={busy || !url.trim()} onClick={fetchInfo}>
-        {busy ? 'Fetching…' : '🔍 Fetch'}</button>
+        {busy ? 'Fetching…' : '<Icon n="search" size={16} /> Fetch'}</button>
       <button className="btn ghost" onClick={async () => {
-        try { setUrl(await navigator.clipboard.readText()); } catch {} }}>📋 Paste</button>
+        try { setUrl(await navigator.clipboard.readText()); } catch {} }}><Icon n="list" size={18} /> Paste</button>
     </div>
 
     {busy && <Spin t="Reading the link" />}
@@ -198,17 +199,17 @@ export function Downloader() {
 
       {/* ---------------- AUDIO ---------------- */}
       <Card>
-        <div className="chead">🎵 Audio only</div>
+        <div className="chead"><Icon n="music" size={17} /> Audio only</div>
         {info.audioOptions?.length > 0 ? (
           <div className="btnrow">
             {info.audioOptions.slice(0, 6).map((a, i) => (
               <button key={i} className="btn sm" onClick={() => grab(a.url, `${sanitize(info.title)}-${a.q.replace(/\s+/g,'')}.m4a`)}>
-                ⬇ {a.q}{a.size ? ` · ${(a.size / 1048576).toFixed(1)}MB` : ''}</button>))}
+                <Icon n="download" size={16} /> {a.q}{a.size ? ` · ${(a.size / 1048576).toFixed(1)}MB` : ''}</button>))}
           </div>
         ) : info.audio ? (
           <button className="btn" style={{ width: '100%' }}
             onClick={() => grab(info.audio, `${sanitize(info.title)}.m4a`)}>
-            {saving.endsWith('.m4a') ? (note || 'Downloading…') : '⬇ Download audio (M4A)'}</button>
+            {saving.endsWith('.m4a') ? (note || 'Downloading…') : '<Icon n="download" size={16} /> Download audio (M4A)'}</button>
         ) : <span className="dim sm">No separate audio track available.</span>}
         {info.audio && (
           <audio controls src={info.audio} style={{ width: '100%', marginTop: 10 }} preload="none" />)}
@@ -216,24 +217,24 @@ export function Downloader() {
 
       {/* ---------------- THUMBNAIL ---------------- */}
       <Card>
-        <div className="chead">🖼️ Thumbnail</div>
+        <div className="chead"><Icon n="image" size={18} /> Thumbnail</div>
         {info.id ? (
           <div className="btnrow">
             {THUMBS.map(([k, l]) => (
               <button key={k} className="btn ghost sm"
                 onClick={() => grab(`https://i.ytimg.com/vi/${info.id}/${k}.jpg`, `${sanitize(info.title)}-${k}.jpg`)}>
-                ⬇ {l}</button>))}
+                <Icon n="download" size={16} /> {l}</button>))}
           </div>
         ) : info.thumb ? (
           <button className="btn" style={{ width: '100%' }}
-            onClick={() => grab(info.thumb, `${sanitize(info.title)}-thumb.jpg`)}>⬇ Download thumbnail</button>
+            onClick={() => grab(info.thumb, `${sanitize(info.title)}-thumb.jpg`)}><Icon n="download" size={16} /> Download thumbnail</button>
         ) : <span className="dim sm">No thumbnail found.</span>}
         {info.thumb && <div className="btnrow"><Copy text={info.thumb} label="Copy image URL" /></div>}
       </Card>
 
       {/* ---------------- VIDEO + QUALITY ---------------- */}
       <Card>
-        <div className="chead">🎬 Video</div>
+        <div className="chead"><Icon n="film" size={18} /> Video</div>
         {info.qualities?.length > 0 ? (<>
           <div className="dim sm" style={{ marginBottom: 8 }}>
             {info.qualities.length} qualities available
@@ -248,13 +249,13 @@ export function Downloader() {
                 </div>
                 <button className="btn sm" disabled={!!saving}
                   onClick={() => grab(v.url, `${sanitize(info.title)}-${v.q}.mp4`)}>
-                  {saving.includes(v.q) ? (note || '…') : '⬇'}</button>
+                  {saving.includes(v.q) ? (note || '…') : '<Icon n="download" size={16} />'}</button>
               </div>))}
           </div>
         </>) : info.video ? (<>
           <button className="btn" style={{ width: '100%' }} disabled={!!saving}
             onClick={() => grab(info.video, `${sanitize(info.title)}.mp4`)}>
-            {saving.endsWith('.mp4') ? (note || 'Downloading…') : '⬇ Download video (best available)'}</button>
+            {saving.endsWith('.mp4') ? (note || 'Downloading…') : '<Icon n="download" size={16} /> Download video (best available)'}</button>
           <div className="src" style={{ marginTop: 10 }}>
             <span className="dot warn" />
             <span>This source returns a single best-quality file, not a quality list.
