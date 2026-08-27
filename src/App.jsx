@@ -10,6 +10,7 @@ import { MiniPlayer, FullPlayer } from './ui/PlayerUI';
 import { Downloader } from './tools/downloader';
 import * as A from './tools/ahm7';
 import * as MP from './tools/metro-planner';
+import * as BP from './tools/bus-planner';
 import { providerStats } from './core/engine';
 
 /* ------------------------------------------------------------------ registry
@@ -99,10 +100,11 @@ const TOOLS = [
   { id:'certs',     n:'Certificates',  i:'🏆', c:'AHM7', t:'live', d:'Templates',             C:A.Certificates },
   { id:'telenor',   n:'Telenor Quiz',  i:'📶', c:'AHM7', t:'live', d:'Daily answers',         C:A.Telenor },
   { id:'dl',        n:'Downloader',    i:'⬇️', c:'Media',  t:'live', d:'Video/audio/thumb',    C:Downloader },
+  { id:'busplan',   n:'Bus Route',      i:'🚌', c:'Travel', t:'off',  d:'Fare + changes',       C:BP.BusPlanner },
+  { id:'buslist',   n:'Bus Routes',     i:'🗒️', c:'Travel', t:'off',  d:'383 DTC routes',       C:BP.BusRoutesList },
   { id:'metroplan', n:'Metro Route',    i:'🗺️', c:'Travel', t:'off',  d:'Fare + interchanges',  C:MP.MetroPlanner },
   { id:'metronet',  n:'Metro Network',  i:'🚇', c:'Travel', t:'off',  d:'289 stations',         C:MP.MetroNetwork },
   { id:'metrolines',n:'Metro Lines',   i:'🚈', c:'Travel', t:'live', d:'Real DMRC lines',      C:T.MetroLines },
-  { id:'bus',       n:'Bus Routes',    i:'🚌', c:'Travel', t:'live', d:'Routes near you',      C:T.BusRoutes },
   { id:'mandi',     n:'Mandi Prices',  i:'🌾', c:'India',  t:'live', d:'Daily commodity rates', C:T.Mandi },
 
   // ---------- Converters ----------
