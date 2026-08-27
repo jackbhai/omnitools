@@ -10,15 +10,11 @@ import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached,
 import { resolve } from './engine';
 import { notePlay } from './library';
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const Ctx = createContext(null);
 export const usePlayer = () => useContext(Ctx);
 
 const BANDS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-/* 0.05s of silence — played on tap so the <audio> element is unlocked before
-   the ~7s stream resolution finishes and the user gesture expires. */
-const SILENCE = 'data:audio/mpeg;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA' +
-  'gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgP////////////////////////////////8AAAA5' +
-  'TEFNRTMuOTlyAc0AAAAAAAAAABSAJAJAQgAAgAAAAnGMUJAtAAAAAAAAAAAAAAAAAAAA';
 export const PRESETS = {
   Flat: [0,0,0,0,0,0,0,0,0,0],
   'Bass Boost': [10,8,6,3,0,0,0,0,0,0],
@@ -175,7 +171,7 @@ export function PlayerProvider({ children }) {
   const audio = useRef(null);
   const retriedRef = useRef(null);      // last id we already re-resolved once
   const recoveringRef = useRef(false);  // a re-resolve is in flight
-  const unlockingRef = useRef(false);   // the silent gesture-unlock clip is loaded
+  const retryCountRef = useRef(0);      // how many times this track was re-resolved
   const playTokenRef = useRef(0);       // only the newest play() may touch the element
   const autoRadio = useRef(false);      // keep the queue topped up forever
   const [queue, setQueue] = useState([]);
@@ -214,13 +210,23 @@ export function PlayerProvider({ children }) {
     const token = ++playTokenRef.current;
     const stale = () => playTokenRef.current !== token;
 
+    /* Reset any error left over from the previous track.
+       MediaError is sticky: once the element has failed, `el.error` keeps
+       reporting that code until a new load actually succeeds. A stale code 4
+       from the silent unlock clip was being read as a failure of the NEXT
+       track, which is why a song that played perfectly still showed as broken.
+       Calling load() on an empty element clears it. */
+    if (el.error) {
+      try { el.pause(); el.removeAttribute('src'); el.load(); } catch {}
+    }
+
     setErr(''); setLyrics(null);
     if (list) { setQueue(list); setIdx(list.findIndex((x) => (x.id ?? x.url) === (t.id ?? t.url))); }
     setTrack(t); setLoading(true);
     // Do not let background resolves steal bandwidth from the track the user
     // is waiting for — released again as soon as it is actually playing.
     pauseWarming();
-    if (retriedRef.current !== t.id) retriedRef.current = null;
+    if (retriedRef.current !== t.id) { retriedRef.current = null; retryCountRef.current = 0; }
     recoveringRef.current = false;
 
     // YouTube tracks -> resolve to a DIRECT audio stream (no ads, keeps
@@ -237,9 +243,15 @@ export function PlayerProvider({ children }) {
          `unlocking` is checked by the error handler — Chromium reports the
          silent clip as MediaError 4, and treating that as a dead stream was
          killing tracks moments after they were tapped. */
+      /* Unlock the element for later playback WITHOUT loading a fake source.
+         The old trick assigned a silent data-URI so the tap would count as a
+         gesture. Chromium rejects that clip with MediaError 4, and MediaError
+         is sticky — the code survived onto the real track and made songs that
+         were playing perfectly report as broken.
+         Calling load() on the empty element consumes the gesture just as well
+         and can never leave an error behind. */
       if (!cached) {
-        unlockingRef.current = true;
-        try { el.src = SILENCE; el.play().catch(() => {}); } catch {}
+        try { el.pause(); el.removeAttribute('src'); el.load(); } catch {}
       }
 
       // Progress that reflects reality: the resolver needs ~8-15 s, so tell the user.
@@ -275,7 +287,6 @@ export function PlayerProvider({ children }) {
         // handler must know a recovery is possible and stay quiet. Arming
         // this BEFORE assigning src is what stops the "Stream failed" flash.
         if (cached) { recoveringRef.current = true; retriedRef.current = t.id; }
-        unlockingRef.current = false;
         el.src = r.audio;
         el.playbackRate = rate;
         setStage('Buffering…');
@@ -311,7 +322,7 @@ export function PlayerProvider({ children }) {
           /gesture|interact|play\(\)|user activation/i.test(e?.message || '');
         // Autoplay refusal is NOT a stream failure — the ad-free audio is
         // loaded and one tap will start it. NEVER fall back to the ad embed.
-        if (blocked && el.src && el.src !== SILENCE) {
+        if (blocked && el.src) {
           setStage(''); setLoading(false); setPlaying(false);
           setErr('Ready — tap play to start'); resumeWarming();
           resolve('lyrics', lyricsPool, { title: t.title || '', artist: t.artist || '' }, { ttl: 864e5 })
@@ -340,6 +351,28 @@ export function PlayerProvider({ children }) {
           } catch { /* fall through to the honest error */ }
           finally { recoveringRef.current = false; }
         }
+        /* One more attempt before admitting defeat.
+           The upstream resolver is occasionally slow or briefly unavailable —
+           it went down completely for several minutes during testing, then
+           recovered and answered everything in 6-7 s. Giving up after a single
+           miss made healthy tracks look broken, so this waits and tries once
+           more with a forced re-resolve. */
+        try {
+          setStage('One more try…');
+          await sleep(900);
+          if (stale()) return;
+          const r2 = await resolveAudio(t.id, { fresh: true, onProgress: setStage });
+          if (stale()) return;
+          el.removeAttribute('crossorigin');
+          el.src = r2.audio;
+          el.playbackRate = rate;
+          await el.play();
+          setTrack({ ...t, art: t.art || r2.art, artist: t.artist || r2.artist, dlUrl: r2.audio });
+          setPlaying(true); setStage(''); setLoading(false); setErr('');
+          resumeWarming(); notePlay(t);
+          return;
+        } catch { /* genuinely unavailable */ }
+
         // Everything failed. Say so — do not silently serve ads.
         setStage(''); setLoading(false); setPlaying(false);
         el.pause(); el.removeAttribute('src'); el.load();
@@ -591,14 +624,8 @@ export function PlayerProvider({ children }) {
              code just printed "Stream failed". Re-resolve once, silently. */
           const el = audio.current;
 
-          /* IGNORE the gesture-unlock clip.
-             The 0.05 s silent data-URI we play on tap makes Chromium fire
-             `error` with code 4 (SRC_NOT_SUPPORTED). That is harmless in
-             itself, but this handler then treated it as a dead stream and
-             tore down the track that was in the middle of loading — the
-             direct cause of songs failing 0.3 s after a tap with no pattern
-             to it. The unlock clip is ours and its failure means nothing. */
-          if (unlockingRef.current || (el && (el.src || '').startsWith('data:'))) return;
+          // Nothing we load ourselves should be treated as a stream failure.
+          if (el && (el.src || '').startsWith('data:')) return;
 
           const t = track;
           if (!t) return;
@@ -612,12 +639,18 @@ export function PlayerProvider({ children }) {
           // that is about to succeed made a working retry look broken, so the
           // message is only shown once the recovery has actually given up.
           if (recoveringRef.current) return;
-          if (retriedRef.current === t.id) {
+          /* Two attempts, not one. The CDN mints a fresh signed link on every
+             resolve and invalidates older ones, so the first replacement can
+             already be stale by the time the element reaches it. A second go
+             costs a couple of seconds and rescues most of these. */
+          const tries = retriedRef.current === t.id ? (retryCountRef.current || 1) : 0;
+          if (tries >= 2) {
             setErr('Stream failed — tap retry');
             return;
           }
           recoveringRef.current = true;
           retriedRef.current = t.id;
+          retryCountRef.current = tries + 1;
           forgetAudio(t.id);
           setStage('Link expired — refreshing…');
           // Clear any stale error text: the recovery is in flight, so showing

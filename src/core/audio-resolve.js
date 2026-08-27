@@ -247,7 +247,15 @@ function viaProxy(target, { ms = 26000, onProgress, retry = true } = {}) {
   const publicPool = () => (PROXIES.filter(usable).length ? PROXIES.filter(usable) : PROXIES);
 
   return (async () => {
+    /* The relay gets TWO chances before we fall back.
+       Its upstream is occasionally slow or briefly 504s — measured: the host
+       went down entirely for several minutes, then recovered and answered
+       every request in 6-7 s. A single miss is not evidence that it is down,
+       and the public pool is far worse, so a short second attempt costs less
+       than giving up does. */
     if (relay) {
+      try { return await stage([relay]); } catch { /* fall through */ }
+      await sleep(600);
       try { return await stage([relay]); } catch { /* fall through */ }
     }
     try { return await stage(publicPool()); } catch { /* fall through */ }

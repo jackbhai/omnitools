@@ -1,49 +1,38 @@
 /**
- * OmniTools CORS proxy — Cloudflare Worker
- * =========================================
+ * OmniTools relay — Cloudflare Worker
+ * ===================================
  *
- * WHY THIS EXISTS
- *   The app resolves ad-free audio through an upstream API that sends no CORS
- *   header, so a browser cannot call it directly. Until now that hop went
- *   through free public proxies. Measured on 2026-08-27, 25 of them:
- *     corsproxy.io ....... 401 permanently (free tier exhausted)
- *     cors.lol / eu.org /
- *     test.workers / everyorigin ... 429 rate limited
- *     isomorphic-git / corsfix / cors-anywhere ... 403
- *     allorigins / codetabs ........ 408 / 522 timeouts
- *     cors.sh ...................... works, but 7-11 s and throttles
- *   Result: music started in 3 s sometimes and 25 s other times, and sometimes
- *   not at all. No amount of client-side retry logic fixes someone else's rate
- *   limit.
+ * Two jobs:
  *
- *   This Worker is your own hop. Cloudflare's free plan allows 100,000
- *   requests a day, which is far more than this app can use, and it typically
- *   answers in a few hundred milliseconds instead of several seconds.
+ *   1. CORS relay for hosts that do not send the header (Deezer, the Piped
+ *      mirrors, the audio CDN). Browsers refuse those outright; this forwards
+ *      them with permissive CORS. A host allow-list keeps it from becoming an
+ *      open proxy for anyone else's traffic.
  *
- * WHAT IT DOES
- *   Fetches the target URL server-side and returns the body with permissive
- *   CORS headers. It only allows a small list of upstream hosts, so it cannot
- *   be turned into an open relay for someone else's traffic.
+ *   2. /yt — a first-party audio resolver.
+ *      This is the important one. The app used to depend on a single external
+ *      resolver, and when that host started returning 504 on every request —
+ *      including its own homepage — every song in the app stopped playing.
+ *      Every public alternative was already dead too: Cobalt (3 mirrors),
+ *      Piped /streams (3), Invidious (4) all 403/500/timeout.
  *
- * DEPLOY — about five minutes, no credit card
- *   1. Sign in at https://dash.cloudflare.com  (free account is fine)
- *   2. Left menu: Workers & Pages  →  Create  →  Workers  →  Create Worker
- *   3. Name it e.g. omni-proxy  →  Deploy
- *   4. Click "Edit code", delete everything, paste THIS ENTIRE FILE, Deploy
- *   5. Copy the URL it gives you, e.g. https://omni-proxy.<you>.workers.dev
- *   6. In OmniTools: Settings (gear icon, top right) → paste the URL → Save
+ *      So the resolver now lives here. It does what the npm packages
+ *      (play-dl, ytdl-core, youtubei.js) actually do: call YouTube's own
+ *      internal `youtubei` API while identifying as a mobile client. Those
+ *      clients receive `streamingData` with DIRECT urls — no signature to
+ *      decipher, no player JS to execute, which is what makes it small enough
+ *      to run in a Worker.
  *
- *   The app then uses your Worker first and keeps the public proxies as a
- *   fallback, so nothing breaks if the Worker is ever unreachable.
+ *      Several client identities are tried in order, because YouTube retires
+ *      them one at a time. If one starts returning LOGIN_REQUIRED the next is
+ *      used, and the app keeps working.
+ *
+ * DEPLOY
+ *   dash.cloudflare.com -> Workers & Pages -> Create -> Worker
+ *   paste this file, Deploy, then put the URL in the app under
+ *   Music -> Library -> Speed.
  */
 
-/* Only these upstreams may be fetched. Keeps the Worker from becoming an
-   open proxy that anyone could point at anything.
-
-   iTunes is deliberately NOT here. It already sends `Access-Control-Allow-Origin: *`
-   so the browser can call it directly, and Apple rate-limits Cloudflare's
-   egress IPs hard — routing it through the Worker turned working requests into
-   429s. Only hosts that genuinely need a CORS hop belong on this list. */
 const ALLOWED = [
   // audio resolution + the utility API family
   'ahm7xmakki.com',
@@ -68,22 +57,24 @@ const ALLOWED = [
   'invidious.privacyredirect.com',
   'iv.datura.network',
 
-  // Deezer — very large catalogue, excellent metadata, 30 s previews.
-  // Works over plain HTTP but sends no CORS header, which is exactly what
-  // this Worker is for.
+  // Deezer — large catalogue, no CORS header of its own
   'api.deezer.com',
   'cdn-preview-a.dzcdn.net',
   'cdns-preview-a.dzcdn.net',
   'e-cdn-preview.dzcdn.net',
   'e-cdns-preview-a.dzcdn.net',
 
-  // Audius — free and decentralised, hands out a DIRECT stream with no
-  // resolve step at all.
+  // Audius — free and decentralised, direct streams
   'discoveryprovider.audius.co',
   'discoveryprovider2.audius.co',
   'discoveryprovider3.audius.co',
   'audius-discovery-1.altego.net',
   'audius-discovery-2.altego.net',
+
+  // YouTube media hosts, for /yt playback
+  'googlevideo.com',
+  'youtube.com',
+  'www.youtube.com',
 
   // Radio + lyrics
   'de1.api.radio-browser.info',
@@ -100,6 +91,108 @@ const CORS = {
   'Access-Control-Max-Age': '86400',
 };
 
+const json = (obj, status = 200) =>
+  new Response(JSON.stringify(obj), {
+    status, headers: { ...CORS, 'Content-Type': 'application/json' },
+  });
+
+/* ------------------------------------------------------------------ /yt ---
+   Client identities, tried in order. YouTube disables these one at a time, so
+   the list matters more than any single entry. */
+const YT_CLIENTS = [
+  { name: 'ANDROID_VR', version: '1.60.19', id: '28',
+    ua: 'com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip',
+    extra: { androidSdkVersion: 32, deviceMake: 'Oculus', deviceModel: 'Quest 3',
+             osName: 'Android', osVersion: '12' } },
+  { name: 'IOS', version: '19.45.4', id: '5',
+    ua: 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X)',
+    extra: { deviceMake: 'Apple', deviceModel: 'iPhone16,2',
+             osName: 'iPhone', osVersion: '18.1.0.22B83' } },
+  { name: 'ANDROID', version: '19.44.38', id: '3',
+    ua: 'com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip',
+    extra: { androidSdkVersion: 30, osName: 'Android', osVersion: '11' } },
+  { name: 'MWEB', version: '2.20241202.07.00', id: '2',
+    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
+    extra: {} },
+  { name: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', version: '2.0', id: '85',
+    ua: 'Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15',
+    extra: {} },
+];
+
+async function ytPlayer(videoId, client) {
+  const body = {
+    context: {
+      client: {
+        clientName: client.name,
+        clientVersion: client.version,
+        hl: 'en', gl: 'IN',
+        ...client.extra,
+      },
+    },
+    videoId,
+    contentCheckOk: true,
+    racyCheckOk: true,
+  };
+  const r = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': client.ua,
+      'X-YouTube-Client-Name': client.id,
+      'X-YouTube-Client-Version': client.version,
+      'Accept-Language': 'en-IN,en;q=0.9',
+      Origin: 'https://www.youtube.com',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`${client.name} HTTP ${r.status}`);
+  return r.json();
+}
+
+/** Pick the best DIRECT audio url — anything needing a cipher is unusable here. */
+function pickAudio(data) {
+  const sd = data?.streamingData || {};
+  const all = [...(sd.adaptiveFormats || []), ...(sd.formats || [])];
+  const audio = all.filter((f) => (f.mimeType || '').startsWith('audio/') && f.url);
+  if (!audio.length) return null;
+  audio.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+  // prefer m4a: it seeks reliably in a plain <audio> element
+  const m4a = audio.find((f) => (f.mimeType || '').includes('mp4'));
+  return m4a || audio[0];
+}
+
+async function resolveYouTube(videoId) {
+  const tried = [];
+  for (const client of YT_CLIENTS) {
+    try {
+      const data = await ytPlayer(videoId, client);
+      const status = data?.playabilityStatus?.status;
+      const fmt = pickAudio(data);
+      if (!fmt) { tried.push(`${client.name}:${status || 'no-audio'}`); continue; }
+      const d = data.videoDetails || {};
+      return {
+        success: true,
+        via: client.name,
+        mediaInfo: {
+          audioUrl: fmt.url,
+          videoUrl: null,
+          title: d.title || '',
+          author: d.author || '',
+          duration: +(d.lengthSeconds || 0),
+          thumbnail: (d.thumbnail?.thumbnails || []).slice(-1)[0]?.url || '',
+          bitrate: fmt.bitrate || 0,
+          mime: fmt.mimeType || '',
+        },
+        tried,
+      };
+    } catch (e) {
+      tried.push(`${client.name}:${String(e.message).slice(0, 40)}`);
+    }
+  }
+  return { success: false, error: 'no client returned a playable stream', tried };
+}
+
+/* ------------------------------------------------------------------ main */
 export default {
   async fetch(request) {
     if (request.method === 'OPTIONS') {
@@ -107,32 +200,44 @@ export default {
     }
 
     const url = new URL(request.url);
-    // Accept both ?url=<encoded> and the bare-suffix form /https://…
+
+    /* ---- first-party audio resolver ---- */
+    if (url.pathname === '/yt') {
+      const v = url.searchParams.get('v') || url.searchParams.get('id');
+      const raw = url.searchParams.get('url');
+      let videoId = v;
+      if (!videoId && raw) {
+        const m = raw.match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([A-Za-z0-9_-]{11})/);
+        videoId = m ? m[1] : null;
+      }
+      if (!videoId) return json({ success: false, error: 'pass ?v=<videoId>' }, 400);
+      try {
+        const out = await resolveYouTube(videoId);
+        return json(out, out.success ? 200 : 502);
+      } catch (e) {
+        return json({ success: false, error: String(e.message).slice(0, 120) }, 502);
+      }
+    }
+
+    /* ---- plain CORS relay ---- */
     let target = url.searchParams.get('url');
     if (!target && url.pathname.length > 1) {
       target = decodeURIComponent(url.pathname.slice(1)) + url.search;
     }
-
     if (!target) {
       return new Response(
-        'OmniTools proxy is running.\n\nUsage: ?url=<encoded target>\n',
+        'OmniTools relay.\n\n  /?url=<encoded target>   CORS relay\n  /yt?v=<videoId>          audio resolver\n',
         { status: 200, headers: { ...CORS, 'Content-Type': 'text/plain' } });
     }
 
     let t;
-    try {
-      t = new URL(target);
-    } catch {
-      return new Response('Bad target URL', { status: 400, headers: CORS });
-    }
+    try { t = new URL(target); }
+    catch { return new Response('Bad target URL', { status: 400, headers: CORS }); }
 
     const host = t.hostname.replace(/^www\./, '');
     const ok = ALLOWED.some((h) => host === h || host.endsWith('.' + h));
-    if (!ok) {
-      return new Response(`Host not allowed: ${host}`, { status: 403, headers: CORS });
-    }
+    if (!ok) return new Response(`Host not allowed: ${host}`, { status: 403, headers: CORS });
 
-    // Pass Range through so seeking in <audio> keeps working.
     const fwd = new Headers();
     const range = request.headers.get('Range');
     if (range) fwd.set('Range', range);
@@ -147,13 +252,11 @@ export default {
         redirect: 'follow',
         cf: { cacheTtl: 60, cacheEverything: false },
       });
-
       const out = new Headers(res.headers);
       for (const [k, v] of Object.entries(CORS)) out.set(k, v);
       out.delete('content-security-policy');
       out.delete('content-security-policy-report-only');
       out.delete('set-cookie');
-
       return new Response(res.body, { status: res.status, headers: out });
     } catch (e) {
       return new Response(`Upstream failed: ${e.message}`, { status: 502, headers: CORS });
