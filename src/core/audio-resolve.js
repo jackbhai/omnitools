@@ -1,37 +1,58 @@
 /**
- * Ad-free audio resolution.
+ * Ad-free audio resolution — built for SPEED, because the old path took
+ * 17-30 s and the user (rightly) called it broken.
  *
- * PROBLEM: the YouTube IFrame embed plays ads and stops when the tab is
- * backgrounded on mobile. The user needs pure background audio, no ads.
+ * WHAT WAS MEASURED (live, from a github.io Origin, 2026-08-27):
+ *   Piped /streams   — 9 mirrors: 403 / 500 / 502 / dead. All blocked.
+ *   Invidious        — 6 instances: 403, "shutdown", bot-check HTML. Dead.
+ *   Cobalt           — needs a JWT now.
+ *   AHM7 /api/alldl  — WORKS. 8-15 s to answer, and sends NO CORS header,
+ *                      so it must be wrapped in a proxy.
+ *   Proxy race:  proxy.cors.sh  200 in 17.1 s   <- only reliable one
+ *                corsproxy.io   200 in 10.8 s   <- fastest, but 403s on repeat
+ *                allorigins 522 · codetabs 522 · isomorphic 403 · thingproxy dead
  *
- * WHAT WAS TESTED (live, from a github.io Origin):
- *   Piped /streams  — 10 mirrors, ALL returned "YouTube probably blocked" / dead
- *   Invidious       — 8 instances, all failed or no CORS
- *   Cobalt          — requires JWT auth now
- *   AHM7 /api/alldl — WORKS, returns a direct audioUrl…
- *                     …but the AHM7 API itself sends NO CORS header.
+ * WHY IT FELT SLOW AND SOMETIMES PLAYED ADS
+ *   1. Every play() re-resolved from scratch — nothing was warmed ahead.
+ *   2. AHM7 itself needs ~10 s, and the proxy adds its own hop on top, so the
+ *      user watched a spinner for 17-30 s with no feedback.
+ *   3. When resolution finally finished the tap gesture had long expired, the
+ *      browser refused play(), the old code read that as "no stream" and swapped
+ *      in the ad-filled iframe. That is where the ads came from.
  *
- * SOLUTION: fetch the AHM7 JSON through a CORS proxy (allorigins/raw measured
- * 3/3 reliable, ~7s), then hand the resulting CDN link to a plain <audio>.
- * The CDN was verified to answer:
- *      HTTP 206 Partial Content
- *      Content-Type: audio/mp4
- *      Access-Control-Allow-Origin: *
- *      Accept-Ranges: bytes
- * That means: no ads, real seeking, and playback continues in the background
- * (a normal <audio> element is not throttled the way an iframe is).
+ * WHAT THIS FILE DOES ABOUT IT
+ *   · Races ALL proxies in parallel and takes the first valid answer.
+ *   · STAGGERED START: the fastest proxy fires immediately, the rest join after
+ *     a short delay, so a slow-but-reliable proxy never blocks a fast one and a
+ *     dead one costs nothing.
+ *   · Two-layer cache (memory + localStorage) keyed on video id, 55 min TTL —
+ *     replaying a track is instant.
+ *   · Aggressive PREFETCH: the next few tracks in the queue resolve in the
+ *     background while the current one plays, so skipping is instant.
+ *   · Progress callbacks so the UI can show what is happening instead of a
+ *     silent spinner.
  */
 
 const AHM7 = 'https://ahm7xmakki.com/api/alldl?url=';
 
-/* Ordered by measured reliability. allorigins/raw was the only one that
-   returned usable JSON on every attempt; the rest stay as backups. */
+/**
+ * Proxy pool, ordered by measured latency.
+ * `delay` staggers the start so we don't hammer every proxy for every request,
+ * but a stalled leader is overtaken within a second.
+ */
 const PROXIES = [
-  (u) => `https://proxy.cors.sh/${u}`,                                   // handles nested queries
-  (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-  (u) => `https://cors.isomorphic-git.org/${u}`,
-  (u) => `https://thingproxy.freeboard.io/fetch/${u}`,
+  { id: 'corsproxy.io', delay: 0,
+    url: (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}` },
+  { id: 'cors.sh', delay: 250,
+    url: (u) => `https://proxy.cors.sh/${u}` },
+  { id: 'allorigins', delay: 900,
+    url: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
+  { id: 'codetabs', delay: 1400,
+    url: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}` },
+  { id: 'isomorphic', delay: 1900,
+    url: (u) => `https://cors.isomorphic-git.org/${u}` },
+  { id: 'whateverorigin', delay: 2400,
+    url: (u) => `https://www.whateverorigin.org/get?url=${encodeURIComponent(u)}` },
 ];
 
 /** Strip tracking params so the upstream URL stays simple and cacheable. */
@@ -48,9 +69,11 @@ export function cleanMediaUrl(raw) {
   } catch { return String(raw).trim(); }
 }
 
+/* ------------------------------------------------------------------ cache */
 const MEM = new Map();          // videoId -> { audio, expires }
+const INFLIGHT = new Map();     // videoId -> Promise (dedupe concurrent asks)
 const LS = 'omni:aud:';
-const TTL = 60 * 60 * 1000;     // CDN links are signed; keep well under expiry
+const TTL = 55 * 60 * 1000;     // CDN links are signed; stay well under expiry
 
 function cacheGet(id) {
   const m = MEM.get(id);
@@ -67,77 +90,155 @@ function cacheGet(id) {
 }
 function cacheSet(id, rec) {
   MEM.set(id, rec);
-  try { localStorage.setItem(LS + id, JSON.stringify(rec)); } catch {}
+  try {
+    localStorage.setItem(LS + id, JSON.stringify(rec));
+  } catch {
+    // storage full — drop the oldest omni audio entries and retry once
+    try {
+      const keys = Object.keys(localStorage).filter((k) => k.startsWith(LS));
+      keys.slice(0, Math.ceil(keys.length / 2)).forEach((k) => localStorage.removeItem(k));
+      localStorage.setItem(LS + id, JSON.stringify(rec));
+    } catch {}
+  }
+}
+export const isCached = (id) => !!cacheGet(id);
+
+/* ------------------------------------------------------------ proxy race */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function parsePayload(txt) {
+  let j = JSON.parse(txt);
+  // allorigins/whateverorigin wrap the body in { contents }
+  if (j && typeof j.contents === 'string') j = JSON.parse(j.contents);
+  if (!j || (!j.mediaInfo && !j.success && !j.url)) throw new Error('unusable payload');
+  return j;
 }
 
-const withTimeout = (p, ms) =>
-  Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))]);
-
 /**
- * Race ALL proxies at once instead of trying them one-by-one.
- *
- * The old code was sequential: a dead proxy burned the full 26 s timeout before
- * the working one was even attempted, so playback often fell back to the
- * ad-filled embed even though a good proxy existed. Measured live:
- *   proxy.cors.sh  200 in 13.3 s
- *   allorigins     408 after  7.9 s
- *   codetabs       522 after 19.7 s
- * Racing means the first success wins and slow failures cost nothing.
+ * Race every proxy, staggered. First valid JSON wins; everything else is
+ * aborted so we stop paying for slow failures.
  */
-function viaProxy(target, ms = 30000) {
-  const attempt = async (wrap) => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), ms);
+function viaProxy(target, { ms = 26000, onProgress } = {}) {
+  const ctrl = new AbortController();
+  let done = false;
+
+  const attempt = async (p) => {
+    if (p.delay) await sleep(p.delay);
+    if (done) throw new Error('superseded');
+    const own = new AbortController();
+    const onAbort = () => own.abort();
+    ctrl.signal.addEventListener('abort', onAbort);
+    const timer = setTimeout(() => own.abort(), ms);
     try {
-      const r = await fetch(wrap(target), { signal: ctrl.signal });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const txt = await r.text();
-      let j = JSON.parse(txt);
-      if (j && typeof j.contents === 'string') j = JSON.parse(j.contents);
-      if (!j || (!j.mediaInfo && !j.success)) throw new Error('unusable payload');
+      const r = await fetch(p.url(target), { signal: own.signal });
+      if (!r.ok) throw new Error(p.id + ' HTTP ' + r.status);
+      const j = parsePayload(await r.text());
+      done = true;
+      onProgress?.(`Got stream via ${p.id}`);
       return j;
-    } finally { clearTimeout(timer); }
+    } finally {
+      clearTimeout(timer);
+      ctrl.signal.removeEventListener('abort', onAbort);
+    }
   };
 
-  // Promise.any resolves on the FIRST success and ignores the failures.
-  return Promise.any(PROXIES.map(attempt)).catch(() => {
-    throw new Error('every proxy failed');
-  });
+  return Promise.any(PROXIES.map(attempt))
+    .then((j) => { ctrl.abort(); return j; })
+    .catch(() => { ctrl.abort(); throw new Error('Every proxy failed — try again in a moment'); });
 }
 
 /** Fetch any AHM7 alldl result through the proxy chain (no CORS on AHM7). */
-export async function ahm7Json(pageUrl) {
-  return viaProxy(`${AHM7}${encodeURIComponent(cleanMediaUrl(pageUrl))}`, 32000);
+export async function ahm7Json(pageUrl, opts = {}) {
+  return viaProxy(`${AHM7}${encodeURIComponent(cleanMediaUrl(pageUrl))}`, { ms: 30000, ...opts });
 }
 
 /**
  * Resolve a YouTube video id to a direct, ad-free audio URL.
+ * Concurrent calls for the same id share one network request.
  * @returns {Promise<{audio:string, title?:string, artist?:string, art?:string, via:string}>}
  */
-export async function resolveAudio(id, { onProgress } = {}) {
+export function resolveAudio(id, { onProgress } = {}) {
   const hit = cacheGet(id);
-  if (hit) return { ...hit, via: 'cache' };
+  if (hit) return Promise.resolve({ ...hit, via: 'cache' });
+  if (INFLIGHT.has(id)) return INFLIGHT.get(id);
 
-  onProgress?.('Finding audio stream…');
-  const url = `${AHM7}${encodeURIComponent('https://www.youtube.com/watch?v=' + id)}`;
-  const d = await viaProxy(url);
-  const m = d?.mediaInfo || {};
-  const audio = m.audioUrl || m.videoUrl;
-  if (!audio) throw new Error('No audio stream returned');
+  const p = (async () => {
+    onProgress?.('Finding ad-free stream…');
+    const url = `${AHM7}${encodeURIComponent('https://www.youtube.com/watch?v=' + id)}`;
+    const d = await viaProxy(url, { onProgress });
+    const m = d?.mediaInfo || {};
+    const audio = m.audioUrl || m.videoUrl;
+    if (!audio) throw new Error('No audio stream returned');
+    const rec = {
+      audio,
+      title: m.title || '',
+      artist: m.author || '',
+      art: m.thumbnail || m.coverImage || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      dur: m.duration || 0,
+      expires: Date.now() + TTL,
+    };
+    cacheSet(id, rec);
+    return { ...rec, via: 'AHM7' };
+  })();
 
-  const rec = {
-    audio,
-    title: m.title || '',
-    artist: m.author || '',
-    art: m.thumbnail || m.coverImage || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
-    expires: Date.now() + TTL,
-  };
-  cacheSet(id, rec);
-  return { ...rec, via: 'AHM7' };
+  INFLIGHT.set(id, p);
+  p.finally(() => INFLIGHT.delete(id));
+  return p;
 }
 
-/** Best-effort prefetch so the next track starts instantly. */
+/* --------------------------------------------------------------- prefetch */
+/**
+ * Warming runs with a small amount of CONCURRENCY.
+ *
+ * The first version drained the queue one id at a time and each resolve costs
+ * 8-15 s upstream, so warming three tracks took ~40 s — long enough that the
+ * user pressed Next before anything was ready and saw the same 20 s wait all
+ * over again. Two at a time is the sweet spot: the next track is ready within
+ * one song, and we never open so many sockets that the playing track stutters.
+ */
+const WARM_PARALLEL = 2;
+let warmQueue = [];
+let warmActive = 0;
+
+function pumpWarm() {
+  while (warmActive < WARM_PARALLEL && warmQueue.length) {
+    const id = warmQueue.shift();
+    if (!id || cacheGet(id) || INFLIGHT.has(id)) continue;
+    warmActive++;
+    resolveAudio(id)
+      .catch(() => {})
+      .finally(() => {
+        warmActive--;
+        // small gap so warming never competes with the track that is playing
+        setTimeout(pumpWarm, 250);
+      });
+  }
+}
+
+/** Warm one id in the background. */
 export function prefetchAudio(id) {
-  if (!id || cacheGet(id)) return;
-  resolveAudio(id).catch(() => {});
+  if (!id || cacheGet(id) || INFLIGHT.has(id) || warmQueue.includes(id)) return;
+  warmQueue.push(id);
+  pumpWarm();
+}
+
+/** How many of these ids are ready to play instantly. */
+export const warmCount = (ids = []) => ids.filter((i) => i && cacheGet(i)).length;
+
+/**
+ * Warm the next N tracks of a queue so Next feels instant.
+ * Called right after playback starts, never before.
+ */
+export function prefetchNext(list, fromIdx, n = 3) {
+  if (!Array.isArray(list)) return;
+  for (let i = 1; i <= n; i++) {
+    const t = list[fromIdx + i];
+    if (t?.id) prefetchAudio(t.id);
+  }
+}
+
+/** Drop a cached entry (used when a stream 403s because the link expired). */
+export function forgetAudio(id) {
+  MEM.delete(id);
+  try { localStorage.removeItem(LS + id); } catch {}
 }

@@ -1,219 +1,270 @@
 /**
- * Medicine lookup with FULL clinical detail.
+ * Medicine — every medicine in the world, with real detail.
  *
- * WHY THIS REPLACES THE AHM7-ONLY VERSION:
- *   AHM7 /api/search returns ONLY { id, name, price } — three fields. I probed
- *   eight possible detail endpoints (?action=detail, ?id=, /detail, /medster…)
- *   and none exist, so tapping a result could never show more. The tool looked
- *   broken because the data simply wasn't there.
+ * WHAT CHANGED AND WHY
+ *   The previous version searched AHM7 `/api/search`, which returns only
+ *   { id, name, price }. Eight detail endpoints were probed; none exist. So
+ *   opening a medicine showed a price and nothing else — no uses, no dosage,
+ *   no warnings. "Livosiz 5mg" returned nothing at all.
  *
- * SOURCES NOW (both CORS-verified from a browser origin):
- *   openFDA drug/label  — uses, dosage, warnings, do-not-use, side effects,
- *                         pregnancy advice, active/inactive ingredients
- *   RxNav (US NLM)      — normalised drug names + related brand/generic forms
- *   AHM7 /api/search    — kept for Indian brand names and INR prices
+ *   Now the tool searches a local index of 253,802 Indian brands (name, MRP,
+ *   manufacturer, pack, composition, availability) built from
+ *   junioralive/Indian-Medicine-Dataset, with uses + side effects + product
+ *   photos merged in from dmedhi/indian-medicines. On top of that every
+ *   medicine is enriched live with:
+ *     · openFDA drug labels — up to 26 sections of official prescribing text
+ *     · RxNav / RxNorm      — normalised generic name and ATC drug class
+ *     · substitute finder   — the cheapest brands sharing the exact salt
+ *
+ *   Search works offline once a shard is cached, so it never shows a blank
+ *   screen because a network call failed.
  */
-import React, { useState } from 'react';
-import { jget } from '../core/engine';
-import { useData, Spin, Err, Empty, Src, Search, Card, Copy } from '../ui/kit';
+import React, { useEffect, useRef, useState } from 'react';
+import { searchMedicines, substitutes, fdaLabel, rxInfo, genericOf, clinicalFor,
+         meta as medMeta, FDA_SECTIONS } from '../core/medicines';
+import { Card, Spin, Empty } from '../ui/kit';
+import { Icon } from '../ui/icons';
 
-const FDA = 'https://api.fda.gov/drug/label.json';
-const RXNAV = 'https://rxnav.nlm.nih.gov/REST';
+const money = (n) => (n ? `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '—');
 
-/* Common Indian names -> the generic openFDA indexes them under. */
-const GENERIC = {
-  paracetamol: 'acetaminophen', crocin: 'acetaminophen', dolo: 'acetaminophen',
-  calpol: 'acetaminophen', combiflam: 'ibuprofen', brufen: 'ibuprofen',
-  disprin: 'aspirin', ecosprin: 'aspirin', augmentin: 'amoxicillin',
-  azithral: 'azithromycin', azee: 'azithromycin', pantop: 'pantoprazole',
-  pan: 'pantoprazole', omez: 'omeprazole', zyrtec: 'cetirizine',
-  cetzine: 'cetirizine', allegra: 'fexofenadine', montek: 'montelukast',
-  shelcal: 'calcium carbonate', glycomet: 'metformin', telma: 'telmisartan',
-  amlokind: 'amlodipine', atorva: 'atorvastatin', thyronorm: 'levothyroxine',
-};
-
-const clean = (v) => {
-  const s = Array.isArray(v) ? v.join(' ') : String(v || '');
-  return s.replace(/\s+/g, ' ').trim();
-};
-
-const SECTIONS = [
-  ['purpose', 'Purpose', '🎯'],
-  ['indications_and_usage', 'Uses', '💊'],
-  ['dosage_and_administration', 'Dosage & directions', '📏'],
-  ['active_ingredient', 'Active ingredient', '🧪'],
-  ['warnings', 'Warnings', '⚠️'],
-  ['do_not_use', 'Do NOT use if', '🚫'],
-  ['ask_doctor', 'Ask a doctor if', '👨‍⚕️'],
-  ['ask_doctor_or_pharmacist', 'Ask doctor/pharmacist', '💬'],
-  ['stop_use', 'Stop use if', '🛑'],
-  ['pregnancy_or_breast_feeding', 'Pregnancy / breastfeeding', '🤰'],
-  ['adverse_reactions', 'Side effects', '😷'],
-  ['drug_interactions', 'Drug interactions', '🔀'],
-  ['keep_out_of_reach_of_children', 'Child safety', '🧒'],
-  ['storage_and_handling', 'Storage', '📦'],
-  ['inactive_ingredient', 'Inactive ingredients', '🧾'],
-];
-
-const medPool = [
-  {
-    id: 'openfda', label: 'openFDA drug label',
-    async run({ q }) {
-      const key = q.toLowerCase().trim();
-      const generic = GENERIC[key] || GENERIC[key.split(/[\s(]/)[0]] || key;
-      const tries = [
-        `openfda.generic_name:"${generic}"`,
-        `openfda.brand_name:"${q}"`,
-        `openfda.substance_name:"${generic}"`,
-      ];
-      for (const s of tries) {
-        try {
-          const d = await jget(`${FDA}?search=${encodeURIComponent(s)}&limit=3`, { ms: 20000 });
-          if (d?.results?.length) {
-            return d.results.map((r) => ({
-              brand: clean(r.openfda?.brand_name) || q,
-              generic: clean(r.openfda?.generic_name) || generic,
-              maker: clean(r.openfda?.manufacturer_name),
-              type: clean(r.openfda?.product_type),
-              route: clean(r.openfda?.route),
-              sections: SECTIONS
-                .filter(([k]) => r[k])
-                .map(([k, label, icon]) => ({ key: k, label, icon, text: clean(r[k]) })),
-            }));
-          }
-        } catch { /* next pattern */ }
-      }
-      throw new Error('No drug label found');
-    },
-  },
-];
-
-const indianPool = [
-  {
-    id: 'ahm7-med', label: 'AHM7 MEDSTER (India)',
-    async run({ q }) {
-      const d = await jget(`https://ahm7xmakki.com/api/search?q=${encodeURIComponent(q)}`, { ms: 20000 });
-      const r = d?.results || [];
-      if (!r.length) throw new Error('no Indian listings');
-      return r;
-    },
-  },
-];
-
-const rxPool = [
-  {
-    id: 'rxnav', label: 'RxNav (NLM)',
-    async run({ q }) {
-      const key = q.toLowerCase().trim();
-      const generic = GENERIC[key] || key;
-      const id = await jget(`${RXNAV}/rxcui.json?name=${encodeURIComponent(generic)}`, { ms: 15000 });
-      const rxcui = id?.idGroup?.rxnormId?.[0];
-      if (!rxcui) throw new Error('not in RxNorm');
-      const rel = await jget(`${RXNAV}/rxcui/${rxcui}/related.json?tty=SBD+SCD+BN`, { ms: 15000 });
-      const groups = rel?.relatedGroup?.conceptGroup || [];
-      const names = [];
-      for (const g of groups) for (const c of g.conceptProperties || []) names.push(c.name);
-      return { rxcui, names: [...new Set(names)].slice(0, 12) };
-    },
-  },
-];
+/** "Sleepiness Fatigue Dryness in mouth" -> chips, without shredding phrases. */
+function splitEffects(s) {
+  if (!s) return [];
+  const t = String(s).replace(/\s+/g, ' ').trim();
+  if (t.includes(',')) return t.split(',').map((x) => x.trim()).filter(Boolean);
+  // dataset joins items with a capital letter and no separator
+  return t.split(/(?=[A-Z][a-z])/).map((x) => x.trim()).filter((x) => x.length > 2);
+}
 
 export function Medicine() {
   const [q, setQ] = useState('');
-  const [active, setActive] = useState('');
-  const [open, setOpen] = useState(0);
+  const [hits, setHits] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [sel, setSel] = useState(null);
+  const [stats, setStats] = useState(null);
+  const seq = useRef(0);
 
-  const fda = useData('med-fda', medPool, { q: active }, { auto: false, ttl: 864e5 });
-  const ind = useData('med-in', indianPool, { q: active }, { auto: false, ttl: 864e5 });
-  const rx = useData('med-rx', rxPool, { q: active }, { auto: false, ttl: 864e5 });
+  useEffect(() => { medMeta().then(setStats).catch(() => {}); }, []);
 
-  const go = (v) => {
-    const t = String(v ?? q).trim();
-    if (!t) return;
-    setActive(t); setQ(t); setOpen(0);
-    fda.run({ q: t }); ind.run({ q: t }); rx.run({ q: t });
-  };
+  // debounced live search — the shard is one small fetch, so typing is fine
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) { setHits(null); return; }
+    const my = ++seq.current;
+    setBusy(true);
+    const t = setTimeout(async () => {
+      try {
+        const r = await searchMedicines(term, { limit: 80 });
+        if (my === seq.current) setHits(r);
+      } catch {
+        if (my === seq.current) setHits([]);
+      } finally {
+        if (my === seq.current) setBusy(false);
+      }
+    }, 220);
+    return () => clearTimeout(t);
+  }, [q]);
 
-  const drug = fda.data?.[open];
+  if (sel) return <Detail med={sel} onBack={() => setSel(null)} />;
 
   return (<>
-    <Search value={q} onChange={setQ} onSubmit={() => go()} ph="Medicine name, e.g. paracetamol" />
-    <div className="btnrow">
-      {['paracetamol', 'ibuprofen', 'azithromycin', 'pantoprazole', 'cetirizine', 'metformin'].map((m) => (
-        <button key={m} className="cat" onClick={() => go(m)}>{m}</button>))}
+    <div className="fld">
+      <label>Search {stats ? stats.total.toLocaleString('en-IN') : '253,802'} medicines</label>
+      <div className="ip-wrap">
+        <Icon n="search" size={17} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} autoFocus
+          placeholder="Levosiz 5mg, Dolo 650, paracetamol…" enterKeyHint="search" />
+        {q && <button className="ip-x" onClick={() => setQ('')} aria-label="Clear"><Icon n="x" size={16} /></button>}
+      </div>
     </div>
 
-    {!active && <Empty t="Search a medicine for uses, dosage, warnings and side effects" />}
-    {fda.loading && <Spin t="Reading drug label" />}
+    <div className="cats">
+      {['Levosiz 5mg', 'Dolo 650', 'Augmentin 625', 'Montek LC', 'Pan 40', 'Zincovit', 'Combiflam']
+        .map((s) => <button key={s} className="cat" onClick={() => setQ(s)}>{s}</button>)}
+    </div>
 
-    {fda.data?.length > 1 && (
-      <div className="cats" style={{ marginTop: 10 }}>
-        {fda.data.map((d, i) => (
-          <button key={i} className={`cat ${open === i ? 'on' : ''}`} onClick={() => setOpen(i)}>
-            {d.brand.slice(0, 22)}
-          </button>))}
-      </div>)}
+    {busy && !hits && <Spin t="Searching" />}
+    {hits?.length === 0 && <Empty t={`No medicine matches "${q}"`} />}
 
-    {drug && (<>
-      <Card>
-        <div className="chead">{drug.type || 'Drug label'}</div>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: 23, letterSpacing: .6 }}
-          className="gradtext">{drug.brand}</div>
-        {drug.generic && <div className="kv" style={{ marginTop: 8 }}>
-          <span>Generic</span><b>{drug.generic}</b></div>}
-        {drug.route && <div className="kv"><span>Route</span><b>{drug.route}</b></div>}
-        {drug.maker && <div className="kv"><span>Manufacturer</span>
-          <b style={{ fontSize: 12.5 }}>{drug.maker}</b></div>}
-        <div className="dim sm" style={{ marginTop: 8 }}>{drug.sections.length} label sections</div>
-      </Card>
-
-      {drug.sections.map((s) => (
-        <Card key={s.key}>
-          <div className="chead">{s.icon} {s.label}</div>
-          <p style={{ fontSize: 13.5, lineHeight: 1.65 }}>{s.text}</p>
-          <div className="btnrow"><Copy text={s.text} label="Copy" /></div>
-        </Card>))}
-
-      {rx.data?.names?.length > 0 && (
-        <Card>
-          <div className="chead">🔀 Related brands &amp; forms</div>
-          <div className="btnrow">
-            {rx.data.names.map((n, i) => (
-              <span key={i} className="tag" style={{ fontSize: 11 }}>{n.slice(0, 46)}</span>))}
-          </div>
-          <div className="dim sm" style={{ marginTop: 8 }}>RxNorm ID {rx.data.rxcui}</div>
-        </Card>)}
-
-      {ind.data?.length > 0 && (
-        <Card>
-          <div className="chead">🇮🇳 Indian listings &amp; price</div>
-          {ind.data.slice(0, 12).map((m, i) => (
-            <div className="kv" key={i}>
-              <span style={{ fontSize: 12.5 }}>{m.name}</span>
-              <b style={{ color: 'var(--green)' }}>{m.price}</b>
-            </div>))}
-          <div className="dim sm" style={{ marginTop: 6 }}>via AHM7 MEDSTER</div>
-        </Card>)}
-
-      <div className="src">
-        <span className="dot warn" />
-        <span>Label data from openFDA (US FDA). Indian brands/prices from AHM7.
-          Reference only — always follow your doctor or pharmacist.</span>
+    {hits?.length > 0 && (<>
+      <div className="dim sm" style={{ margin: '10px 0 8px' }}>
+        {hits.length}{hits.length === 80 ? '+' : ''} results
       </div>
-      <Src meta={fda.meta} />
+      <div className="list">
+        {hits.map((m) => (
+          <button className="row" key={m.id} onClick={() => setSel(m)}
+            style={{ background: 'none', border: 0, width: '100%', textAlign: 'left', cursor: 'pointer' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 9, background: 'var(--s3)',
+              display: 'grid', placeItems: 'center', flex: '0 0 auto', color: 'var(--green)' }}>
+              <Icon n="pill" size={20} />
+            </div>
+            <div className="main">
+              <b style={{ fontSize: 13.5 }}>{m.name}</b>
+              <span className="dim sm">{m.comp || m.mfr}</span>
+            </div>
+            <div style={{ textAlign: 'right', flex: '0 0 auto' }}>
+              <b style={{ color: 'var(--green)', fontSize: 13.5 }}>{money(m.price)}</b>
+              {m.discontinued && <div className="tag w" style={{ marginTop: 3 }}>discontinued</div>}
+            </div>
+          </button>))}
+      </div>
     </>)}
 
-    {active && fda.error && (<>
-      <Err error={fda.error} retry={() => go(active)} />
-      {ind.data?.length > 0 && (
-        <Card>
-          <div className="chead">🇮🇳 Indian listings (no FDA label found)</div>
-          {ind.data.slice(0, 15).map((m, i) => (
-            <div className="kv" key={i}>
-              <span style={{ fontSize: 12.5 }}>{m.name}</span>
-              <b style={{ color: 'var(--green)' }}>{m.price}</b>
+    {!hits && (
+      <div className="src" style={{ marginTop: 16 }}><span className="dot" />
+        <span>{stats ? `${stats.total.toLocaleString('en-IN')} brands · ${stats.salts.toLocaleString('en-IN')} compositions` : 'Loading index'}
+          {' '}· prices in INR · clinical detail from openFDA and RxNorm. Not medical advice.</span></div>)}
+  </>);
+}
+
+/* ------------------------------------------------------------------ detail */
+function Detail({ med, onBack }) {
+  const [sub, setSub] = useState(undefined);
+  const [fda, setFda] = useState(undefined);
+  const [rx, setRx] = useState(undefined);
+  const [clin, setClin] = useState(undefined);
+  const [openSec, setOpenSec] = useState({});
+
+  useEffect(() => {
+    let live = true;
+    setSub(undefined); setFda(undefined); setRx(undefined); setClin(undefined);
+    // uses/side-effects: this pack's own text, else a sibling with the same salt
+    clinicalFor(med).then((v) => live && setClin(v)).catch(() => live && setClin(null));
+    substitutes(med.comp, med.price).then((v) => live && setSub(v)).catch(() => live && setSub(null));
+    fdaLabel(med.comp || med.name).then((v) => live && setFda(v)).catch(() => live && setFda(null));
+    rxInfo(med.comp || med.name).then((v) => live && setRx(v)).catch(() => live && setRx(null));
+    return () => { live = false; };
+  }, [med.id]);
+
+  const uses = splitEffects(clin?.uses || med.uses);
+  const side = splitEffects(clin?.side || med.side);
+  const borrowed = clin?.from;
+  const generic = genericOf(med.comp || med.name);
+  const sections = fda ? FDA_SECTIONS.filter(([k]) => fda[k]?.length) : [];
+
+  return (<>
+    <button className="btn ghost sm" onClick={onBack} style={{ marginBottom: 10 }}>
+      <Icon n="back" size={15} /> All results
+    </button>
+
+    <Card>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        {med.img
+          ? <img src={med.img} alt="" loading="lazy"
+              style={{ width: 68, height: 68, borderRadius: 11, objectFit: 'cover',
+                       background: 'var(--s3)', flex: '0 0 auto' }}
+              onError={(e) => { e.target.style.display = 'none'; }} />
+          : <div style={{ width: 68, height: 68, borderRadius: 11, background: 'var(--s3)',
+              display: 'grid', placeItems: 'center', flex: '0 0 auto', color: 'var(--green)' }}>
+              <Icon n="pill" size={30} /></div>}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.25 }}>{med.name}</div>
+          {med.comp && <div className="dim sm" style={{ marginTop: 3 }}>{med.comp}</div>}
+          <div style={{ marginTop: 7, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {med.price > 0 && <span className="tag g">{money(med.price)}</span>}
+            {med.pack && <span className="tag">{med.pack}</span>}
+            <span className={`tag ${med.discontinued ? 'w' : 'c'}`}>
+              {med.discontinued ? 'Discontinued' : 'Available'}</span>
+          </div>
+        </div>
+      </div>
+      {med.mfr && (
+        <div className="kv" style={{ marginTop: 12 }}>
+          <span>Manufacturer</span><b>{med.mfr}</b>
+        </div>)}
+      {rx?.name && rx.name.toLowerCase() !== generic && (
+        <div className="kv"><span>Generic name</span><b>{rx.name}</b></div>)}
+      {rx?.classes?.length > 0 && (
+        <div className="kv"><span>Drug class</span><b>{rx.classes[0]}</b></div>)}
+    </Card>
+
+    {clin === undefined && !med.uses && <Spin t="Loading uses and side effects" />}
+
+    {uses.length > 0 && (
+      <Card>
+        <div className="chead"><Icon n="check" size={16} /> What it is used for</div>
+        <div className="chips">{uses.map((u, i) => <span key={i} className="chip g">{u}</span>)}</div>
+        {borrowed && (
+          <div className="src"><span className="dot" />
+            <span>Same composition as <b>{borrowed}</b> — uses apply to the salt, not the brand.</span></div>)}
+      </Card>)}
+
+    {side.length > 0 && (
+      <Card>
+        <div className="chead"><Icon n="warn" size={16} /> Common side effects</div>
+        <div className="chips">{side.map((u, i) => <span key={i} className="chip w">{u}</span>)}</div>
+        <div className="src"><span className="dot" />
+          <span>Most side effects are mild and fade as your body adjusts. See a doctor if any persists.</span></div>
+      </Card>)}
+
+    {/* ---------------------------------------------------- substitutes */}
+    {sub === undefined && <Spin t="Finding cheaper substitutes" />}
+    {sub && sub.list.length > 1 && (
+      <Card>
+        <div className="chead"><Icon n="swap" size={16} /> Cheaper substitutes</div>
+        <div className="dim sm" style={{ marginBottom: 8 }}>
+          {sub.total} brands share this composition · {money(sub.min)} to {money(sub.max)}
+        </div>
+        <div className="list">
+          {sub.list.filter((s) => s.name !== med.name).slice(0, 12).map((s, i) => (
+            <div className="row" key={i}>
+              <div className="main">
+                <b style={{ fontSize: 13 }}>{s.name}</b>
+                <span className="dim sm">{s.mfr}{s.pack ? ` · ${s.pack}` : ''}</span>
+              </div>
+              <div style={{ textAlign: 'right', flex: '0 0 auto' }}>
+                <b style={{ color: 'var(--green)' }}>{money(s.price)}</b>
+                {s.savePct > 0 && <div className="tag g" style={{ marginTop: 3 }}>−{s.savePct}%</div>}
+              </div>
             </div>))}
-        </Card>)}
-    </>)}
+        </div>
+        <div className="src"><span className="dot" />
+          <span>Same salt and strength. Ask your pharmacist before switching brands.</span></div>
+      </Card>)}
+
+    {/* ------------------------------------------------------ FDA label */}
+    {fda === undefined && <Spin t="Loading official drug label" />}
+    {fda && sections.length > 0 && (
+      <Card>
+        <div className="chead"><Icon n="doc" size={16} /> Official label · {sections.length} sections</div>
+        <div className="dim sm" style={{ marginBottom: 8 }}>
+          US FDA prescribing information for <b>{fda._q}</b>
+          {fda.openfda?.brand_name?.[0] ? ` (${fda.openfda.brand_name[0]})` : ''}
+        </div>
+        {sections.map(([k, label]) => {
+          const text = [].concat(fda[k]).join('\n\n');
+          const open = openSec[k];
+          const short = text.length > 260 && !open;
+          return (
+            <div key={k} style={{ borderTop: '1px solid var(--line)', padding: '10px 0' }}>
+              <button onClick={() => setOpenSec((s) => ({ ...s, [k]: !s[k] }))}
+                style={{ background: 'none', border: 0, width: '100%', textAlign: 'left',
+                         cursor: 'pointer', color: 'inherit', padding: 0,
+                         display: 'flex', alignItems: 'center', gap: 8 }}>
+                <b style={{ fontSize: 13, color: k === 'boxed_warning' ? 'var(--bad)' : 'var(--green)', flex: 1 }}>
+                  {label}</b>
+                <Icon n="chevron" size={14} style={{ transform: open ? 'rotate(90deg)' : '', opacity: .6 }} />
+              </button>
+              <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.6, marginTop: 6, whiteSpace: 'pre-wrap' }}>
+                {short ? text.slice(0, 260).trim() + '…' : text}
+              </div>
+            </div>);
+        })}
+        <div className="src"><span className="dot" />
+          <span>Source: openFDA drug label API. US labelling may differ from the Indian pack.</span></div>
+      </Card>)}
+
+    {fda === null && uses.length === 0 && (
+      <Card>
+        <div className="chead"><Icon n="info" size={16} /> No detailed label found</div>
+        <div className="dim sm">
+          This brand is in the Indian price index but no matching FDA label exists for
+          <b> {generic}</b>. The composition, price and manufacturer above are real.
+        </div>
+      </Card>)}
+
+    <div className="src" style={{ marginTop: 14 }}><span className="dot" />
+      <span><b>Not medical advice.</b> Prices are indicative MRP and change. Always follow
+        your doctor's prescription and read the pack insert.</span></div>
   </>);
 }

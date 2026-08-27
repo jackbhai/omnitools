@@ -16,116 +16,145 @@ import * as TR from './tools/trains2';
 import { MultiModal } from './tools/multimodal';
 import { TrainJourney } from './tools/train-journey';
 import { Medicine as MedicineDeep } from './tools/medicine';
+import { Handwriting } from './tools/handwriting';
+import { Hub } from './tools/travel-hub';
 import { providerStats } from './core/engine';
+import { Icon } from './ui/icons';
+
+/* ------------------------------------------------------------ travel hubs
+   Eleven separate Travel tiles were impossible to tell apart. They are now
+   three mode hubs — Bus, Train, Metro — each keeping every feature as a tab. */
+const BusHub = () => (
+  <Hub icon="bus" title="Delhi Bus" sub="Plan a trip · browse routes · check fares"
+    tabs={[
+      { id: 'plan',  n: 'Plan trip', i: 'route',  C: BP.BusPlanner },
+      { id: 'routes',n: 'Routes',    i: 'list',   C: BP.BusRoutesList },
+      { id: 'fare',  n: 'Fares',     i: 'fare',   C: BP.BusFares },
+    ]} />);
+
+const TrainHub = () => (
+  <Hub icon="train" title="Indian Railways" sub="Live status · schedule · trains between stations"
+    tabs={[
+      { id: 'between', n: 'Find trains', i: 'search',  C: TR.TrainsBetween },
+      { id: 'live',    n: 'Live status', i: 'signal',  C: TR.TrainLive },
+      { id: 'sched',   n: 'Schedule',    i: 'list',    C: TR.TrainSchedule },
+      { id: 'journey', n: 'Long journey',i: 'luggage', C: TrainJourney },
+    ]} />);
+
+const MetroHub = () => (
+  <Hub icon="metro" title="Delhi Metro" sub="Route & fare · network map · line status"
+    tabs={[
+      { id: 'plan',  n: 'Plan route', i: 'route', C: MP.MetroPlanner },
+      { id: 'net',   n: 'Network',    i: 'grid',  C: MP.MetroNetwork },
+      { id: 'lines', n: 'Lines',      i: 'metro', C: T.MetroLines },
+      { id: 'city',  n: 'Other cities', i: 'globe', C: T.Metro },
+    ]} />);
 
 /* ------------------------------------------------------------------ registry
-   type: 'off' = pure browser (never fails) · 'live' = pooled network tool     */
+   type: 'off' = pure browser (never fails) · 'live' = pooled network tool
+   i    = icon name from src/ui/icons.jsx (real SVG, never an emoji)          */
 const TOOLS = [
+  // ---------- Travel (grouped by mode) ----------
+  { id:'bus',       n:'Bus',           i:'bus',      c:'Travel', t:'off',  d:'Route, fare & every stop', C:BusHub },
+  { id:'train',     n:'Train',         i:'train',    c:'Travel', t:'live', d:'Live status & schedules',  C:TrainHub },
+  { id:'metro',     n:'Metro',         i:'metro',    c:'Travel', t:'off',  d:'Route, fare & network',    C:MetroHub },
+  { id:'journey',   n:'Plan Journey',  i:'compass',  c:'Travel', t:'off',  d:'Metro + bus combined',     C:MultiModal },
+  { id:'nearby',    n:'Near Me',       i:'pin',      c:'Travel', t:'live', d:'ATM, food, fuel…',         C:T.Nearby },
+  { id:'guide',     n:'Travel Guide',  i:'globe',    c:'Travel', t:'live', d:'City info + SOS',          C:T.TravelGuide },
+
   // ---------- India ----------
-  { id:'weather',   n:'Weather + AQI', i:'🌤️', c:'India', t:'live', d:'Forecast & air quality', C:L.Weather },
-  { id:'festivals', n:'Festivals',     i:'🎉', c:'India', t:'live', d:'Holidays calendar',      C:L.Festivals },
-  { id:'pincode',   n:'PIN Code',      i:'📮', c:'India', t:'live', d:'Post offices',           C:L.Pincode },
-  { id:'ifsc',      n:'IFSC Finder',   i:'🏦', c:'India', t:'live', d:'Bank branches',          C:L.Ifsc },
-  { id:'gst',       n:'GST Calc',      i:'🧾', c:'India', t:'off',  d:'CGST + SGST',            C:O.GstCalc },
-  { id:'tax',       n:'Income Tax',    i:'💰', c:'India', t:'off',  d:'FY 2025-26',             C:O.TaxCalc },
-  { id:'emi',       n:'EMI Calc',      i:'🏠', c:'India', t:'off',  d:'Loan planner',           C:O.EmiCalc },
-  { id:'sip',       n:'SIP Calc',      i:'📈', c:'India', t:'off',  d:'Mutual funds',           C:O.SipCalc },
+  { id:'weather',   n:'Weather + AQI', i:'sun',      c:'India', t:'live', d:'Forecast & air quality',    C:L.Weather },
+  { id:'festivals', n:'Festivals',     i:'calendar', c:'India', t:'live', d:'Holidays calendar',         C:L.Festivals },
+  { id:'pincode',   n:'PIN Code',      i:'mail',     c:'India', t:'live', d:'Post offices',              C:L.Pincode },
+  { id:'ifsc',      n:'IFSC Finder',   i:'bank',     c:'India', t:'live', d:'Bank branches',             C:L.Ifsc },
+  { id:'mandi',     n:'Mandi Prices',  i:'wheat',    c:'India', t:'live', d:'Daily commodity rates',     C:T.Mandi },
+  { id:'gst',       n:'GST Calc',      i:'receipt',  c:'India', t:'off',  d:'CGST + SGST',               C:O.GstCalc },
+  { id:'tax',       n:'Income Tax',    i:'rupee',    c:'India', t:'off',  d:'FY 2025-26',                C:O.TaxCalc },
+  { id:'emi',       n:'EMI Calc',      i:'home',     c:'India', t:'off',  d:'Loan planner',              C:O.EmiCalc },
+  { id:'sip',       n:'SIP Calc',      i:'chart',    c:'India', t:'off',  d:'Mutual funds',              C:O.SipCalc },
+
+  // ---------- Health ----------
+  { id:'med',       n:'Medicine',      i:'pill',     c:'Health', t:'live', d:'253,802 medicines · uses & price', C:MedicineDeep },
+  { id:'bmi',       n:'BMI',           i:'scale',    c:'Health', t:'off',  d:'Health index',             C:O.BmiCalc },
 
   // ---------- Time ----------
-  { id:'clock',     n:'World Clock',   i:'🕐', c:'Time', t:'live', d:'12 zones live',           C:L.WorldClock },
-  { id:'otd',       n:'On This Day',   i:'📅', c:'Time', t:'live', d:'History today',           C:L.OnThisDay },
-  { id:'age',       n:'Age Calc',      i:'🎂', c:'Time', t:'off',  d:'Exact age',               C:O.AgeCalc },
-  { id:'ts',        n:'Timestamp',     i:'⏱️', c:'Time', t:'off',  d:'Unix ↔ date',             C:O.TimestampTool },
+  { id:'clock',     n:'World Clock',   i:'clock',    c:'Time', t:'live', d:'12 zones live',              C:L.WorldClock },
+  { id:'otd',       n:'On This Day',   i:'calendar', c:'Time', t:'live', d:'History today',              C:L.OnThisDay },
+  { id:'age',       n:'Age Calc',      i:'cake',     c:'Time', t:'off',  d:'Exact age',                  C:O.AgeCalc },
+  { id:'ts',        n:'Timestamp',     i:'timer',    c:'Time', t:'off',  d:'Unix ↔ date',                C:O.TimestampTool },
 
   // ---------- Money ----------
-  { id:'currency',  n:'Currency',      i:'💱', c:'Money', t:'live', d:'Live FX rates',          C:L.Currency },
-  { id:'crypto',    n:'Crypto',        i:'₿',  c:'Money', t:'live', d:'Top 40 coins',           C:L.Crypto },
-  { id:'pct',       n:'Percentage',    i:'％', c:'Money', t:'off',  d:'% calculator',           C:O.Percentage },
+  { id:'currency',  n:'Currency',      i:'swap',     c:'Money', t:'live', d:'Live FX rates',             C:L.Currency },
+  { id:'crypto',    n:'Crypto',        i:'coin',     c:'Money', t:'live', d:'Top 40 coins',              C:L.Crypto },
+  { id:'pct',       n:'Percentage',    i:'percent',  c:'Money', t:'off',  d:'% calculator',              C:O.Percentage },
 
   // ---------- Music ----------
-  { id:'music',     n:'Music Player',  i:'🎵', c:'Music', t:'live', d:'EQ · offline · radio',   C:Music },
+  { id:'music',     n:'Music Player',  i:'music',    c:'Music', t:'live', d:'Ad-free · EQ · background', C:Music },
 
-  // ---------- Knowledge ----------
-  { id:'wiki',      n:'Wikipedia',     i:'🌐', c:'Learn', t:'live', d:'Encyclopedia',           C:L.Wikipedia },
-  { id:'dict',      n:'Dictionary',    i:'📖', c:'Learn', t:'live', d:'Definitions + audio',    C:L.Dictionary },
-  { id:'books',     n:'Books',         i:'📚', c:'Learn', t:'live', d:'Open Library',           C:L.Books },
-  { id:'country',   n:'Countries',     i:'🗺️', c:'Learn', t:'live', d:'Country facts',          C:L.Countries },
-  { id:'name',      n:'Name Guess',    i:'🔮', c:'Learn', t:'live', d:'Age & gender',           C:L.NameGuess },
+  // ---------- Learn ----------
+  { id:'wiki',      n:'Wikipedia',     i:'globe',    c:'Learn', t:'live', d:'Encyclopedia',              C:L.Wikipedia },
+  { id:'dict',      n:'Dictionary',    i:'book',     c:'Learn', t:'live', d:'Definitions + audio',       C:L.Dictionary },
+  { id:'books',     n:'Books',         i:'books',    c:'Learn', t:'live', d:'Open Library',              C:L.Books },
+  { id:'country',   n:'Countries',     i:'earth',    c:'Learn', t:'live', d:'Country facts',             C:L.Countries },
+  { id:'name',      n:'Name Guess',    i:'sparkle',  c:'Learn', t:'live', d:'Age & gender',              C:L.NameGuess },
 
   // ---------- Media ----------
-  { id:'news',      n:'Tech News',     i:'📰', c:'Media', t:'live', d:'HN + Lobsters',          C:L.News },
-  { id:'movies',    n:'Movies & TV',   i:'🎬', c:'Media', t:'live', d:'Search titles',          C:L.Movies },
-  { id:'jokes',     n:'Jokes',         i:'😄', c:'Media', t:'live', d:'Random joke',            C:L.Jokes },
-  { id:'quotes',    n:'Quotes',        i:'💬', c:'Media', t:'live', d:'Inspiration',            C:L.Quotes },
+  { id:'dl',        n:'Downloader',    i:'download', c:'Media', t:'live', d:'Video / audio / thumbnail', C:Downloader },
+  { id:'news',      n:'Tech News',     i:'news',     c:'Media', t:'live', d:'HN + Lobsters',             C:L.News },
+  { id:'movies',    n:'Movies & TV',   i:'film',     c:'Media', t:'live', d:'Search titles',             C:L.Movies },
+  { id:'jokes',     n:'Jokes',         i:'smile',    c:'Media', t:'live', d:'Random joke',               C:L.Jokes },
+  { id:'quotes',    n:'Quotes',        i:'quote',    c:'Media', t:'live', d:'Inspiration',               C:L.Quotes },
 
-  // ---------- Science ----------
-  { id:'iss',       n:'ISS Tracker',   i:'🛰️', c:'Space', t:'live', d:'Live position',          C:L.Space },
-  { id:'quake',     n:'Earthquakes',   i:'🌍', c:'Space', t:'live', d:'USGS live feed',         C:L.Quakes },
+  // ---------- AHM7 ----------
+  { id:'manga',     n:'Manga',         i:'book',     c:'AHM7', t:'live', d:'Read chapters + pages',      C:AD.Manga },
+  { id:'novels',    n:'Novels',        i:'books',    c:'AHM7', t:'live', d:'Read full chapters',         C:AD.Novels },
+  { id:'courses',   n:'Courses',       i:'cap',      c:'AHM7', t:'live', d:'1000+ free courses',         C:A.Courses },
+  { id:'tempmail',  n:'Temp Mail',     i:'mail',     c:'AHM7', t:'live', d:'Disposable inbox',           C:A.TempMail },
+  { id:'wikipdf',   n:'Wiki → PDF',    i:'doc',      c:'AHM7', t:'live', d:'Article as PDF',             C:A.WikiPdf },
+  { id:'hand',      n:'Handwriting',   i:'pen',      c:'AHM7', t:'live', d:'Text → handwriting, no ads', C:Handwriting },
+  { id:'websnap',   n:'Screenshot',    i:'camera',   c:'AHM7', t:'live', d:'Capture any site',           C:A.WebSnap },
+  { id:'certs',     n:'Certificates',  i:'badge',    c:'AHM7', t:'live', d:'Templates',                  C:A.Certificates },
+
+  // ---------- Space ----------
+  { id:'iss',       n:'ISS Tracker',   i:'satellite',c:'Space', t:'live', d:'Live position',             C:L.Space },
+  { id:'quake',     n:'Earthquakes',   i:'earth',    c:'Space', t:'live', d:'USGS live feed',            C:L.Quakes },
 
   // ---------- Text ----------
-  { id:'case',      n:'Case Convert',  i:'🔤', c:'Text', t:'off', d:'9 formats',                C:O.CaseConvert },
-  { id:'wc',        n:'Word Count',    i:'🔢', c:'Text', t:'off', d:'Stats & read time',        C:O.WordCount },
-  { id:'lines',     n:'Line Tools',    i:'📝', c:'Text', t:'off', d:'Sort, dedupe…',            C:O.TextTools },
-  { id:'lorem',     n:'Lorem Ipsum',   i:'📄', c:'Text', t:'off', d:'Placeholder text',         C:O.LoremGen },
+  { id:'case',      n:'Case Convert',  i:'type',     c:'Text', t:'off', d:'9 formats',                   C:O.CaseConvert },
+  { id:'wc',        n:'Word Count',    i:'numbers',  c:'Text', t:'off', d:'Stats & read time',           C:O.WordCount },
+  { id:'lines',     n:'Line Tools',    i:'list',     c:'Text', t:'off', d:'Sort, dedupe…',               C:O.TextTools },
+  { id:'lorem',     n:'Lorem Ipsum',   i:'doc',      c:'Text', t:'off', d:'Placeholder text',            C:O.LoremGen },
 
   // ---------- Dev ----------
-  { id:'b64',       n:'Base64',        i:'🔐', c:'Dev', t:'off', d:'Encode / decode',           C:O.Base64 },
-  { id:'url',       n:'URL Encode',    i:'🔗', c:'Dev', t:'off', d:'Percent encoding',          C:O.UrlEncode },
-  { id:'json',      n:'JSON Tools',    i:'{}', c:'Dev', t:'off', d:'Format · YAML',             C:O.JsonTool },
-  { id:'jwt',       n:'JWT Decode',    i:'🎫', c:'Dev', t:'off', d:'Inspect token',             C:O.JwtDecode },
-  { id:'regex',     n:'Regex Test',    i:'*',  c:'Dev', t:'off', d:'Live matching',             C:O.RegexTest },
-  { id:'hash',      n:'Hash',          i:'#️⃣', c:'Dev', t:'off', d:'SHA-1/256/384/512',        C:O.Hash },
-  { id:'gh',        n:'GitHub',        i:'⚙️', c:'Dev', t:'live', d:'Repo search',              C:L.Repos },
-  { id:'ip',        n:'My IP',         i:'📡', c:'Dev', t:'live', d:'IP & location',            C:L.MyIp },
+  { id:'b64',       n:'Base64',        i:'lock',     c:'Dev', t:'off', d:'Encode / decode',              C:O.Base64 },
+  { id:'url',       n:'URL Encode',    i:'link',     c:'Dev', t:'off', d:'Percent encoding',             C:O.UrlEncode },
+  { id:'json',      n:'JSON Tools',    i:'braces',   c:'Dev', t:'off', d:'Format · YAML',                C:O.JsonTool },
+  { id:'jwt',       n:'JWT Decode',    i:'key',      c:'Dev', t:'off', d:'Inspect token',                C:O.JwtDecode },
+  { id:'regex',     n:'Regex Test',    i:'code',     c:'Dev', t:'off', d:'Live matching',                C:O.RegexTest },
+  { id:'hash',      n:'Hash',          i:'hash',     c:'Dev', t:'off', d:'SHA-1/256/384/512',            C:O.Hash },
+  { id:'gh',        n:'GitHub',        i:'cog',      c:'Dev', t:'live', d:'Repo search',                 C:L.Repos },
+  { id:'ip',        n:'My IP',         i:'signal',   c:'Dev', t:'live', d:'IP & location',               C:L.MyIp },
 
   // ---------- Generate ----------
-  { id:'pw',        n:'Password',      i:'🔑', c:'Generate', t:'off', d:'Secure random',        C:O.Password },
-  { id:'uuid',      n:'UUID',          i:'🆔', c:'Generate', t:'off', d:'v4 bulk',              C:O.Uuid },
-  { id:'qr',        n:'QR Code',       i:'▦',  c:'Generate', t:'off', d:'Custom colours',       C:O.QrGen },
-  { id:'dice',      n:'Dice Roll',     i:'🎲', c:'Generate', t:'off', d:'d4 → d100',            C:O.DiceRoll },
+  { id:'pw',        n:'Password',      i:'key',      c:'Generate', t:'off', d:'Secure random',           C:O.Password },
+  { id:'uuid',      n:'UUID',          i:'id',       c:'Generate', t:'off', d:'v4 bulk',                 C:O.Uuid },
+  { id:'qr',        n:'QR Code',       i:'qr',       c:'Generate', t:'off', d:'Custom colours',          C:O.QrGen },
+  { id:'dice',      n:'Dice Roll',     i:'dice',     c:'Generate', t:'off', d:'d4 → d100',               C:O.DiceRoll },
 
   // ---------- Convert ----------
-  { id:'unit',      n:'Unit Convert',  i:'📏', c:'Convert', t:'off', d:'7 categories',          C:O.UnitConvert },
-  { id:'temp',      n:'Temperature',   i:'🌡️', c:'Convert', t:'off', d:'C/F/K/R',              C:O.TempConvert },
-  { id:'color',     n:'Colour Tool',   i:'🎨', c:'Convert', t:'off', d:'HEX/RGB/HSL + WCAG',    C:O.ColorTool },
-  { id:'bmi',       n:'BMI',           i:'⚖️', c:'Convert', t:'off', d:'Health index',          C:O.BmiCalc },
-  // ---------- Transport & Travel ----------
-  { id:'trains',    n:'Trains',        i:'🚆', c:'Travel', t:'live', d:'Between stations',      C:TR.TrainsBetween },
-  { id:'metro',     n:'Metro',         i:'🚇', c:'Travel', t:'live', d:'12 city networks',      C:T.Metro },
-  { id:'nearby',    n:'Near Me',       i:'📍', c:'Travel', t:'live', d:'ATM, food, fuel…',      C:T.Nearby },
-  { id:'guide',     n:'Travel Guide',  i:'🧭', c:'Travel', t:'live', d:'City info + SOS',       C:T.TravelGuide },
-  { id:'manga',     n:'Manga',         i:'📖', c:'AHM7', t:'live', d:'Read chapters + pages',         C:AD.Manga },
-  { id:'novels',    n:'Novels',        i:'📕', c:'AHM7', t:'live', d:'Read full chapters',         C:AD.Novels },
-  { id:'med',       n:'Medicine',      i:'💊', c:'AHM7', t:'live', d:'Uses, dosage, warnings',         C:MedicineDeep },
-  { id:'courses',   n:'Courses',       i:'🎓', c:'AHM7', t:'live', d:'1000+ free courses',    C:A.Courses },
-  { id:'tempmail',  n:'Temp Mail',     i:'📨', c:'AHM7', t:'live', d:'Disposable inbox',      C:A.TempMail },
-  { id:'wikipdf',   n:'Wiki → PDF',    i:'📄', c:'AHM7', t:'live', d:'Article as PDF',        C:A.WikiPdf },
-  { id:'hand',      n:'Handwriting',   i:'✍️', c:'AHM7', t:'live', d:'Text → handwriting',    C:A.Handwriting },
-  { id:'websnap',   n:'Screenshot',    i:'📸', c:'AHM7', t:'live', d:'Capture any site',      C:A.WebSnap },
-  { id:'certs',     n:'Certificates',  i:'🏆', c:'AHM7', t:'live', d:'Templates',             C:A.Certificates },
-  { id:'telenor',   n:'Telenor Quiz',  i:'📶', c:'AHM7', t:'live', d:'Daily answers',         C:A.Telenor },
-  { id:'dl',        n:'Downloader',    i:'⬇️', c:'Media',  t:'live', d:'Video/audio/thumb',    C:Downloader },
-  { id:'journey',   n:'Plan Journey',   i:'🧭', c:'Travel', t:'off',  d:'Metro + bus combined', C:MultiModal },
-  { id:'trainjrny', n:'Train Journey',  i:'🧳', c:'Travel', t:'live', d:'Direct + connections', C:TrainJourney },
-  { id:'trainlive', n:'Live Train',     i:'🔴', c:'Travel', t:'live', d:'Running status',       C:TR.TrainLive },
-  { id:'trainsch',  n:'Train Schedule', i:'📋', c:'Travel', t:'live', d:'Full route + coaches',  C:TR.TrainSchedule },
-  { id:'busplan',   n:'Bus Route',      i:'🚌', c:'Travel', t:'off',  d:'Fare + changes',       C:BP.BusPlanner },
-  { id:'buslist',   n:'Bus Routes',     i:'🗒️', c:'Travel', t:'off',  d:'383 DTC routes',       C:BP.BusRoutesList },
-  { id:'metroplan', n:'Metro Route',    i:'🗺️', c:'Travel', t:'off',  d:'Fare + interchanges',  C:MP.MetroPlanner },
-  { id:'metronet',  n:'Metro Network',  i:'🚇', c:'Travel', t:'off',  d:'289 stations',         C:MP.MetroNetwork },
-  { id:'metrolines',n:'Metro Lines',   i:'🚈', c:'Travel', t:'live', d:'Real DMRC lines',      C:T.MetroLines },
-  { id:'mandi',     n:'Mandi Prices',  i:'🌾', c:'India',  t:'live', d:'Daily commodity rates', C:T.Mandi },
-
-  // ---------- Converters ----------
-  { id:'imgconv',   n:'Image Convert', i:'🖼️', c:'Convert', t:'off', d:'JPG/PNG/WEBP + resize', C:C.ImageConvert },
-  { id:'img2pdf',   n:'Images → PDF',  i:'📄', c:'Convert', t:'off', d:'Multi-page PDF',        C:C.ImagesToPdf },
-  { id:'audioconv', n:'Audio → WAV',   i:'🎼', c:'Convert', t:'off', d:'Decode any format',     C:C.AudioConvert },
-  { id:'vidframe',  n:'Video Frames',  i:'🎞️', c:'Convert', t:'off', d:'Extract as JPG',        C:C.VideoFrames },
-  { id:'dataconv',  n:'Data Convert',  i:'🔀', c:'Convert', t:'off', d:'JSON/CSV/XML',          C:C.DataConvert },
-  { id:'txtfile',   n:'Text → File',   i:'💾', c:'Convert', t:'off', d:'Save as any type',      C:C.TextToFile },
+  { id:'unit',      n:'Unit Convert',  i:'ruler',    c:'Convert', t:'off', d:'7 categories',             C:O.UnitConvert },
+  { id:'temp',      n:'Temperature',   i:'thermo',   c:'Convert', t:'off', d:'C/F/K/R',                  C:O.TempConvert },
+  { id:'color',     n:'Colour Tool',   i:'palette',  c:'Convert', t:'off', d:'HEX/RGB/HSL + WCAG',       C:O.ColorTool },
+  { id:'imgconv',   n:'Image Convert', i:'image',    c:'Convert', t:'off', d:'JPG/PNG/WEBP + resize',    C:C.ImageConvert },
+  { id:'img2pdf',   n:'Images → PDF',  i:'doc',      c:'Convert', t:'off', d:'Multi-page PDF',           C:C.ImagesToPdf },
+  { id:'audioconv', n:'Audio → WAV',   i:'disc',     c:'Convert', t:'off', d:'Decode any format',        C:C.AudioConvert },
+  { id:'vidframe',  n:'Video Frames',  i:'film',     c:'Convert', t:'off', d:'Extract as JPG',           C:C.VideoFrames },
+  { id:'dataconv',  n:'Data Convert',  i:'swap',     c:'Convert', t:'off', d:'JSON/CSV/XML',             C:C.DataConvert },
+  { id:'txtfile',   n:'Text → File',   i:'save',     c:'Convert', t:'off', d:'Save as any type',         C:C.TextToFile },
 ];
 
-const CATS = ['All', 'AHM7', 'India', 'Travel', 'Convert', 'Music', 'Time', 'Money', 'Learn', 'Media', 'Space', 'Text', 'Dev', 'Generate'];
+const CATS = ['All', 'Travel', 'India', 'Health', 'AHM7', 'Convert', 'Music',
+              'Time', 'Money', 'Learn', 'Media', 'Space', 'Text', 'Dev', 'Generate'];
 
 export default function App() {
   const [route, setRoute] = useState(() => location.hash.slice(1) || '');
@@ -163,18 +192,19 @@ export default function App() {
     <Shell>
       <header className="topbar">
         {tool
-          ? <button className="iconbtn" onClick={() => go('')}>‹</button>
+          ? <button className="iconbtn" onClick={() => go('')} aria-label="Back"><Icon n="back" size={19} /></button>
           : <span className="brand gradtext">OMNI</span>}
         <div className="tb-t">
           <b>{tool ? tool.n : 'OmniTools'}</b>
           <span>{tool ? tool.d : `${TOOLS.length} tools · no login`}</span>
         </div>
         {tool && (
-          <button className="iconbtn" onClick={() => setFav((f) =>
+          <button className="iconbtn" aria-label="Favourite" onClick={() => setFav((f) =>
             f.includes(tool.id) ? f.filter((x) => x !== tool.id) : [...f, tool.id])}>
-            {fav.includes(tool.id) ? '★' : '☆'}
+            <Icon n={fav.includes(tool.id) ? 'staron' : 'star'} size={18}
+              style={{ color: fav.includes(tool.id) ? 'var(--green)' : '' }} />
           </button>)}
-        <button className="iconbtn" onClick={() => setShowStatus((s) => !s)}>
+        <button className="iconbtn" aria-label="System status" onClick={() => setShowStatus((s) => !s)}>
           <span className="dot" />
         </button>
       </header>
@@ -188,31 +218,35 @@ export default function App() {
             <p>{TOOLS.length} tools. Multi-source fallback on every live feature.
               No login, no signup, no API keys.</p>
             <div className="pillrow">
-              <span className="pill on">● {offCount} work offline</span>
-              <span className="pill">⚡ Auto-failover</span>
-              <span className="pill">🔒 No tracking</span>
-              <span className="pill" title="deployed build">⬢ {__BUILD__}</span>
+              <span className="pill on"><Icon n="check" size={13} /> {offCount} work offline</span>
+              <span className="pill"><Icon n="refresh" size={13} /> Auto-failover</span>
+              <span className="pill"><Icon n="shield" size={13} /> No tracking</span>
+              <span className="pill" title="deployed build"><Icon n="box" size={13} /> {__BUILD__}</span>
             </div>
           </div>
 
           <div className="search">
-            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+            <Icon n="search" size={18} />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tools…" enterKeyHint="search" />
-            {q && <button onClick={() => setQ('')} style={{ background: 'none', border: 0, color: 'var(--fg3)', fontSize: 20 }}>×</button>}
+            {q && <button onClick={() => setQ('')} aria-label="Clear"
+              style={{ background: 'none', border: 0, color: 'var(--fg3)', display: 'grid', placeItems: 'center' }}>
+              <Icon n="x" size={17} /></button>}
           </div>
 
           <div className="cats">
-            {fav.length > 0 && <button className={`cat ${cat === 'Fav' ? 'on' : ''}`} onClick={() => setCat('Fav')}>★ {fav.length}</button>}
+            {fav.length > 0 && (
+              <button className={`cat ${cat === 'Fav' ? 'on' : ''}`} onClick={() => setCat('Fav')}>
+                <Icon n="staron" size={13} /> {fav.length}</button>)}
             {CATS.map((c) => <button key={c} className={`cat ${cat === c ? 'on' : ''}`} onClick={() => setCat(c)}>{c}</button>)}
           </div>
 
           {shown.length === 0
-            ? <div className="state">No tools match "{q}"</div>
+            ? <div className="state">No tools match &ldquo;{q}&rdquo;</div>
             : <div className="grid">
                 {shown.map((t) => (
                   <button className="tile" key={t.id} onClick={() => go(t.id)}>
                     {t.t === 'live' ? <span className="live" /> : <span className="off">OFF</span>}
-                    <span className="ic">{t.i}</span>
+                    <span className="ic"><Icon n={t.i} size={24} /></span>
                     <b>{t.n}</b>
                     <small>{t.d}</small>
                   </button>))}
@@ -230,11 +264,11 @@ export default function App() {
       </div>
 
       <nav className="nav">
-        <button className={!tool ? 'on' : ''} onClick={() => go('')}><span>▦</span><small>Tools</small></button>
-        <button className={route === 'music' ? 'on' : ''} onClick={() => go('music')}><span>🎵</span><small>Music</small></button>
-        <button className={route === 'weather' ? 'on' : ''} onClick={() => go('weather')}><span>🌤️</span><small>Weather</small></button>
-        <button className={route === 'clock' ? 'on' : ''} onClick={() => go('clock')}><span>🕐</span><small>Clock</small></button>
-        <button className={route === 'currency' ? 'on' : ''} onClick={() => go('currency')}><span>💱</span><small>Money</small></button>
+        {[['', 'grid', 'Tools'], ['music', 'music', 'Music'], ['bus', 'bus', 'Travel'],
+          ['med', 'pill', 'Medicine'], ['weather', 'sun', 'Weather']].map(([id, ic, label]) => (
+          <button key={id} className={route === id ? 'on' : ''} onClick={() => go(id)}>
+            <Icon n={ic} size={21} /><small>{label}</small>
+          </button>))}
       </nav>
       <MiniPlayer />
       <FullPlayer />
@@ -259,7 +293,9 @@ function StatusPanel({ onClose, offCount, total }) {
   const healthy = stats.filter((s) => !s.open).length;
   return (
     <div className="card" style={{ margin: '12px 16px' }}>
-      <div className="chead">System status <button className="iconbtn" style={{ marginLeft: 'auto', width: 28, height: 28, fontSize: 15 }} onClick={onClose}>×</button></div>
+      <div className="chead">System status
+        <button className="iconbtn" style={{ marginLeft: 'auto', width: 28, height: 28 }}
+          onClick={onClose} aria-label="Close"><Icon n="x" size={15} /></button></div>
       <div className="g3">
         <div className="stat"><div className="v" style={{ color: 'var(--green)' }}>{offCount}</div><div className="l">Offline-safe</div></div>
         <div className="stat"><div className="v">{total - offCount}</div><div className="l">Live tools</div></div>

@@ -13,3 +13,6 @@ qa.py
 audiotest.py
 full_audit.py
 verify2.py
+qa_visual.py
+qa_hand_audio.py
+dbg_sub.py

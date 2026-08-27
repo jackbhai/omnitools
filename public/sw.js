@@ -8,13 +8,31 @@
  *   - hashed assets (immutable) -> cache first (safe: filename changes per build)
  *   - everything cross-origin   -> never touched
  */
-const V = 'omni-v3';
+const V = 'omni-v4';
+const MED = 'omni-med-v1';        // medicine shards, cached only once used
+
+/* The medicine index is 253,802 brands across 752 shards (24 MB). Precaching
+   that would burn a user's data for nothing, so shards are cached the first
+   time they are actually fetched — after one search for "Levosiz" that shard
+   answers offline forever, and the other 751 are never downloaded. */
+const MED_KEEP = 40;              // most-recent shards to retain
+
+async function cacheMedShard(req, res) {
+  try {
+    const c = await caches.open(MED);
+    await c.put(req, res);
+    const keys = await c.keys();
+    if (keys.length > MED_KEEP) {
+      for (const k of keys.slice(0, keys.length - MED_KEEP)) await c.delete(k);
+    }
+  } catch {}
+}
 
 self.addEventListener('install', () => self.skipWaiting());
 
 self.addEventListener('activate', (e) => e.waitUntil(
   caches.keys()
-    .then((keys) => Promise.all(keys.filter((k) => k !== V).map((k) => caches.delete(k))))
+    .then((keys) => Promise.all(keys.filter((k) => k !== V && k !== MED).map((k) => caches.delete(k))))
     .then(() => self.clients.claim())
 ));
 
@@ -29,6 +47,7 @@ self.addEventListener('fetch', (e) => {
   const isShell = req.mode === 'navigate' || url.pathname.endsWith('/') ||
                   url.pathname.endsWith('index.html');
   const isHashed = /\/assets\/.+-[A-Za-z0-9_]{8,}\.(js|css)$/.test(url.pathname);
+  const isMed = /\/med\/[^/]+\.json$/.test(url.pathname);
 
   if (isShell) {
     e.respondWith(
@@ -48,6 +67,21 @@ self.addEventListener('fetch', (e) => {
         caches.open(V).then((c) => c.put(req, copy)).catch(() => {});
         return res;
       }))
+    );
+    return;
+  }
+
+  /* Medicine shards: serve from cache instantly when we have them, otherwise
+     fetch and keep a copy so the same search works with no signal. */
+  if (isMed) {
+    e.respondWith(
+      caches.match(req).then((hit) => {
+        const net = fetch(req).then((res) => {
+          if (res.ok) cacheMedShard(req, res.clone());
+          return res;
+        });
+        return hit || net;
+      }).catch(() => fetch(req))
     );
     return;
   }

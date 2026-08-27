@@ -5,7 +5,7 @@
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { lyricsPool } from './ytmusic';
-import { resolveAudio, prefetchAudio } from './audio-resolve';
+import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached } from './audio-resolve';
 import { resolve } from './engine';
 
 const Ctx = createContext(null);
@@ -97,11 +97,27 @@ export function PlayerProvider({ children }) {
     // if every proxy path fails.
     if (t.needsResolve && t.id) {
       setYt(null);
+      const cached = isCached(t.id);
       // Consume the user gesture NOW so the element is unlocked for later.
-      try { el.src = SILENCE; el.play().catch(() => {}); } catch {}
+      // Skipped when the stream is already cached: we can set the real src
+      // immediately and avoid the extra load cycle entirely.
+      if (!cached) { try { el.src = SILENCE; el.play().catch(() => {}); } catch {} }
+
+      // Progress that reflects reality: AHM7 needs ~8-15 s, so tell the user.
+      let tick = 0;
+      const clock = cached ? null : setInterval(() => {
+        tick += 1;
+        if (tick <= 2) setStage('Finding ad-free stream…');
+        else if (tick <= 6) setStage(`Finding ad-free stream… ${tick}s`);
+        else if (tick <= 14) setStage(`Still working… ${tick}s (source is slow)`);
+        else setStage(`Almost there… ${tick}s`);
+      }, 1000);
+
       try {
         setLoading(true);
+        if (!cached) setStage('Finding ad-free stream…');
         const r = await resolveAudio(t.id, { onProgress: setStage });
+        if (clock) clearInterval(clock);
         const meta = { ...t, art: t.art || r.art, artist: t.artist || r.artist, dlUrl: r.audio };
         setTrack(meta);
         // No crossOrigin here: the CDN 302-redirects and a tainted CORS
@@ -109,9 +125,10 @@ export function PlayerProvider({ children }) {
         el.removeAttribute('crossorigin');
         el.src = r.audio;
         el.playbackRate = rate;
+        setStage('Buffering…');
         await el.play();
         try { chain.attach(el); chain.resume(); } catch {}
-        setPlaying(true); setStage(''); setLoading(false);
+        setPlaying(true); setStage(''); setLoading(false); setErr('');
         if ('mediaSession' in navigator) {
           try {
             navigator.mediaSession.metadata = new MediaMetadata({
@@ -119,37 +136,44 @@ export function PlayerProvider({ children }) {
               artwork: meta.art ? [{ src: meta.art, sizes: '512x512' }] : [] });
           } catch {}
         }
-        // warm the next track so skipping feels instant
+        // warm the next few tracks so skipping is instant
         if (list) {
-          const i = list.findIndex((x) => x.id === t.id);
-          if (i >= 0 && list[i + 1]?.id) prefetchAudio(list[i + 1].id);
+          const i = list.findIndex((x) => (x.id ?? x.url) === (t.id ?? t.url));
+          if (i >= 0) prefetchNext(list, i, 3);
         }
         resolve('lyrics', lyricsPool, { title: meta.title || '', artist: meta.artist || '' }, { ttl: 864e5 })
           .then((r2) => setLyrics(r2.data)).catch(() => setLyrics(null));
         return;
       } catch (e) {
+        if (clock) clearInterval(clock);
         console.warn('[player] direct audio failed:', e && e.message, e);
-        // Autoplay refusal is NOT a stream failure - keep the ad-free audio.
-        if (el.src && el.src !== SILENCE &&
-            (e?.name === 'NotAllowedError' || /gesture|interact|play\(\)/i.test(e?.message || ''))) {
+        const blocked = e?.name === 'NotAllowedError' ||
+          /gesture|interact|play\(\)|user activation/i.test(e?.message || '');
+        // Autoplay refusal is NOT a stream failure — the ad-free audio is
+        // loaded and one tap will start it. NEVER fall back to the ad embed.
+        if (blocked && el.src && el.src !== SILENCE) {
           setStage(''); setLoading(false); setPlaying(false);
-          setErr('Tap ▶ to start');
+          setErr('Ready — tap play to start');
+          resolve('lyrics', lyricsPool, { title: t.title || '', artist: t.artist || '' }, { ttl: 864e5 })
+            .then((r2) => setLyrics(r2.data)).catch(() => setLyrics(null));
           return;
         }
-        // If the stream resolved but autoplay was blocked, keep the audio
-        // element loaded so a tap on play works - do NOT drop to the embed.
-        if (el.src && (e?.name === 'NotAllowedError' || /gesture|interact/i.test(e?.message || ''))) {
-          setStage(''); setLoading(false); setPlaying(false);
-          setErr('Tap play to start (browser blocked autoplay)');
-          return;
+        // A cached link can expire (CDN signs them). Drop it and retry once.
+        if (cached) {
+          forgetAudio(t.id);
+          try {
+            const r = await resolveAudio(t.id, { onProgress: setStage });
+            el.removeAttribute('crossorigin');
+            el.src = r.audio; el.playbackRate = rate;
+            await el.play();
+            setPlaying(true); setStage(''); setLoading(false); setErr('');
+            return;
+          } catch { /* fall through to the honest error */ }
         }
-        // Fallback: official embed. Has ads, but the song still plays.
-        setStage(''); setLoading(false);
+        // Everything failed. Say so — do not silently serve ads.
+        setStage(''); setLoading(false); setPlaying(false);
         el.pause(); el.removeAttribute('src'); el.load();
-        setYt(t.id); setPlaying(true);
-        setErr('Ad-free stream unavailable — using embed fallback');
-        resolve('lyrics', lyricsPool, { title: t.title || '', artist: t.artist || '' }, { ttl: 864e5 })
-          .then((r2) => setLyrics(r2.data)).catch(() => setLyrics(null));
+        setErr('Could not get an ad-free stream right now. Tap retry.');
         return;
       }
     }
@@ -204,6 +228,14 @@ export function PlayerProvider({ children }) {
 
   const seek = useCallback((s) => { if (audio.current) audio.current.currentTime = s; }, []);
 
+  /** Retry the current track from scratch, ignoring any cached (expired) link. */
+  const retry = useCallback(() => {
+    if (!track) return;
+    if (track.id) forgetAudio(track.id);
+    setErr('');
+    play(track, queue.length ? queue : null);
+  }, [track, queue, play]);
+
   /* media-session hardware / lock-screen buttons */
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
@@ -231,7 +263,7 @@ export function PlayerProvider({ children }) {
   const value = {
     audio, yt, stage, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, err, lyrics,
     eq, preset, bass, treb, comp, rate, sleep,
-    play, toggle, step, seek, setShuffle, setRepeat, setFull, setSleep, applyPreset,
+    play, toggle, step, seek, retry, setShuffle, setRepeat, setFull, setSleep, applyPreset,
     setEqBand: (i, v) => { const n = [...eq]; n[i] = v; setEq(n); chain.band(i, v); setPreset('Custom'); },
     setBassV: (v) => { setBass(v); chain.setBass(v); },
     setTrebV: (v) => { setTreb(v); chain.setTreb(v); },
