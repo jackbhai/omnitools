@@ -13,6 +13,7 @@ import * as MP from './tools/metro-planner';
 import * as BP from './tools/bus-planner';
 import * as TR from './tools/trains2';
 import { MultiModal } from './tools/multimodal';
+import { TrainJourney } from './tools/train-journey';
 import { Medicine as MedicineDeep } from './tools/medicine';
 import { providerStats } from './core/engine';
 
@@ -104,6 +105,7 @@ const TOOLS = [
   { id:'telenor',   n:'Telenor Quiz',  i:'📶', c:'AHM7', t:'live', d:'Daily answers',         C:A.Telenor },
   { id:'dl',        n:'Downloader',    i:'⬇️', c:'Media',  t:'live', d:'Video/audio/thumb',    C:Downloader },
   { id:'journey',   n:'Plan Journey',   i:'🧭', c:'Travel', t:'off',  d:'Metro + bus combined', C:MultiModal },
+  { id:'trainjrny', n:'Train Journey',  i:'🧳', c:'Travel', t:'live', d:'Direct + connections', C:TrainJourney },
   { id:'trainlive', n:'Live Train',     i:'🔴', c:'Travel', t:'live', d:'Running status',       C:TR.TrainLive },
   { id:'trainsch',  n:'Train Schedule', i:'📋', c:'Travel', t:'live', d:'Full route + coaches',  C:TR.TrainSchedule },
   { id:'busplan',   n:'Bus Route',      i:'🚌', c:'Travel', t:'off',  d:'Fare + changes',       C:BP.BusPlanner },

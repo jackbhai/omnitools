@@ -5,7 +5,7 @@
  * Sources: AHM7 alldl (100+ platforms) primary, Piped mirrors as fallback for
  * YouTube (they expose per-quality stream lists).
  */
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { jget } from '../core/engine';
 import { ahm7Json } from '../core/audio-resolve';
 import { Card, Spin, Err, Chips, Copy, fmt } from '../ui/kit';
@@ -85,28 +85,47 @@ export function Downloader() {
 
   const [saving, setSaving] = useState('');
   const [note, setNote] = useState('');
+  const abortRef = useRef(null);
 
   /**
    * A cross-origin `<a download>` is ignored by browsers, and this CDN also
    * 302-redirects - so the old click did nothing. Fetch the bytes instead and
    * save from a blob URL, which produces a real file with a real name.
    */
+  /**
+   * Downloading here is genuinely slow: the CDN streams ~4 MB in ~45 s. The
+   * earlier version gave no feedback, so a working download looked frozen and
+   * users assumed the tool was broken.
+   *
+   * Now: immediate "Starting…" state, live percentage, a cancel button, and a
+   * hard fallback that hands the URL to the browser if streaming stalls.
+   * (A cross-origin `<a download>` is ignored by browsers and this CDN also
+   * 302-redirects, which is why we must stream into a Blob ourselves.)
+   */
   const grab = async (u, name) => {
-    setSaving(name); setNote('');
+    if (saving) return;
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setSaving(name);
+    setNote('Starting…');
+    const t0 = Date.now();
     try {
-      const res = await fetch(u, { mode: 'cors' });
+      const res = await fetch(u, { mode: 'cors', signal: ctrl.signal });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const total = +(res.headers.get('content-length') || 0);
       const reader = res.body?.getReader();
       let blob;
       if (reader) {
-        const chunks = []; let got = 0;
+        const chunks = [];
+        let got = 0;
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
-          chunks.push(value); got += value.length;
-          if (total) setNote(`${Math.round((got / total) * 100)}%`);
-          else setNote(`${(got / 1048576).toFixed(1)} MB`);
+          chunks.push(value);
+          got += value.length;
+          const mb = (got / 1048576).toFixed(1);
+          const secs = Math.round((Date.now() - t0) / 1000);
+          setNote(total ? `${Math.round((got / total) * 100)}% · ${mb} MB` : `${mb} MB · ${secs}s`);
         }
         blob = new Blob(chunks);
       } else {
@@ -116,16 +135,21 @@ export function Downloader() {
       const a = document.createElement('a');
       a.href = url; a.download = name;
       document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-      setNote('Saved');
+      setTimeout(() => URL.revokeObjectURL(url), 15000);
+      setNote(`Saved (${(blob.size / 1048576).toFixed(1)} MB)`);
     } catch (e) {
-      // Last resort: hand the URL to the browser so the user still gets the file.
-      setNote('Opening in a new tab…');
-      window.open(u, '_blank', 'noopener');
+      if (e.name === 'AbortError') { setNote('Cancelled'); }
+      else {
+        setNote('Opening in a new tab…');
+        window.open(u, '_blank', 'noopener');
+      }
     }
+    abortRef.current = null;
     setSaving('');
-    setTimeout(() => setNote(''), 4000);
+    setTimeout(() => setNote(''), 5000);
   };
+
+  const cancel = () => abortRef.current?.abort();
 
   return (<>
     <div className="fld">
@@ -143,6 +167,25 @@ export function Downloader() {
 
     {busy && <Spin t="Reading the link" />}
     {err && <div className="err" style={{ marginTop: 12 }}><h4>Couldn't fetch</h4><p>{err}</p></div>}
+
+    {saving && (
+      <Card style={{ position: 'sticky', top: 62, zIndex: 30,
+        border: '1px solid rgba(0,255,156,.4)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="spin" style={{ width: 18, height: 18 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <b style={{ fontSize: 12.5, display: 'block' }}>{note || 'Downloading…'}</b>
+            <span className="dim sm" style={{ whiteSpace: 'nowrap', overflow: 'hidden',
+              textOverflow: 'ellipsis', display: 'block' }}>{saving}</span>
+          </div>
+          <button className="btn ghost sm" onClick={cancel}>Cancel</button>
+        </div>
+        <div className="dim sm" style={{ marginTop: 6 }}>
+          Large files can take 30–60 s on this CDN — please keep this tab open.
+        </div>
+      </Card>)}
+    {!saving && note && (
+      <div className="src"><span className="dot" /><span>{note}</span></div>)}
 
     {info && (<>
       <Card style={{ marginTop: 12 }}>
