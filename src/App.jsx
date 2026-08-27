@@ -18,6 +18,7 @@ import { TrainJourney } from './tools/train-journey';
 import { Medicine as MedicineDeep } from './tools/medicine';
 import { Handwriting } from './tools/handwriting';
 import { Hub } from './tools/travel-hub';
+import * as W from './tools/world';
 import { providerStats } from './core/engine';
 import { Icon } from './ui/icons';
 
@@ -61,6 +62,8 @@ const TOOLS = [
   { id:'journey',   n:'Plan Journey',  i:'compass',  c:'Travel', t:'off',  d:'Metro + bus combined',     C:MultiModal },
   { id:'nearby',    n:'Near Me',       i:'pin',      c:'Travel', t:'live', d:'ATM, food, fuel…',         C:T.Nearby },
   { id:'guide',     n:'Travel Guide',  i:'globe',    c:'Travel', t:'live', d:'City info + SOS',          C:T.TravelGuide },
+  { id:'sos',       n:'Emergency',     i:'warn',     c:'Travel', t:'live', d:'Helplines, India & world', C:W.Emergency },
+  { id:'dial',      n:'Dial Codes',    i:'signal',   c:'Travel', t:'live', d:'Country calling codes',    C:W.DialCodes },
 
   // ---------- India ----------
   { id:'weather',   n:'Weather + AQI', i:'sun',      c:'India', t:'live', d:'Forecast & air quality',    C:L.Weather },
@@ -95,8 +98,8 @@ const TOOLS = [
   { id:'wiki',      n:'Wikipedia',     i:'globe',    c:'Learn', t:'live', d:'Encyclopedia',              C:L.Wikipedia },
   { id:'dict',      n:'Dictionary',    i:'book',     c:'Learn', t:'live', d:'Definitions + audio',       C:L.Dictionary },
   { id:'books',     n:'Books',         i:'books',    c:'Learn', t:'live', d:'Open Library',              C:L.Books },
-  { id:'country',   n:'Countries',     i:'earth',    c:'Learn', t:'live', d:'Country facts',             C:L.Countries },
-  { id:'name',      n:'Name Guess',    i:'sparkle',  c:'Learn', t:'live', d:'Age & gender',              C:L.NameGuess },
+  { id:'country',   n:'Countries',     i:'earth',    c:'Learn', t:'live', d:'250 countries, full detail', C:W.Countries },
+  { id:'names',     n:'Name Lookup',   i:'smile',    c:'Learn', t:'live', d:'Origin, age, gender',       C:W.NameLookup },
 
   // ---------- Media ----------
   { id:'dl',        n:'Downloader',    i:'download', c:'Media', t:'live', d:'Video / audio / thumbnail', C:Downloader },
