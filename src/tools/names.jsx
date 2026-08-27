@@ -247,6 +247,12 @@ export function Names() {
   const [open, setOpen] = useState(null);
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState('');
+  /* When the shipped directory has nothing, the census is asked automatically.
+     Without this the tool answered "No name matches" for Rakheja and
+     Mangatram — real names carried by 1,033 and 586 people — unless the user
+     happened to switch to another tab first. Nobody should have to know that. */
+  const [fallback, setFallback] = useState(null);
+  const [busyFb, setBusyFb] = useState(false);
   const token = useRef(0);
 
   const kind = TABS.find((t) => t.id === tab)?.kind ?? '';
@@ -258,17 +264,31 @@ export function Names() {
   useEffect(() => {
     if (tab === 'look') return;
     const my = ++token.current;
-    setBusy(true); setErr('');
+    setBusy(true); setErr(''); setFallback(null); setBusyFb(false);
     const t = setTimeout(() => {
       N.searchDirectory(q, { kind, ...filters, limit: 400 })
         .then((r) => {
           if (token.current !== my) return;
           setRes(r);
-          if (!r.rows.length) setErr(q.trim() ? `No name matches "${q.trim()}".` : 'No name matches those filters.');
+          if (r.rows.length) return;
+          const term = q.trim();
+          if (!term) { setErr('No name matches those filters.'); return; }
+          /* Nothing shipped carries this spelling. Ask the census before
+             telling the user it does not exist — that is the whole difference
+             between "we have not heard of it" and "it is not a name". */
+          setBusyFb(true);
+          return N.census(term)
+            .then((c) => {
+              if (token.current !== my) return;
+              if (c) setFallback({ name: term, census: c });
+              else setErr(`Nothing anywhere has "${term}" — not the directory, not the population census.`);
+            })
+            .catch(() => { if (token.current === my) setErr(`No name matches "${term}".`); })
+            .finally(() => { if (token.current === my) setBusyFb(false); });
         })
         .catch((e) => { if (token.current === my) { setRes({ total: 0, rows: [] }); setErr(e.message); } })
         .finally(() => { if (token.current === my) setBusy(false); });
-    }, q.trim() ? 180 : 0);
+    }, q.trim() ? 320 : 0);
     return () => clearTimeout(t);
   }, [q, tab, filters.cc, filters.lang, filters.comm, filters.reg]);   // eslint-disable-line
 
@@ -352,7 +372,30 @@ export function Names() {
       </>)}
 
       {busy && <Spin t="Searching the directory" />}
-      {!busy && err && <div className="state"><span>{err}</span></div>}
+      {!busy && busyFb && <Spin t={`"${q.trim()}" is not in the directory — checking the census`} />}
+
+      {!busy && !busyFb && fallback && (() => {
+        const c = fallback.census;
+        const main = (c.surname?.people || 0) >= (c.given?.people || 0) ? c.surname : c.given;
+        return (
+          <Card style={{ marginTop: 10, borderColor: 'rgba(0,255,156,.3)' }}>
+            <div className="chead"><Icon n="check" size={15} /> Found in the population census</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+              <b style={{ fontSize: 20 }}>{fallback.name}</b>
+              <span className="dim sm">{fmt(main.people)} people carry it
+                {main.top ? ` · mostly in ${main.top}` : ''}</span>
+            </div>
+            <p className="dim sm" style={{ margin: '8px 0 0', lineHeight: 1.5 }}>
+              This name is not in the shipped directory, because no encyclopedia
+              lists it — that only happens when nobody notable carries it, not
+              when the name is rare or invented.
+            </p>
+            <button className="btn" style={{ width: '100%', marginTop: 10 }}
+              onClick={() => setOpen(fallback.name)}>Open the full record</button>
+          </Card>);
+      })()}
+
+      {!busy && !busyFb && err && <div className="state"><span>{err}</span></div>}
       {!busy && res.rows.length > 0 && (<>
         <div className="dim sm" style={{ margin: '10px 0 8px' }}>
           {res.total > res.rows.length
