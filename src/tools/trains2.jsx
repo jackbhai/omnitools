@@ -181,24 +181,47 @@ export function TrainSchedule() {
 }
 
 /* ------------------------------------------------------------- BETWEEN */
+function StnPicker({ label, value, onPick }) {
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const hits = React.useMemo(() => T.searchStations(q, 10), [q]);
+  const cur = T.stationByCode(value);
+  return (
+    <div className="fld" style={{ position: 'relative' }}>
+      <label>{label}</label>
+      <input
+        value={open ? q : (cur ? `${cur.n} (${cur.c})` : value)}
+        placeholder="Type station name or code…"
+        onFocus={() => { setOpen(true); setQ(''); }}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onBlur={() => setTimeout(() => setOpen(false), 180)} />
+      {open && hits.length > 0 && (
+        <div className="list" style={{ position: 'absolute', top: '100%', left: 0, right: 0,
+          zIndex: 40, marginTop: 4, maxHeight: 270, overflowY: 'auto' }}>
+          {hits.map((h) => (
+            <button key={h.c} className="col" style={{ background: 'none', border: 0,
+              textAlign: 'left', width: '100%', cursor: 'pointer' }}
+              onMouseDown={(e) => { e.preventDefault(); onPick(h.c); setOpen(false); setQ(''); }}>
+              <b style={{ fontSize: 13.5 }}>{h.n}</b>
+              <span className="dim sm mono">{h.c}</span>
+            </button>))}
+        </div>)}
+    </div>);
+}
+
 export function TrainsBetween() {
   const [from, setFrom] = useState('NDLS');
   const [to, setTo] = useState('ASR');
   const b = useData('trains-between', T.trainsBetween, { from, to }, { auto: true, ttl: 36e5 });
   return (<>
-    <div className="g2">
-      <div className="fld"><label>From</label>
-        <select value={from} onChange={(e) => setFrom(e.target.value)}>
-          {T.STATIONS.map(([c, n]) => <option key={c} value={c}>{n} ({c})</option>)}
-        </select></div>
-      <div className="fld"><label>To</label>
-        <select value={to} onChange={(e) => setTo(e.target.value)}>
-          {T.STATIONS.map(([c, n]) => <option key={c} value={c}>{n} ({c})</option>)}
-        </select></div>
-    </div>
+    <StnPicker label="From" value={from} onPick={(c) => { setFrom(c); b.run({ from: c, to }); }} />
+    <StnPicker label="To" value={to} onPick={(c) => { setTo(c); b.run({ from, to: c }); }} />
     <div className="btnrow">
       <button className="btn" style={{ flex: 1 }} onClick={() => b.run({ from, to })}>🚆 Search</button>
       <button className="btn ghost" onClick={() => { setFrom(to); setTo(from); b.run({ from: to, to: from }); }}>⇄</button>
+    </div>
+    <div className="dim sm" style={{ marginTop: 6 }}>
+      {T.ALL_STATIONS.length.toLocaleString('en-IN')} stations across India
     </div>
 
     {b.loading && <Spin t="Searching Indian Railways" />}

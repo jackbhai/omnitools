@@ -101,29 +101,46 @@ export const trainsBetween = [
   },
 ];
 
-/** Common station codes for the picker (verified against eRail responses). */
-export const STATIONS = [
-  ['NDLS', 'New Delhi'], ['DLI', 'Old Delhi'], ['NZM', 'Hazrat Nizamuddin'],
-  ['ANVT', 'Anand Vihar Terminal'], ['DEE', 'Delhi Sarai Rohilla'],
-  ['ASR', 'Amritsar Jn'], ['LDH', 'Ludhiana Jn'], ['JUC', 'Jalandhar City'],
-  ['UMB', 'Ambala Cant'], ['CDG', 'Chandigarh'], ['JAT', 'Jammu Tawi'],
-  ['LKO', 'Lucknow'], ['CNB', 'Kanpur Central'], ['BSB', 'Varanasi Jn'],
-  ['PRYJ', 'Prayagraj Jn'], ['GKP', 'Gorakhpur'], ['PNBE', 'Patna Jn'],
-  ['HWH', 'Howrah Jn'], ['SDAH', 'Sealdah'], ['NJP', 'New Jalpaiguri'],
-  ['CSTM', 'Mumbai CSMT'], ['BCT', 'Mumbai Central'], ['LTT', 'Lokmanya Tilak'],
-  ['PUNE', 'Pune Jn'], ['ADI', 'Ahmedabad Jn'], ['ST', 'Surat'],
-  ['JP', 'Jaipur'], ['JU', 'Jodhpur'], ['AII', 'Ajmer Jn'], ['UDZ', 'Udaipur City'],
-  ['SBC', 'KSR Bengaluru'], ['MAS', 'MGR Chennai Ctr'], ['MAQ', 'Mangaluru Ctr'],
-  ['TVC', 'Thiruvananthapuram'], ['ERS', 'Ernakulam Jn'], ['CBE', 'Coimbatore'],
-  ['HYB', 'Hyderabad Dn'], ['SC', 'Secunderabad Jn'], ['BZA', 'Vijayawada Jn'],
-  ['VSKP', 'Visakhapatnam'], ['BBS', 'Bhubaneswar'], ['BPL', 'Bhopal Jn'],
-  ['NGP', 'Nagpur'], ['JBP', 'Jabalpur'], ['INDB', 'Indore Jn'], ['GWL', 'Gwalior'],
-  ['AGC', 'Agra Cantt'], ['MTJ', 'Mathura Jn'], ['ALJN', 'Aligarh Jn'],
-  ['BE', 'Bareilly'], ['MB', 'Moradabad'], ['HW', 'Haridwar Jn'], ['DDN', 'Dehradun'],
-  ['KOTA', 'Kota Jn'], ['RTM', 'Ratlam Jn'], ['BRC', 'Vadodara Jn'],
-  ['RNC', 'Ranchi'], ['TATA', 'Tatanagar Jn'], ['DHN', 'Dhanbad Jn'],
-  ['GHY', 'Guwahati'], ['RJPB', 'Rajendra Nagar'], ['MFP', 'Muzaffarpur'],
-];
+/**
+ * ALL-INDIA station index: 8,127 stations from OpenStreetMap railway=station
+ * nodes carrying an IR `ref` code (see scripts/build_stations.mjs).
+ * Replaces a hardcoded 60-station list that could not cover the country.
+ * NOTE: Mumbai CST is CSMT here - that has been its official code since 2017.
+ */
+import STN from '../data/stations-india.json';
+
+export const ALL_STATIONS = STN.stations;
+export const STATIONS_BUILT = STN.built;
+const BY_CODE = new Map(ALL_STATIONS.map((s) => [s.c, s]));
+export const stationByCode = (c) => BY_CODE.get(String(c || '').toUpperCase());
+
+/** Popular stations shown before the user types anything. */
+const POPULAR = ['NDLS','DLI','NZM','ANVT','CSMT','BCT','LTT','HWH','SDAH','MAS','SBC',
+  'ASR','LKO','CNB','PNBE','ADI','JP','BPL','NGP','PUNE','SC','BZA','TVC','ERS','GHY','JAT'];
+export const POPULAR_STATIONS = POPULAR.map((c) => BY_CODE.get(c)).filter(Boolean);
+
+/** Fuzzy search across 8k stations: code prefix first, then name. */
+const MAJOR = /junction|jn\b|central|terminus|terminal|cantt|city\b/i;
+const POP_SET = new Set(POPULAR);
+
+/** Bigger stations should outrank tiny suburban halts with the same prefix. */
+const weight = (st) => (POP_SET.has(st.c) ? 3 : 0) + (MAJOR.test(st.n) ? 2 : 0)
+  + (st.c.length <= 4 ? 1 : 0);
+
+export function searchStations(q, limit = 10) {
+  const s = String(q || '').trim().toLowerCase();
+  if (!s) return POPULAR_STATIONS.slice(0, limit);
+  const code = [], starts = [], has = [];
+  for (const st of ALL_STATIONS) {
+    const c = st.c.toLowerCase(), n = st.n.toLowerCase();
+    if (c === s) code.unshift(st);
+    else if (c.startsWith(s)) code.push(st);
+    else if (n.startsWith(s)) starts.push(st);
+    else if (n.includes(s)) has.push(st);
+  }
+  const rank = (arr) => arr.sort((a, b) => weight(b) - weight(a) || a.n.length - b.n.length);
+  return [...code, ...rank(starts), ...rank(has)].slice(0, limit);
+}
 
 export const fmtTime = (iso) => {
   if (!iso) return '—';

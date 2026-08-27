@@ -11,6 +11,9 @@ import { ahm7Json } from '../core/audio-resolve';
 import { Card, Spin, Err, Chips, Copy, fmt } from '../ui/kit';
 
 const PIPED = ['https://api.piped.private.coffee', 'https://pipedapi.kavin.rocks', 'https://pipedapi.adminforge.de'];
+/** Filenames must not contain path or reserved characters. */
+const sanitize = (t) => String(t || 'download').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+
 const ytId = (u) => {
   const m = String(u).match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([A-Za-z0-9_-]{11})/);
   return m ? m[1] : null;
@@ -80,10 +83,48 @@ export function Downloader() {
     setInfo(got); setBusy(false);
   };
 
-  const grab = (u, name) => {
-    const a = document.createElement('a');
-    a.href = u; a.download = name; a.target = '_blank'; a.rel = 'noreferrer';
-    document.body.appendChild(a); a.click(); a.remove();
+  const [saving, setSaving] = useState('');
+  const [note, setNote] = useState('');
+
+  /**
+   * A cross-origin `<a download>` is ignored by browsers, and this CDN also
+   * 302-redirects - so the old click did nothing. Fetch the bytes instead and
+   * save from a blob URL, which produces a real file with a real name.
+   */
+  const grab = async (u, name) => {
+    setSaving(name); setNote('');
+    try {
+      const res = await fetch(u, { mode: 'cors' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const total = +(res.headers.get('content-length') || 0);
+      const reader = res.body?.getReader();
+      let blob;
+      if (reader) {
+        const chunks = []; let got = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value); got += value.length;
+          if (total) setNote(`${Math.round((got / total) * 100)}%`);
+          else setNote(`${(got / 1048576).toFixed(1)} MB`);
+        }
+        blob = new Blob(chunks);
+      } else {
+        blob = await res.blob();
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setNote('Saved');
+    } catch (e) {
+      // Last resort: hand the URL to the browser so the user still gets the file.
+      setNote('Opening in a new tab…');
+      window.open(u, '_blank', 'noopener');
+    }
+    setSaving('');
+    setTimeout(() => setNote(''), 4000);
   };
 
   return (<>
@@ -118,12 +159,13 @@ export function Downloader() {
         {info.audioOptions?.length > 0 ? (
           <div className="btnrow">
             {info.audioOptions.slice(0, 6).map((a, i) => (
-              <button key={i} className="btn sm" onClick={() => grab(a.url, `${info.title}.m4a`)}>
+              <button key={i} className="btn sm" onClick={() => grab(a.url, `${sanitize(info.title)}-${a.q.replace(/\s+/g,'')}.m4a`)}>
                 ⬇ {a.q}{a.size ? ` · ${(a.size / 1048576).toFixed(1)}MB` : ''}</button>))}
           </div>
         ) : info.audio ? (
           <button className="btn" style={{ width: '100%' }}
-            onClick={() => grab(info.audio, `${info.title}.m4a`)}>⬇ Download audio (M4A)</button>
+            onClick={() => grab(info.audio, `${sanitize(info.title)}.m4a`)}>
+            {saving.endsWith('.m4a') ? (note || 'Downloading…') : '⬇ Download audio (M4A)'}</button>
         ) : <span className="dim sm">No separate audio track available.</span>}
         {info.audio && (
           <audio controls src={info.audio} style={{ width: '100%', marginTop: 10 }} preload="none" />)}
@@ -136,12 +178,12 @@ export function Downloader() {
           <div className="btnrow">
             {THUMBS.map(([k, l]) => (
               <button key={k} className="btn ghost sm"
-                onClick={() => grab(`https://i.ytimg.com/vi/${info.id}/${k}.jpg`, `${info.title}-${k}.jpg`)}>
+                onClick={() => grab(`https://i.ytimg.com/vi/${info.id}/${k}.jpg`, `${sanitize(info.title)}-${k}.jpg`)}>
                 ⬇ {l}</button>))}
           </div>
         ) : info.thumb ? (
           <button className="btn" style={{ width: '100%' }}
-            onClick={() => grab(info.thumb, `${info.title}-thumb.jpg`)}>⬇ Download thumbnail</button>
+            onClick={() => grab(info.thumb, `${sanitize(info.title)}-thumb.jpg`)}>⬇ Download thumbnail</button>
         ) : <span className="dim sm">No thumbnail found.</span>}
         {info.thumb && <div className="btnrow"><Copy text={info.thumb} label="Copy image URL" /></div>}
       </Card>
@@ -158,12 +200,13 @@ export function Downloader() {
                   <span className="dim sm">{(v.mime || '').split(';')[0]}
                     {v.size ? ` · ${(v.size / 1048576).toFixed(1)} MB` : ''}</span>
                 </div>
-                <button className="btn sm" onClick={() => grab(v.url, `${info.title}-${v.q}.mp4`)}>⬇</button>
+                <button className="btn sm" onClick={() => grab(v.url, `${sanitize(info.title)}-${v.q}.mp4`)}>{saving.includes(v.q) ? (note || '…') : '⬇'}</button>
               </div>))}
           </div>
         ) : info.video ? (
           <button className="btn" style={{ width: '100%' }}
-            onClick={() => grab(info.video, `${info.title}.mp4`)}>⬇ Download video</button>
+            onClick={() => grab(info.video, `${sanitize(info.title)}.mp4`)}>
+            {saving.endsWith('.mp4') ? (note || 'Downloading…') : '⬇ Download video'}</button>
         ) : <span className="dim sm">No downloadable video stream found.</span>}
       </Card>
 
