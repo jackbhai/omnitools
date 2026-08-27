@@ -166,12 +166,33 @@ def intern_shard(recs):
     return {"m": order["m"], "c": order["c"], "k": order["k"],
             "u": order["u"], "s": order["s"], "r": out}
 
-for b, recs in sorted(buckets.items()):
+# Merge tiny shards before writing.
+#
+# Sharding on two letters produced 688 name files, 513 of them under 20 KB and
+# holding only 1.8 MB between them. That file COUNT is what made the Pages
+# deploy time out — the bytes were never the problem. Rare prefixes are folded
+# into their single-letter parent ("qz" -> "q"), which keeps a search to one
+# fetch while cutting the file count by roughly two thirds.
+MERGE_UNDER = 400          # records; below this a prefix is not worth its own file
+
+merged = {}
+for b, recs in buckets.items():
+    key = b if len(recs) >= MERGE_UNDER else (b[0] + "_")
+    merged.setdefault(key, []).extend(recs)
+
+# meta maps every two-letter prefix to the file that actually holds it, so the
+# client can still resolve a query to exactly one request.
+route = {}
+for b in buckets:
+    route[b] = b if len(buckets[b]) >= MERGE_UNDER else (b[0] + "_")
+
+for b, recs in sorted(merged.items()):
     recs.sort(key=lambda x: (x["d"], x["n"]))
     json.dump(intern_shard(recs), open(os.path.join(OUT, f"{b}.json"), "w"),
               separators=(",", ":"), ensure_ascii=False)
     meta["buckets"][b] = len(recs)
     meta["total"] += len(recs)
+meta["route"] = route
 
 # ---- salt shards: cheapest 30 brands per composition (substitute finder)
 salt_files = collections.defaultdict(dict)

@@ -109,11 +109,23 @@ export async function searchMedicines(q, { limit = 60 } = {}) {
 
   const m = await meta();
   const names = Object.keys(m.buckets);
-  let want = [kq.slice(0, 2)];
-  if (kq.length < 2) want = names.filter((b) => b.startsWith(kq));
+
+  /* Rare two-letter prefixes are folded into a single-letter file — 513 of the
+     688 shards held under 20 KB each, and that file count was timing out the
+     deploy. `route` maps a prefix to the file that actually holds it, so a
+     search is still exactly one fetch. */
+  const fileFor = (pfx) => m.route?.[pfx] || (m.buckets[pfx] ? pfx : `${pfx[0]}_`);
+
+  let want = [fileFor(kq.slice(0, 2))];
+  if (kq.length < 2) {
+    want = names.filter((b) => b.startsWith(kq));
+  }
   // also probe the bucket for the FIRST WORD, so "levo 5mg" still lands
   const w0 = key(raw.split(/\s+/)[0]);
-  if (w0.length >= 2 && !want.includes(w0.slice(0, 2))) want.push(w0.slice(0, 2));
+  if (w0.length >= 2) {
+    const f = fileFor(w0.slice(0, 2));
+    if (!want.includes(f)) want.push(f);
+  }
 
   const loaded = await Promise.all(want.filter((b) => m.buckets[b]).map(async (b) => [b, await shard(b)]));
   const hits = [];
