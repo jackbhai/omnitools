@@ -136,6 +136,12 @@ export function FullPlayer() {
 
         {tab === 'eq' && (
           <div>
+            {!p.eqCapable && (
+              <div className="note" style={{ marginTop: 0, marginBottom: 12 }}>
+                The equaliser cannot run on streamed tracks. Routing them through
+                it silences them — a browser will not expose audio it fetched
+                from another site. Speed still works, and playback is untouched.
+              </div>)}
             <div className="btnrow" style={{ marginBottom: 14 }}>
               {Object.keys(PRESETS).map((n) => (
                 <button key={n} className={`cat ${p.preset === n ? 'on' : ''}`}

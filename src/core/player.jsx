@@ -29,13 +29,74 @@ export const PRESETS = {
   Party: [8,6,3,0,-1,0,3,6,7,7],
 };
 
+/**
+ * Optional EQ / analyser graph.
+ *
+ * DANGEROUS BY NATURE — read before changing.
+ *   `createMediaElementSource(el)` permanently re-routes that element's entire
+ *   output into the Web Audio graph. From that moment the element no longer
+ *   feeds the speakers by itself: everything depends on the graph reaching
+ *   `ctx.destination` AND the context being in the `running` state.
+ *
+ * THE BUG THIS CAUSED
+ *   On a phone an AudioContext is created SUSPENDED, and it can be suspended
+ *   again at any time by the OS (a call, another app taking audio focus, the
+ *   screen locking). The old code attached the graph on every play and called
+ *   `chain.resume()` without awaiting it or checking the result. When the
+ *   resume did not take, the track kept "playing" — currentTime advanced, the
+ *   UI showed the right thing — with no sound at all. Reproduced exactly:
+ *   suspended context, element not paused, analyser peak 0.
+ *
+ * WHAT CHANGED
+ *   · The graph is now attached ONLY when the user actually turns the EQ on.
+ *     Plain playback never touches Web Audio, so it cannot be silenced by it.
+ *   · `resume()` is awaited and verified; if the context will not run, the
+ *     graph is torn down and the element goes back to playing directly.
+ *   · A watchdog checks that audio is really flowing and self-heals.
+ */
 class Chain {
-  attach(el) {
-    if (this.ready) return;
+  /**
+   * Can this element's audio be routed through Web Audio without being muted?
+   *
+   * Same-origin and blob/data sources are fine. A cross-origin stream is only
+   * safe if the element opted into CORS, which ours cannot (see attach()).
+   */
+  static canProcess(el) {
+    const src = el?.currentSrc || el?.src || '';
+    if (!src) return false;
+    if (src.startsWith('blob:') || src.startsWith('data:')) return true;
+    try {
+      if (new URL(src, location.href).origin === location.origin) return true;
+    } catch { return false; }
+    return !!el.crossOrigin;         // cross-origin needs an explicit opt-in
+  }
+
+  /**
+   * Attach the graph. Returns true only if audio is genuinely still flowing.
+   *
+   * THE HARD LIMIT — measured, not assumed.
+   *   The audio comes from a different origin (the CDN) and the element does
+   *   NOT carry crossOrigin="anonymous" — deliberately, because setting it
+   *   breaks playback outright with this 302-redirecting CDN.
+   *   A cross-origin media element without CORS produces a MUTED
+   *   MediaElementSource: the browser refuses to expose the samples. Verified
+   *   directly — a known-good oscillator reads analyser peak 128 in the same
+   *   browser, while the real stream reads 0 while still "playing".
+   *   So attaching the EQ to these streams silences them, permanently, and
+   *   `createMediaElementSource` cannot be undone on that element.
+   *
+   *   Hence: the graph refuses to attach to a cross-origin stream at all.
+   *   Sound matters more than an equaliser.
+   */
+  async attach(el) {
+    if (this.ready && this.el === el) return this.ensureRunning();
+    if (this.ready && this.el !== el) return false;   // one element per context
+    if (!Chain.canProcess(el)) return false;
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
+    if (!AC || !el) return false;
     try {
       this.ctx = new AC();
+      this.el = el;
       this.src = this.ctx.createMediaElementSource(el);
       this.eq = BANDS.map((f, i) => {
         const b = this.ctx.createBiquadFilter();
@@ -46,6 +107,7 @@ class Chain {
       this.bass = this.ctx.createBiquadFilter(); this.bass.type = 'lowshelf'; this.bass.frequency.value = 200;
       this.treb = this.ctx.createBiquadFilter(); this.treb.type = 'highshelf'; this.treb.frequency.value = 3200;
       this.comp = this.ctx.createDynamicsCompressor();
+      this.comp.threshold.value = 0; this.comp.ratio.value = 1;   // transparent until asked
       this.an = this.ctx.createAnalyser(); this.an.fftSize = 128;
       let n = this.src;
       for (const f of this.eq) { n.connect(f); n = f; }
@@ -53,9 +115,55 @@ class Chain {
       this.treb.connect(this.comp); this.comp.connect(this.an);
       this.an.connect(this.ctx.destination);
       this.ready = true;
-    } catch { this.ready = false; }
+
+      /* The OS can suspend us later — a phone call, another app, the screen
+         locking. Without this the track would go quietly silent again. */
+      this.ctx.addEventListener?.('statechange', () => {
+        if (this.ctx?.state === 'suspended') this.ctx.resume().catch(() => {});
+      });
+
+      const ok = await this.ensureRunning();
+      if (!ok) this.detach();
+      return ok;
+    } catch {
+      this.detach();
+      return false;
+    }
   }
-  resume() { if (this.ctx?.state === 'suspended') this.ctx.resume(); }
+
+  /** Resume and VERIFY. An unverified resume is what caused the silence. */
+  async ensureRunning() {
+    if (!this.ctx) return false;
+    if (this.ctx.state === 'running') return true;
+    try { await this.ctx.resume(); } catch { return false; }
+    return this.ctx.state === 'running';
+  }
+
+  /**
+   * Give the element its speakers back.
+   *
+   * createMediaElementSource cannot be undone, so the context is closed
+   * outright — that releases the element and it plays normally again.
+   */
+  detach() {
+    try { this.src?.disconnect(); } catch {}
+    try { this.ctx?.close(); } catch {}
+    this.ctx = this.src = this.eq = this.bass = this.treb = this.comp = this.an = null;
+    this.el = null;
+    this.ready = false;
+  }
+
+  /** Is sound genuinely reaching the output? 0 means silence. */
+  peak() {
+    if (!this.an) return null;
+    const buf = new Uint8Array(this.an.frequencyBinCount);
+    this.an.getByteTimeDomainData(buf);
+    let p = 0;
+    for (const v of buf) p = Math.max(p, Math.abs(v - 128));
+    return p;
+  }
+
+  resume() { return this.ensureRunning(); }
   band(i, v) { this.eq?.[i] && (this.eq[i].gain.value = v); }
   setBass(v) { this.bass && (this.bass.gain.value = v); }
   setTreb(v) { this.treb && (this.treb.gain.value = v); }
@@ -67,6 +175,8 @@ export function PlayerProvider({ children }) {
   const audio = useRef(null);
   const retriedRef = useRef(null);      // last id we already re-resolved once
   const recoveringRef = useRef(false);  // a re-resolve is in flight
+  const unlockingRef = useRef(false);   // the silent gesture-unlock clip is loaded
+  const playTokenRef = useRef(0);       // only the newest play() may touch the element
   const autoRadio = useRef(false);      // keep the queue topped up forever
   const [queue, setQueue] = useState([]);
   const [idx, setIdx] = useState(-1);
@@ -87,12 +197,23 @@ export function PlayerProvider({ children }) {
   const [comp, setComp] = useState(false);
   const [rate, setRate] = useState(1);
   const [sleep, setSleep] = useState(0);
+  const [eqOn, setEqOn] = useState(false);
   const [yt, setYt] = useState(null);
   const [stage, setStage] = useState('');   // active YouTube id (IFrame mode)
 
   /* ---- play a track (resolving the stream if needed) ---- */
   const play = useCallback(async (t, list) => {
     const el = audio.current; if (!el) return;
+
+    /* Only the newest tap matters.
+       Resolving takes seconds, so tapping three tracks quickly leaves three
+       resolutions in flight. Whichever finished last used to win — it would
+       overwrite the src of the track the user actually chose, and the losers'
+       error handling would tear down the winner. Each play() now claims a
+       token and every later step checks it is still the current one. */
+    const token = ++playTokenRef.current;
+    const stale = () => playTokenRef.current !== token;
+
     setErr(''); setLyrics(null);
     if (list) { setQueue(list); setIdx(list.findIndex((x) => (x.id ?? x.url) === (t.id ?? t.url))); }
     setTrack(t); setLoading(true);
@@ -109,10 +230,17 @@ export function PlayerProvider({ children }) {
       setYt(null);
       const cached = isCached(t.id);
 
-      // Consume the user gesture NOW so the element is unlocked for later.
-      // Skipped when the stream is already cached: we can set the real src
-      // immediately and avoid the extra load cycle entirely.
-      if (!cached) { try { el.src = SILENCE; el.play().catch(() => {}); } catch {} }
+      /* Consume the user gesture NOW so the element is unlocked for later.
+         Skipped when the stream is already cached: we can set the real src
+         immediately and avoid the extra load cycle entirely.
+
+         `unlocking` is checked by the error handler — Chromium reports the
+         silent clip as MediaError 4, and treating that as a dead stream was
+         killing tracks moments after they were tapped. */
+      if (!cached) {
+        unlockingRef.current = true;
+        try { el.src = SILENCE; el.play().catch(() => {}); } catch {}
+      }
 
       // Progress that reflects reality: the resolver needs ~8-15 s, so tell the user.
       let tick = 0;
@@ -129,6 +257,7 @@ export function PlayerProvider({ children }) {
         if (!cached) setStage('Finding ad-free stream…');
         const r = await resolveAudio(t.id, { onProgress: setStage });
         if (clock) clearInterval(clock);
+        if (stale()) return;          // the user moved on; leave their track alone
         const meta = { ...t, art: t.art || r.art, artist: t.artist || r.artist, dlUrl: r.audio };
         setTrack(meta);
         // No crossOrigin here: the CDN 302-redirects and a tainted CORS
@@ -146,12 +275,16 @@ export function PlayerProvider({ children }) {
         // handler must know a recovery is possible and stay quiet. Arming
         // this BEFORE assigning src is what stops the "Stream failed" flash.
         if (cached) { recoveringRef.current = true; retriedRef.current = t.id; }
+        unlockingRef.current = false;
         el.src = r.audio;
         el.playbackRate = rate;
         setStage('Buffering…');
         await el.play();
         recoveringRef.current = false;
-        try { chain.attach(el); chain.resume(); } catch {}
+        /* Deliberately NOT attaching the EQ graph here. Routing the element
+           through Web Audio is what silenced playback when the context was
+           suspended — the track advanced with no sound. The graph is attached
+           only when the user switches the EQ on. */
         setPlaying(true); setStage(''); setLoading(false); setErr('');
         resumeWarming();
         notePlay(meta);   // recently-played list in the Library tab
@@ -172,6 +305,7 @@ export function PlayerProvider({ children }) {
         return;
       } catch (e) {
         if (clock) clearInterval(clock);
+        if (stale()) return;          // a superseded attempt must stay silent
         console.warn('[player] direct audio failed:', e && e.message, e);
         const blocked = e?.name === 'NotAllowedError' ||
           /gesture|interact|play\(\)|user activation/i.test(e?.message || '');
@@ -219,7 +353,6 @@ export function PlayerProvider({ children }) {
       let meta = t;
       if (!url) throw new Error('No playable source');
       el.src = url; el.playbackRate = rate;
-      chain.attach(el); chain.resume();
       await el.play();
       setPlaying(true);
       if ('mediaSession' in navigator) {
@@ -248,7 +381,7 @@ export function PlayerProvider({ children }) {
       return;
     }
     const el = audio.current; if (!el?.src) return;
-    chain.resume();
+    if (chain.ready) chain.ensureRunning();   // only matters when the EQ is on
     if (el.paused) { el.play(); setPlaying(true); } else { el.pause(); setPlaying(false); }
   }, [yt, playing]);
 
@@ -332,6 +465,44 @@ export function PlayerProvider({ children }) {
 
   const seek = useCallback((s) => { if (audio.current) audio.current.currentTime = s; }, []);
 
+  /**
+   * Silence watchdog.
+   *
+   * The failure the user hit was insidious: the track advances, the UI looks
+   * correct, and nothing is audible. It happens when the EQ graph is attached
+   * and its AudioContext gets suspended by the OS — a call, another app taking
+   * audio focus, the screen locking. Once suspended, the element's output has
+   * nowhere to go.
+   *
+   * This checks a few times a second while playing: if the graph is up but the
+   * context is not running, it resumes it; if resuming fails, it drops the
+   * graph entirely so the element goes back to feeding the speakers directly.
+   * Sound always wins over the equaliser.
+   */
+  useEffect(() => {
+    if (!playing) return;
+    let strikes = 0;
+    const id = setInterval(async () => {
+      const el = audio.current;
+      if (!el || el.paused || !chain.ready) { strikes = 0; return; }
+      if (chain.ctx?.state === 'running') { strikes = 0; return; }
+      const ok = await chain.ensureRunning();
+      if (ok) { strikes = 0; return; }
+      // three consecutive failures: the context is not coming back
+      if (++strikes >= 3) {
+        const at = el.currentTime;
+        chain.detach();
+        setEqOn(false);
+        // closing the context releases the element; nudge it if it stalled
+        try {
+          if (el.paused) { el.currentTime = at; await el.play(); }
+        } catch {}
+        strikes = 0;
+      }
+    }, 1200);
+    return () => clearInterval(id);
+  }, [playing]);
+
   /** Retry the current track from scratch, ignoring any cached (expired) link. */
   const retry = useCallback(() => {
     if (!track) return;
@@ -358,20 +529,49 @@ export function PlayerProvider({ children }) {
     return () => clearTimeout(t);
   }, [sleep]);
 
+  /**
+   * Bring the EQ graph up on demand.
+   *
+   * Attaching re-routes the element through Web Audio, which is exactly what
+   * used to silence playback. So it happens only when the user reaches for an
+   * EQ control, it is verified, and if the context refuses to run the graph is
+   * torn down and we say so rather than leaving a silent player.
+   */
+  const enableEq = useCallback(async () => {
+    const el = audio.current;
+    if (!el || chain.ready) return chain.ready;
+    const ok = await chain.attach(el);
+    setEqOn(ok);
+    if (!ok) { /* the EQ panel already explains why; never disturb playback */ }
+    else {
+      // re-apply whatever the user had set before the graph existed
+      eq.forEach((g, i) => chain.band(i, g));
+      chain.setBass(bass); chain.setTreb(treb); chain.setComp(comp);
+    }
+    return ok;
+  }, [eq, bass, treb, comp]);
+
   const applyPreset = useCallback((name) => {
     setPreset(name);
     const v = PRESETS[name] || PRESETS.Flat;
-    setEq([...v]); v.forEach((g, i) => chain.band(i, g));
-  }, []);
+    setEq([...v]);
+    // 'Flat' is the default, so it needs no graph — leave audio untouched.
+    if (name === 'Flat' && !chain.ready) return;
+    enableEq().then(() => v.forEach((g, i) => chain.band(i, g)));
+  }, [enableEq]);
 
   const value = {
     audio, yt, stage, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, err, lyrics,
     eq, preset, bass, treb, comp, rate, sleep,
     play, toggle, step, seek, retry, extendQueue, setRadio, setShuffle, setRepeat, setFull, setSleep, applyPreset,
-    setEqBand: (i, v) => { const n = [...eq]; n[i] = v; setEq(n); chain.band(i, v); setPreset('Custom'); },
-    setBassV: (v) => { setBass(v); chain.setBass(v); },
-    setTrebV: (v) => { setTreb(v); chain.setTreb(v); },
-    setCompV: (v) => { setComp(v); chain.setComp(v); },
+    eqOn, enableEq,
+    // false for streamed (cross-origin) tracks — the UI explains why
+    eqCapable: Chain.canProcess(audio.current),
+    setEqBand: (i, v) => { const n = [...eq]; n[i] = v; setEq(n);
+      enableEq().then(() => chain.band(i, v)); setPreset('Custom'); },
+    setBassV: (v) => { setBass(v); enableEq().then(() => chain.setBass(v)); },
+    setTrebV: (v) => { setTreb(v); enableEq().then(() => chain.setTreb(v)); },
+    setCompV: (v) => { setComp(v); enableEq().then(() => chain.setComp(v)); },
     setRateV: (v) => { setRate(v); if (audio.current) { audio.current.playbackRate = v; audio.current.preservesPitch = true; } },
     BANDS,
   };
@@ -389,6 +589,17 @@ export function PlayerProvider({ children }) {
              play() has already resolved by then, so the earlier try/catch
              never sees it — the element fires `error` instead and the old
              code just printed "Stream failed". Re-resolve once, silently. */
+          const el = audio.current;
+
+          /* IGNORE the gesture-unlock clip.
+             The 0.05 s silent data-URI we play on tap makes Chromium fire
+             `error` with code 4 (SRC_NOT_SUPPORTED). That is harmless in
+             itself, but this handler then treated it as a dead stream and
+             tore down the track that was in the middle of loading — the
+             direct cause of songs failing 0.3 s after a tap with no pattern
+             to it. The unlock clip is ours and its failure means nothing. */
+          if (unlockingRef.current || (el && (el.src || '').startsWith('data:'))) return;
+
           const t = track;
           if (!t) return;
           if (!t.id) { setErr('Stream failed — tap retry'); return; }

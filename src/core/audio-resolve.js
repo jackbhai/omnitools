@@ -42,20 +42,27 @@ import { proxyBase } from './settings';
  * `delay` staggers the start so we don't hammer every proxy for every request,
  * but a stalled leader is overtaken within a second.
  */
+/**
+ * Fallback pool, used only when the app's own relay is unreachable.
+ *
+ * corsproxy.io was REMOVED, not merely reordered. Its free plan blocks
+ * server-side requests but still answers a browser with HTTP 200 and an error
+ * body, so it won the race with a fake success and aborted every other proxy
+ * — the direct cause of tracks that never played. A source that lies about
+ * success is worse than one that is simply down.
+ */
 const PROXIES = [
-  { id: 'corsproxy.io', delay: 0,
-    url: (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}` },
-  { id: 'cors.sh', delay: 250,
+  { id: 'cors.sh', delay: 0,
     url: (u) => `https://proxy.cors.sh/${u}` },
-  { id: 'allorigins', delay: 900,
+  { id: 'allorigins', delay: 700,
     url: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
-  { id: 'codetabs', delay: 1400,
+  { id: 'codetabs', delay: 1200,
     url: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}` },
-  { id: 'isomorphic', delay: 1900,
+  { id: 'isomorphic', delay: 1700,
     url: (u) => `https://cors.isomorphic-git.org/${u}` },
-  { id: 'corslol', delay: 2200,
+  { id: 'corslol', delay: 2100,
     url: (u) => `https://api.cors.lol/?url=${encodeURIComponent(u)}` },
-  { id: 'whateverorigin', delay: 2600,
+  { id: 'whateverorigin', delay: 2500,
     url: (u) => `https://www.whateverorigin.org/get?url=${encodeURIComponent(u)}` },
 ];
 
@@ -137,11 +144,33 @@ export const isCached = (id) => !!cacheGet(id);
 /* ------------------------------------------------------------ proxy race */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Validate a proxied response.
+ *
+ * THIS IS WHERE "some songs just don't play" came from.
+ *   corsproxy.io's free plan refuses server-side requests, but it answers the
+ *   BROWSER with HTTP 200 and puts the refusal in the body:
+ *     {"error":"Server-side requests are not allowed on your plan..."}
+ *   The old check only looked at `r.ok`, so that 200 won the Promise.any race,
+ *   every other proxy was aborted mid-flight, and the track failed — even
+ *   though the real resolver answers fine in 6-9 s. Whether a given track
+ *   failed came down to which proxy replied first, which is exactly why it
+ *   looked random.
+ *
+ * So: a payload is only accepted if it actually carries a playable URL.
+ */
 function parsePayload(txt) {
   let j = JSON.parse(txt);
   // allorigins/whateverorigin wrap the body in { contents }
   if (j && typeof j.contents === 'string') j = JSON.parse(j.contents);
-  if (!j || (!j.mediaInfo && !j.success && !j.url)) throw new Error('unusable payload');
+  if (!j) throw new Error('empty payload');
+
+  // an explicit error from the proxy or the upstream, whatever the status was
+  if (j.error) throw new Error(String(j.error).slice(0, 80));
+
+  const m = j.mediaInfo || {};
+  const playable = m.audioUrl || m.videoUrl || j.url;
+  if (!playable) throw new Error('no playable url in payload');
   return j;
 }
 
@@ -183,31 +212,55 @@ function viaProxy(target, { ms = 26000, onProgress, retry = true } = {}) {
   const race = (pool) =>
     Promise.any(pool.map(attempt)).then((j) => { ctrl.abort(); return j; });
 
-  /* The user's own Cloudflare Worker, when configured, goes FIRST and with no
-     stagger — it has no rate limit and typically answers in a few hundred ms,
-     versus 7-11 s for the last surviving public proxy. The public pool stays
-     as a fallback so nothing breaks if the Worker is unreachable. */
-  const own = proxyBase();
-  const pool = own
-    ? [{ id: 'own', delay: 0, url: (u) => `${own}/?url=${encodeURIComponent(u)}` },
-       ...PROXIES.map((p) => ({ ...p, delay: p.delay + 600 }))]
-    : PROXIES;
+  /* The relay goes first with no stagger. It has no rate limit, but it is NOT
+     always fast: measured 0.07 s warm and 6-13 s cold, because the upstream it
+     calls is itself slow.
 
-  const fresh = pool.filter(usable);
-  return race(fresh.length ? fresh : pool)
-    .catch(async () => {
-      ctrl.abort();
-      if (!retry) throw new Error('Could not reach the audio source');
-      /* Everything failed at once. That is usually a burst of rate limits
-         rather than a real outage, so wait a moment, clear the bench and try
-         the whole pool once more before telling the user anything. */
-      onProgress?.('Retrying…');
-      await sleep(1200);
-      COOLDOWN.clear();
-      done = false;
-      return Promise.any(pool.map(attempt))
-        .catch(() => { throw new Error('Could not reach the audio source — tap retry'); });
-    });
+     That timing is why tracks failed at random. The public proxies fail in well
+     under a second (403 / 429), and `Promise.any` rejects as soon as EVERY
+     promise has rejected — so a run where the quick failures all landed before
+     the relay came back killed the whole attempt, even though the relay was
+     about to succeed. Giving the relay its own stage fixes it: the fallbacks
+     are only raced if the relay genuinely fails. */
+  /* Stage 1: the relay alone. Stage 2: the public pool. Stage 3: one more go
+     at both after a pause.
+
+     Why staged rather than one big race — the relay has no rate limit but is
+     NOT always quick: measured 0.07 s warm and 6-13 s cold, because the
+     upstream it calls is itself slow. The public proxies fail in well under a
+     second (403 / 429), and `Promise.any` rejects only once EVERY promise has
+     rejected... which happened long before the relay came back. Runs where the
+     quick failures all landed first killed a request that was about to
+     succeed, which is exactly why some tracks played and others did not, with
+     no pattern. */
+  const own = proxyBase();
+  const relay = own
+    ? { id: 'own', delay: 0, url: (u) => `${own}/?url=${encodeURIComponent(u)}` }
+    : null;
+
+  const stage = async (list) => {
+    if (!list.length) throw new Error('no proxies');
+    done = false;                     // each stage races on its own terms
+    return Promise.any(list.map(attempt));
+  };
+
+  const publicPool = () => (PROXIES.filter(usable).length ? PROXIES.filter(usable) : PROXIES);
+
+  return (async () => {
+    if (relay) {
+      try { return await stage([relay]); } catch { /* fall through */ }
+    }
+    try { return await stage(publicPool()); } catch { /* fall through */ }
+
+    if (!retry) throw new Error('Could not reach the audio source');
+    /* Everything failed. Usually a burst of rate limits rather than a real
+       outage, so pause, clear the bench and try once more before saying so. */
+    onProgress?.('Retrying…');
+    await sleep(1200);
+    COOLDOWN.clear();
+    try { return await stage(relay ? [relay, ...PROXIES] : PROXIES); }
+    catch { throw new Error('Could not reach the audio source — tap retry'); }
+  })().finally(() => ctrl.abort());
 }
 
 /** Fetch any the resolver result through the proxy chain (no CORS on the resolver). */
