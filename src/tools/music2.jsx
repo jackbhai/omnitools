@@ -22,23 +22,36 @@ import { usePlayer } from '../core/player';
 import { prefetchAudio, isCached, onWarm } from '../core/audio-resolve';
 import { searchMusic, suggest, findPlaylists, findPlaylistsWithCounts, playlistTracks, artistInfo,
          resolveByName, radioQueue, chart, GENRES } from '../core/music';
+import { catalogueReady, searchCatalogue, searchArtists, artistPage, albumTracks,
+         chartTracks, chartArtists, chartPlaylists, playlistEntries,
+         radioStations, radioTracks, toPlayable, toPlayableList,
+         REGIONS, TOP_ARTISTS } from '../core/catalogue';
 import { Spin, Err, Empty, Card, fmt } from '../ui/kit';
 import { Icon } from '../ui/icons';
 import { favourites, isFav, toggleFav, history, topPlayed, playlists,
          createPlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist,
          clearHistory, onLibrary, libraryStats } from '../core/library';
-import { getSettings, setSetting, testProxy } from '../core/settings';
+import { getSettings, setSetting, testProxy, usingBuiltin, BUILTIN_PROXY } from '../core/settings';
 
 const mmss = (s) => (!s ? '' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
 
 const TABS = [
   ['search',   'search',  'Search'],
+  ['artists',  'smile',   'Artists'],
   ['library',  'staron',  'Library'],
   ['charts',   'chart',   'Charts'],
   ['genres',   'grid',    'Genres'],
   ['playlist', 'list',    'Playlists'],
   ['radio',    'radio',   'Radio'],
 ];
+
+/* The mood list and the regional list, merged and de-duplicated. */
+const ALL_GENRES = (() => {
+  const out = [...GENRES];
+  const have = new Set(out.map((g) => g.label.toLowerCase()));
+  for (const r of REGIONS) if (!have.has(r.label.toLowerCase())) out.push(r);
+  return out;
+})();
 
 const QUICK = ['babbu maan', 'sidhu moose wala', 'diljit dosanjh', 'ishq murshid',
   'cheema y', 'atif aslam', 'arijit singh', 'coke studio', 'karan aujla', 'ap dhillon'];
@@ -59,6 +72,7 @@ export function Music() {
     </div>
 
     {tab === 'search'   && <SearchTab player={player} />}
+    {tab === 'artists'  && <ArtistsTab player={player} />}
     {tab === 'library'  && <LibraryTab player={player} />}
     {tab === 'charts'   && <ChartsTab player={player} />}
     {tab === 'genres'   && <GenresTab player={player} />}
@@ -209,6 +223,26 @@ function SearchTab({ player }) {
       setTracks(r.tracks);
       nextRef.current = r.next;
       setMore(r.next ? true : false);
+
+      /* Second pass: the catalogue knows about releases the upload-based
+         mirror misses, especially older and regional material. Its titles are
+         matched to real streams in the background and merged in, so the list
+         grows a moment after it first paints rather than making the user wait.
+         Measured: 100 catalogue rows per query on every regional term. */
+      if (catalogueReady()) {
+        searchCatalogue(s, { limit: 40 })
+          .then(async (entries) => {
+            if (my !== seq.current || !entries.length) return;
+            const extra = await toPlayableList(entries, { limit: 18 });
+            if (my !== seq.current) return;
+            setTracks((cur) => {
+              const seen = new Set((cur || []).map((t) => t.id));
+              const add = extra.filter((t) => t?.id && !seen.has(t.id));
+              return add.length ? [...(cur || []), ...add] : cur;
+            });
+          })
+          .catch(() => {});
+      }
       /* Warm just the top two while the user reads the list. Warming more
          backfired: each resolve mints a fresh signed CDN link and invalidates
          the previous one, so deep prefetching left later tracks with dead
@@ -375,6 +409,18 @@ function GenresTab({ player }) {
       const r = await searchMusic(g.q);
       setTracks(r.tracks);
       r.tracks.slice(0, 2).forEach((t, i) => t.id && prefetchAudio(t.id, i));
+      // widen with catalogue material — this is where the regional depth is
+      if (catalogueReady()) {
+        const entries = await searchCatalogue(g.q, { limit: 40 }).catch(() => []);
+        if (entries.length) {
+          const extra = await toPlayableList(entries, { limit: 16 });
+          setTracks((cur) => {
+            const seen = new Set((cur || []).map((t) => t.id));
+            const add = extra.filter((t) => t?.id && !seen.has(t.id));
+            return add.length ? [...(cur || []), ...add] : cur;
+          });
+        }
+      }
     } catch { setTracks([]); }
     finally { setBusy(false); }
   };
@@ -399,14 +445,16 @@ function GenresTab({ player }) {
 
   return (<>
     <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(110px,1fr))' }}>
-      {GENRES.map((g) => (
+      {ALL_GENRES.map((g) => (
         <button className="tile" key={g.id} onClick={() => load(g)}>
           <span className="ic"><Icon n="music" size={22} /></span>
           <b>{g.label}</b>
         </button>))}
     </div>
     <div className="src" style={{ marginTop: 14 }}><span className="dot" />
-      <span>{GENRES.length} moods and languages. Every list plays as a queue and keeps going.</span></div>
+      <span>{ALL_GENRES.length} moods and languages — Punjabi, Haryanvi, Bhojpuri,
+        Bollywood, Pakistani, Tamil, Telugu, Marathi, Gujarati, Bengali, Rajasthani
+        and more. Every list plays as a queue and keeps going.</span></div>
   </>);
 }
 
@@ -722,63 +770,294 @@ function LibraryTab({ player }) {
 }
 
 /* --------------------------------------------------------- speed / proxy */
+/**
+ * The relay decides two things: how fast a song starts, and whether the full
+ * catalogue (artists, albums, regional search) is available at all. One ships
+ * with the app, so this screen is mostly reassurance plus an escape hatch.
+ */
 function SpeedSetup() {
   const [url, setUrl] = useState(getSettings().proxyUrl || '');
-  const [state, setState] = useState(null);   // { ok, ms, error }
+  const [state, setState] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [, bump] = useState(0);
+  const builtin = usingBuiltin();
 
   const check = async () => {
     setBusy(true); setState(null);
     const r = await testProxy(url);
     setState(r);
-    if (r.ok) setSetting('proxyUrl', url.trim().replace(/\/+$/, ''));
+    if (r.ok) { setSetting('proxyUrl', url.trim().replace(/\/+$/, '')); bump((n) => n + 1); }
     setBusy(false);
   };
 
   return (<>
     <Card>
-      <div className="chead"><Icon n="signal" size={16} /> Make playback fast and reliable</div>
-      <div className="dim sm" style={{ lineHeight: 1.65 }}>
-        Songs are fetched through a relay. The free public relays are heavily
-        rate-limited, which is why a song sometimes starts in three seconds and
-        sometimes takes twenty. Running your own — free, five minutes, no card —
-        makes it consistently fast.
-      </div>
+      <div className="chead"><Icon n="signal" size={16} /> Playback relay</div>
+      {builtin
+        ? <div className="note" style={{ marginTop: 0 }}>
+            Using the relay that ships with the app — nothing to set up.
+            Songs resolve in well under a second and the full catalogue is on.
+          </div>
+        : <div className="dim sm" style={{ lineHeight: 1.65 }}>
+            Using your own relay. Clear the box below to go back to the built-in one.
+          </div>}
+
       <div className="fld" style={{ marginTop: 12 }}>
-        <label>Your relay address</label>
+        <label>Your own relay (optional)</label>
         <div className="ip-wrap">
           <Icon n="link" size={16} />
           <input value={url} onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://omni-proxy.you.workers.dev" spellCheck="false" />
+            placeholder={BUILTIN_PROXY} spellCheck="false" />
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button className="btn sm" style={{ flex: 1 }} disabled={busy || !url.trim()} onClick={check}>
-          {busy ? 'Checking…' : 'Test & save'}</button>
-        {getSettings().proxyUrl &&
-          <button className="btn ghost sm" onClick={() => { setSetting('proxyUrl', ''); setUrl(''); setState(null); }}>
-            Remove</button>}
+          {busy ? 'Checking…' : 'Test & use mine'}</button>
+        {!builtin &&
+          <button className="btn ghost sm"
+            onClick={() => { setSetting('proxyUrl', ''); setUrl(''); setState(null); bump((n) => n + 1); }}>
+            Use built-in</button>}
       </div>
       {state?.ok && <div className="note" style={{ marginTop: 10 }}>
         Working — answered in {state.ms} ms. Saved and in use.</div>}
       {state && !state.ok && <div className="note bad" style={{ marginTop: 10 }}>{state.error}</div>}
-      {!state && getSettings().proxyUrl &&
-        <div className="note" style={{ marginTop: 10 }}>A relay is saved and in use.</div>}
     </Card>
 
     <Card>
-      <div className="chead"><Icon n="info" size={16} /> How to set one up</div>
-      <ol className="steps">
-        <li>Open <b>dash.cloudflare.com</b> and sign in (a free account is fine).</li>
-        <li>Go to <b>Workers &amp; Pages</b> → <b>Create</b> → <b>Workers</b> → <b>Create Worker</b>.</li>
-        <li>Give it any name, press <b>Deploy</b>, then <b>Edit code</b>.</li>
-        <li>Delete what is there and paste the contents of <b>worker/omni-proxy.js</b>
-            from the project, then <b>Deploy</b>.</li>
-        <li>Copy the address it shows you and paste it in the box above.</li>
-      </ol>
+      <div className="chead"><Icon n="info" size={16} /> Why a relay at all</div>
+      <div className="dim sm" style={{ lineHeight: 1.7 }}>
+        Browsers refuse to read from a server that does not opt in, and the
+        music sources do not. A relay sits in between and adds that permission.
+        The public ones are heavily rate-limited — of twenty-five tested, one
+        was permanently blocked, several were throttled, and the single
+        survivor took seven to nineteen seconds. The bundled relay answers in
+        a fraction of that and unlocks the artist and album catalogue too.
+      </div>
       <div className="src"><span className="dot" />
-        <span>Cloudflare's free plan allows 100,000 requests a day — far more than
-          this app can use. Nothing is stored on it; it only passes requests through.</span></div>
+        <span>Want your own? Deploy <b>worker/omni-proxy.js</b> to a free
+          Cloudflare Worker and paste the address above. It only forwards
+          requests — nothing is stored.</span></div>
     </Card>
   </>);
+}
+
+/* -------------------------------------------------------------- artists tab */
+/**
+ * A real artist browser, which the YouTube mirror alone could never provide.
+ *
+ * Deezer supplies the catalogue (verified: Atif Aslam 50 top tracks + 50
+ * albums, Arijit Singh 50+50, Nusrat Fateh Ali Khan 50+50, AP Dhillon 49+48)
+ * and each title is matched to a full-length stream on play — 6 of 6 real
+ * Punjabi titles matched in testing. Deezer's own 30-second preview is only
+ * used if nothing full-length can be found, and is labelled when it happens.
+ */
+function ArtistsTab({ player }) {
+  const [q, setQ] = useState('');
+  const [list, setList] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(null);      // artist id
+  const [page, setPage] = useState(null);
+  const [album, setAlbum] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+
+  const find = useCallback(async (term) => {
+    setBusy(true); setErr(''); setList(null);
+    try { setList(await searchArtists(term, { limit: 16 })); }
+    catch (e) { setErr(e.message === 'no-proxy' ? 'no-proxy' : 'Could not search artists'); }
+    finally { setBusy(false); }
+  }, []);
+
+  const openArtist = useCallback(async (id) => {
+    setOpen(id); setLoading(true); setPage(null); setAlbum(null); setErr('');
+    try { setPage(await artistPage(id)); }
+    catch (e) { setErr('Could not load this artist'); }
+    finally { setLoading(false); }
+  }, []);
+
+  const openAlbum = async (id) => {
+    setLoading(true);
+    try { setAlbum(await albumTracks(id)); }
+    catch { setErr('Could not open this album'); }
+    finally { setLoading(false); }
+  };
+
+  /* Catalogue entries are metadata; resolve to real streams before playing. */
+  const playEntries = async (entries, i) => {
+    setLoading(true);
+    try {
+      const from = entries.slice(i);
+      const playable = await toPlayableList(from, { limit: 15 });
+      if (!playable.length) { setErr('Could not find a stream for that'); return; }
+      player.setRadio(true);
+      player.play(playable[0], playable);
+      if (playable[1]?.id) prefetchAudio(playable[1].id, 0);
+    } finally { setLoading(false); }
+  };
+
+  if (!catalogueReady()) return <NeedsRelay what="Artist pages" />;
+
+  /* ---- one album ---- */
+  if (album) return (<>
+    <button className="btn ghost sm" onClick={() => setAlbum(null)} style={{ marginBottom: 10 }}>
+      <Icon n="back" size={15} /> {page?.name || 'Back'}</button>
+    <div className="hubhead">
+      {album.art
+        ? <img src={album.art} alt="" style={{ width: 64, height: 64, borderRadius: 12, objectFit: 'cover' }} />
+        : <div className="hubico"><Icon n="disc" size={24} /></div>}
+      <div style={{ minWidth: 0 }}>
+        <b>{album.name}</b>
+        <span className="dim sm">{album.artist}{album.year ? ` · ${album.year}` : ''} · {album.tracks.length} songs</span>
+      </div>
+    </div>
+    {loading && <Spin t="Finding streams" />}
+    <button className="btn" style={{ width: '100%', marginBottom: 10 }}
+      onClick={() => playEntries(album.tracks, 0)}>
+      <Icon n="play" size={16} /> Play album</button>
+    <EntryList entries={album.tracks} onPlay={(e, i) => playEntries(album.tracks, i)} />
+  </>);
+
+  /* ---- one artist ---- */
+  if (open) return (<>
+    <button className="btn ghost sm" onClick={() => { setOpen(null); setPage(null); }}
+      style={{ marginBottom: 10 }}><Icon n="back" size={15} /> Artists</button>
+    {loading && !page && <Spin t="Loading artist" />}
+    {err && <div className="note bad">{err}</div>}
+    {page && (<>
+      <div className="hubhead">
+        {page.art
+          ? <img src={page.art} alt="" style={{ width: 68, height: 68, borderRadius: '50%', objectFit: 'cover' }} />
+          : <div className="hubico"><Icon n="smile" size={26} /></div>}
+        <div style={{ minWidth: 0 }}>
+          <b>{page.name}</b>
+          <span className="dim sm">
+            {page.fans ? `${fmt(page.fans)} fans · ` : ''}{page.tracks.length} songs · {page.albums.length} albums
+          </span>
+        </div>
+      </div>
+
+      {page.tracks.length > 0 && (<>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          <button className="btn sm" style={{ flex: 1 }} onClick={() => playEntries(page.tracks, 0)}>
+            <Icon n="play" size={15} /> Play top songs</button>
+          <button className="btn ghost sm" onClick={() => {
+            const sh = [...page.tracks].sort(() => Math.random() - 0.5);
+            player.setShuffle(true); playEntries(sh, 0);
+          }}><Icon n="swap" size={15} /> Shuffle</button>
+        </div>
+        {loading && <Spin t="Finding streams" />}
+        <div className="chead">Top songs</div>
+        <EntryList entries={page.tracks} onPlay={(e, i) => playEntries(page.tracks, i)} />
+      </>)}
+
+      {page.albums.length > 0 && (<>
+        <div className="chead" style={{ marginTop: 16 }}>Albums · {page.albums.length}</div>
+        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(116px,1fr))' }}>
+          {page.albums.map((a) => (
+            <button className="tile" key={a.id} onClick={() => openAlbum(a.id)}
+              style={{ padding: 0, minHeight: 0, display: 'block', overflow: 'hidden' }}>
+              {a.art
+                ? <img src={a.art} alt="" loading="lazy"
+                    style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', display: 'block' }} />
+                : <div style={{ aspectRatio: '1', background: 'var(--s2)', display: 'grid', placeItems: 'center' }}>
+                    <Icon n="disc" size={22} /></div>}
+              <div style={{ padding: 7, textAlign: 'left' }}>
+                <b style={{ fontSize: 11, display: 'block', lineHeight: 1.25 }}>{a.name.slice(0, 36)}</b>
+                <span className="dim" style={{ fontSize: 9.5 }}>{a.year}{a.tracks ? ` · ${a.tracks}` : ''}</span>
+              </div>
+            </button>))}
+        </div>
+      </>)}
+
+      {page.related.length > 0 && (<>
+        <div className="chead" style={{ marginTop: 16 }}>Similar artists</div>
+        <div className="cats">
+          {page.related.map((a) => (
+            <button key={a.id} className="cat" onClick={() => openArtist(a.id)}>{a.name}</button>))}
+        </div>
+      </>)}
+    </>)}
+  </>);
+
+  /* ---- artist search / shortcuts ---- */
+  return (<>
+    <div className="fld">
+      <div className="ip-wrap">
+        <Icon n="search" size={17} />
+        <input value={q} onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && q.trim()) { find(q); e.target.blur(); } }}
+          placeholder="Search any artist…" enterKeyHint="search" />
+      </div>
+    </div>
+
+    {busy && <Spin t="Searching artists" />}
+    {err === 'no-proxy' && <NeedsRelay what="Artist search" />}
+    {err && err !== 'no-proxy' && <div className="note bad">{err}</div>}
+
+    {list?.length > 0 && (
+      <div className="list">
+        {list.map((a) => (
+          <div className="row" key={a.id} onClick={() => openArtist(a.id)} style={{ cursor: 'pointer' }}>
+            {a.art
+              ? <img src={a.art} alt="" loading="lazy"
+                  style={{ width: 46, height: 46, borderRadius: '50%', objectFit: 'cover', flex: '0 0 auto' }} />
+              : <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'var(--s3)',
+                  display: 'grid', placeItems: 'center' }}><Icon n="smile" size={20} /></div>}
+            <div className="main">
+              <b style={{ fontSize: 13.5 }}>{a.name}</b>
+              <span className="dim sm">{a.fans ? `${fmt(a.fans)} fans` : ''}{a.albums ? ` · ${a.albums} albums` : ''}</span>
+            </div>
+            <Icon n="chevron" size={15} style={{ opacity: .5 }} />
+          </div>))}
+      </div>)}
+
+    {!list && !busy && (<>
+      <div className="chead" style={{ marginTop: 4 }}>Popular artists</div>
+      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill,minmax(112px,1fr))' }}>
+        {TOP_ARTISTS.map((n) => (
+          <button className="tile" key={n} onClick={() => { setQ(n); find(n); }}>
+            <span className="ic"><Icon n="smile" size={20} /></span>
+            <b style={{ fontSize: 11.5 }}>{n}</b>
+          </button>))}
+      </div>
+    </>)}
+  </>);
+}
+
+/** Catalogue rows (metadata, matched to a stream on tap). */
+function EntryList({ entries, onPlay }) {
+  if (!entries?.length) return null;
+  return (
+    <div className="list">
+      {entries.map((e, i) => (
+        <div className="row" key={(e.dzid || i) + ''} onClick={() => onPlay(e, i)}
+          style={{ cursor: 'pointer' }}>
+          <span className="chartno">{i + 1}</span>
+          {e.art
+            ? <img src={e.art} alt="" loading="lazy"
+                style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover', flex: '0 0 auto' }} />
+            : <div style={{ width: 42, height: 42, borderRadius: 8, background: 'var(--s3)' }} />}
+          <div className="main">
+            <b style={{ fontSize: 13 }}>{(e.title || '').slice(0, 46)}</b>
+            <span className="dim sm">
+              {e.artist}{e.album ? ` · ${e.album.slice(0, 22)}` : ''}
+              {e.dur ? ` · ${mmss(e.dur)}` : ''}
+            </span>
+          </div>
+          <Icon n="play" size={17} style={{ color: 'var(--fg2)' }} />
+        </div>))}
+    </div>);
+}
+
+/** Shown when a catalogue feature needs the relay and none is configured. */
+function NeedsRelay({ what }) {
+  return (
+    <Card>
+      <div className="chead"><Icon n="info" size={16} /> {what} needs a relay</div>
+      <div className="dim sm" style={{ lineHeight: 1.6 }}>
+        The music catalogue is fetched through a relay. One ships with the app,
+        so this normally just works — if you see this, the relay has been turned
+        off in <b>Library → Speed</b>. Turn it back on or point it at your own.
+      </div>
+    </Card>);
 }

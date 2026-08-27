@@ -28,6 +28,7 @@
  * catalogue, and any track already resolved stays playable from cache.
  */
 import { jget } from './engine';
+import { proxyBase } from './settings';
 
 /* Ordered by measured health. Only the first currently answers with CORS, but
    mirrors recover and the pool costs nothing when they do not. */
@@ -59,20 +60,37 @@ const mirrorOk = (b) => (MIRROR_BENCH.get(b) || 0) < Date.now();
 async function anyMirror(path, { ms = 14000, pick } = {}) {
   let lastErr;
   const order = [...MIRRORS.filter(mirrorOk), ...MIRRORS.filter((b) => !mirrorOk(b))];
+
+  const attempt = async (url) => {
+    const d = await jget(url, { ms });
+    const v = pick ? pick(d) : d;
+    if (!v || (Array.isArray(v) && !v.length)) throw new Error('empty');
+    return { data: v, raw: d };
+  };
+
   for (const base of order) {
     try {
-      const d = await jget(base + path, { ms });
-      const v = pick ? pick(d) : d;
-      if (v && (!Array.isArray(v) || v.length)) {
-        MIRROR_BENCH.delete(base);
-        return { data: v, base, raw: d };
-      }
-      lastErr = new Error('empty');
-      MIRROR_BENCH.set(base, Date.now() + 60000);
+      const r = await attempt(base + path);
+      MIRROR_BENCH.delete(base);
+      return { ...r, base };
     } catch (e) {
       lastErr = e;
-      // 90 s bench: long enough to skip a dead host, short enough to recover
       MIRROR_BENCH.set(base, Date.now() + 90000);
+    }
+  }
+
+  /* Every mirror refused us directly. Several of them are alive but simply do
+     not send a CORS header (kavin.rocks 403s a browser, others answer fine to
+     curl) — going through our own relay makes those usable. This only runs
+     after the fast path has failed, so it costs nothing in the normal case. */
+  const relay = proxyBase();
+  if (relay) {
+    for (const base of MIRRORS) {
+      try {
+        const r = await attempt(`${relay}/?url=${encodeURIComponent(base + path)}`);
+        MIRROR_BENCH.delete(base);
+        return { ...r, base, viaRelay: true };
+      } catch (e) { lastErr = e; }
     }
   }
   throw lastErr || new Error('all mirrors failed');

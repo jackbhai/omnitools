@@ -11,8 +11,23 @@
 
 const KEY = 'omni:settings';
 
+/**
+ * The relay that ships with the app.
+ *
+ * Audio resolution and the Deezer catalogue both need a CORS hop. The free
+ * public relays turned out to be unusable — measured across 25 of them: one
+ * permanent 401, four rate-limited, three 403, several timeouts, and a single
+ * survivor at 7-19 s. This Worker is deployed for the app: measured 0.06-0.1 s
+ * warm versus 6.9 s on the best public relay, with a host allow-list so it
+ * cannot be repurposed as an open proxy.
+ *
+ * A user can still point `proxyUrl` at their own Worker; that takes priority.
+ */
+export const BUILTIN_PROXY = 'https://omni-proxy.omni-jackbhai.workers.dev';
+
 const DEFAULTS = {
-  proxyUrl: '',          // e.g. https://omni-proxy.you.workers.dev
+  proxyUrl: '',          // user's own relay; blank means use BUILTIN_PROXY
+  useBuiltin: true,      // fall back to the bundled relay
   autoRadio: true,       // keep the queue topped up so playback never ends
 };
 
@@ -39,12 +54,22 @@ export function setSetting(k, v) {
   return s;
 }
 
-/** Normalised proxy base, or '' when the user has not set one. */
+/**
+ * The relay to use: the user's own if they set one, otherwise the bundled
+ * Worker. Returns '' only if the user has explicitly turned the built-in off
+ * and not supplied their own — in which case callers fall back to the public
+ * proxy pool.
+ */
 export function proxyBase() {
-  const u = (getSettings().proxyUrl || '').trim();
-  if (!u) return '';
-  return u.replace(/\/+$/, '');
+  const s = getSettings();
+  const own = (s.proxyUrl || '').trim();
+  if (own) return own.replace(/\/+$/, '');
+  return s.useBuiltin === false ? '' : BUILTIN_PROXY;
 }
+
+/** True when the relay in use is the one that ships with the app. */
+export const usingBuiltin = () => !(getSettings().proxyUrl || '').trim() &&
+  getSettings().useBuiltin !== false;
 
 /** Wrap a target URL for the user's own proxy. */
 export const viaOwnProxy = (target) => {

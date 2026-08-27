@@ -38,17 +38,58 @@
  */
 
 /* Only these upstreams may be fetched. Keeps the Worker from becoming an
-   open proxy that anyone could point at anything. */
+   open proxy that anyone could point at anything.
+
+   iTunes is deliberately NOT here. It already sends `Access-Control-Allow-Origin: *`
+   so the browser can call it directly, and Apple rate-limits Cloudflare's
+   egress IPs hard — routing it through the Worker turned working requests into
+   429s. Only hosts that genuinely need a CORS hop belong on this list. */
 const ALLOWED = [
+  // audio resolution + the utility API family
   'ahm7xmakki.com',
+  'c.ymcdn.org',
+  'ymcdn.org',
+
+  // YouTube front-ends (search / playlists / channels)
   'api.piped.private.coffee',
   'pipedapi.kavin.rocks',
   'pipedapi.adminforge.de',
   'pipedapi.drgns.space',
   'api.piped.projectsegfau.lt',
   'pipedapi.orangenet.cc',
-  'c.ymcdn.org',
-  'itunes.apple.com',
+  'pipedapi.ducks.party',
+  'pipedapi.leptons.xyz',
+  'piped-api.lunar.icu',
+  'pipedapi.reallyaweso.me',
+  'inv.nadeko.net',
+  'yewtu.be',
+  'invidious.f5.si',
+  'invidious.nerdvpn.de',
+  'invidious.privacyredirect.com',
+  'iv.datura.network',
+
+  // Deezer — very large catalogue, excellent metadata, 30 s previews.
+  // Works over plain HTTP but sends no CORS header, which is exactly what
+  // this Worker is for.
+  'api.deezer.com',
+  'cdn-preview-a.dzcdn.net',
+  'cdns-preview-a.dzcdn.net',
+  'e-cdn-preview.dzcdn.net',
+  'e-cdns-preview-a.dzcdn.net',
+
+  // Audius — free and decentralised, hands out a DIRECT stream with no
+  // resolve step at all.
+  'discoveryprovider.audius.co',
+  'discoveryprovider2.audius.co',
+  'discoveryprovider3.audius.co',
+  'audius-discovery-1.altego.net',
+  'audius-discovery-2.altego.net',
+
+  // Radio + lyrics
+  'de1.api.radio-browser.info',
+  'nl1.api.radio-browser.info',
+  'at1.api.radio-browser.info',
+  'lrclib.net',
 ];
 
 const CORS = {
