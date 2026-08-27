@@ -249,144 +249,142 @@ export async function lookup(raw) {
   };
 }
 
-/* ------------------------------------------------------------- directories
-   Browsable lists, so the tool is a directory and not only a search box.
-   Every name below is one this app can actually answer for. */
+/* ------------------------------------------------------------- directory
+ * The shipped directory: 5,695 names — 4,964 surnames and 731 given names —
+ * built by scripts/build_names.py from two registers and checked page by page.
+ *
+ * It is sharded by first letter so the first paint costs one 20-70 KB file
+ * instead of 619 KB, and so the deployed file COUNT stays at 27 (this project
+ * has had a Pages deploy time out on file count before).
+ *
+ * Every record carries only what a source actually said:
+ *   n     name                       k     'surname' | 'given'
+ *   g     'm' | 'f' for given names  c     countries it is recorded in
+ *   l     languages it is filed under
+ *   b     people on record carrying it
+ *   comm  community / caste          reg   regions
+ *   o     language of origin         m     stated meaning
+ *   s     the encyclopedia's own opening sentence
+ *   w     the article it came from
+ *
+ * A name with no `s` is not a gap in the build — it means no page could be
+ * verified as being about the NAME rather than about a person or a place that
+ * happens to share the spelling, so nothing is claimed.
+ */
 
-export const INDIAN_SURNAMES = [
-  { n: 'Sharma',   note: 'Brahmin · north & central India' },
-  { n: 'Singh',    note: 'Kshatriya, Sikh · pan-India' },
-  { n: 'Patel',    note: 'Gujarat · landowning Patidar' },
-  { n: 'Kumar',    note: 'Used as surname and given name' },
-  { n: 'Gupta',    note: 'Vaishya merchant · north India' },
-  { n: 'Verma',    note: 'North India' },
-  { n: 'Yadav',    note: 'Pastoral community · north India' },
-  { n: 'Reddy',    note: 'Andhra Pradesh & Telangana' },
-  { n: 'Nair',     note: 'Kerala' },
-  { n: 'Menon',    note: 'Kerala' },
-  { n: 'Iyer',     note: 'Tamil Brahmin' },
-  { n: 'Iyengar',  note: 'Tamil Vaishnavite Brahmin' },
-  { n: 'Naidu',    note: 'Andhra & Tamil Nadu' },
-  { n: 'Rao',      note: 'Deccan · title turned surname' },
-  { n: 'Desai',    note: 'Gujarat & Maharashtra' },
-  { n: 'Joshi',    note: 'Astrologer-priest origin' },
-  { n: 'Bhatt',    note: 'Scholar-priest origin' },
-  { n: 'Trivedi',  note: 'Knower of three Vedas' },
-  { n: 'Chaturvedi',note: 'Knower of four Vedas' },
-  { n: 'Mehta',    note: 'Gujarat & Rajasthan' },
-  { n: 'Shah',     note: 'Gujarat · merchant' },
-  { n: 'Kapoor',   note: 'Punjabi Khatri' },
-  { n: 'Malhotra', note: 'Punjabi Khatri' },
-  { n: 'Chopra',   note: 'Punjabi Khatri' },
-  { n: 'Khanna',   note: 'Punjabi Khatri' },
-  { n: 'Sethi',    note: 'Punjab' },
-  { n: 'Bedi',     note: 'Punjab · Sikh' },
-  { n: 'Gill',     note: 'Punjab · Jat' },
-  { n: 'Dhillon',  note: 'Punjab · Jat' },
-  { n: 'Sidhu',    note: 'Punjab · Jat' },
-  { n: 'Kaur',     note: 'Sikh women' },
-  { n: 'Banerjee', note: 'Bengali Brahmin' },
-  { n: 'Chatterjee',note: 'Bengali Brahmin' },
-  { n: 'Mukherjee',note: 'Bengali Brahmin' },
-  { n: 'Ghosh',    note: 'Bengali Kayastha' },
-  { n: 'Bose',     note: 'Bengali Kayastha' },
-  { n: 'Das',      note: 'Bengal, Odisha & Assam' },
-  { n: 'Roy',      note: 'Bengal · title turned surname' },
-  { n: 'Sen',      note: 'Bengal' },
-  { n: 'Dutta',    note: 'Bengal & Assam' },
-  { n: 'Chowdhury',note: 'Bengal & Assam · landholder title' },
-  { n: 'Deshmukh', note: 'Maharashtra · district head' },
-  { n: 'Patil',    note: 'Maharashtra · village head' },
-  { n: 'Jadhav',   note: 'Maharashtra' },
-  { n: 'Kulkarni', note: 'Maharashtra · village accountant' },
-  { n: 'Gowda',    note: 'Karnataka' },
-  { n: 'Shetty',   note: 'Coastal Karnataka' },
-  { n: 'Hegde',    note: 'Karnataka' },
-  { n: 'Pillai',   note: 'Kerala & Tamil Nadu' },
-  { n: 'Khan',     note: 'Turkic title · South Asian Muslim' },
-  { n: 'Ahmed',    note: 'Arabic origin' },
-  { n: 'Ansari',   note: 'Arabic origin' },
-  { n: 'Sheikh',   note: 'Arabic title' },
-  { n: 'Syed',     note: 'Descent from the Prophet' },
-  { n: 'Fernandes',note: 'Goa & Mangalore · Portuguese origin' },
-  { n: "D'Souza",  note: 'Goa & Mangalore · Portuguese origin' },
-  { n: 'Thapa',    note: 'Nepali & Gorkha' },
-  { n: 'Rana',     note: 'Rajput & Nepali' },
-  { n: 'Chauhan',  note: 'Rajput clan' },
-  { n: 'Rathore',  note: 'Rajput clan' },
-];
+const BASE = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
+const shardCache = new Map();
+let metaCache = null;
 
-export const WORLD_SURNAMES = [
-  { n: 'Smith', note: 'England · smith' }, { n: 'Johnson', note: 'Son of John' },
-  { n: 'Williams', note: 'Wales & England' }, { n: 'Brown', note: 'Britain & Ireland' },
-  { n: 'Garcia', note: 'Spain · commonest Spanish surname' },
-  { n: 'Martinez', note: 'Spain · son of Martin' },
-  { n: 'Rodriguez', note: 'Spain · son of Rodrigo' },
-  { n: 'Silva', note: 'Portugal & Brazil · woodland' },
-  { n: 'Santos', note: 'Portugal & Brazil' },
-  { n: 'Müller', note: 'Germany · miller' }, { n: 'Schmidt', note: 'Germany · smith' },
-  { n: 'Dubois', note: 'France · of the wood' }, { n: 'Rossi', note: 'Italy · red-haired' },
-  { n: 'Ferrari', note: 'Italy · blacksmith' },
-  { n: 'Ivanov', note: 'Russia · son of Ivan' }, { n: 'Petrov', note: 'Russia · son of Peter' },
-  { n: 'Wang', note: 'China · king' }, { n: 'Li', note: 'China · plum' },
-  { n: 'Zhang', note: 'China' }, { n: 'Chen', note: 'China' },
-  { n: 'Kim', note: 'Korea · gold' }, { n: 'Park', note: 'Korea' }, { n: 'Lee', note: 'Korea & China' },
-  { n: 'Tanaka', note: 'Japan · middle of the rice field' },
-  { n: 'Sato', note: 'Japan · commonest Japanese surname' },
-  { n: 'Suzuki', note: 'Japan' }, { n: 'Nguyen', note: 'Vietnam · commonest Vietnamese surname' },
-  { n: 'Tran', note: 'Vietnam' }, { n: 'Okafor', note: 'Nigeria · Igbo' },
-  { n: 'Adebayo', note: 'Nigeria · Yoruba' }, { n: 'Mwangi', note: 'Kenya · Kikuyu' },
-  { n: 'Cohen', note: 'Hebrew · priest' }, { n: 'Levi', note: 'Hebrew · tribe of Levi' },
-  { n: 'Al-Sayed', note: 'Arabic · the master' }, { n: 'Hassan', note: 'Arabic · handsome' },
-  { n: 'Yilmaz', note: 'Turkey · undaunted' }, { n: 'Kowalski', note: 'Poland · smith' },
-  { n: 'Novak', note: 'Central Europe · newcomer' }, { n: 'Andersson', note: 'Sweden' },
-  { n: "O'Brien", note: 'Ireland · descendant of Brian' },
-  { n: 'MacDonald', note: 'Scotland · son of Donald' },
-];
+export async function directoryMeta() {
+  if (metaCache) return metaCache;
+  const r = await fetch(`${BASE}/names/_meta.json`);
+  if (!r.ok) throw new Error('directory unavailable');
+  metaCache = await r.json();
+  return metaCache;
+}
 
-export const INDIAN_GIVEN = [
-  { n: 'Aarav', note: 'Peaceful · Sanskrit' }, { n: 'Vivaan', note: 'Full of life' },
-  { n: 'Aditya', note: 'The sun' }, { n: 'Arjun', note: 'Bright, shining' },
-  { n: 'Rohan', note: 'Ascending' }, { n: 'Rahul', note: 'Efficient, capable' },
-  { n: 'Krishna', note: 'Dark, the deity' }, { n: 'Ishaan', note: 'The sun; a name of Shiva' },
-  { n: 'Kabir', note: 'Great · Arabic and Sant tradition' },
-  { n: 'Advait', note: 'Non-dual' }, { n: 'Reyansh', note: 'Ray of light' },
-  { n: 'Ayaan', note: 'Gift of God' }, { n: 'Vihaan', note: 'Dawn' },
-  { n: 'Priya', note: 'Beloved' }, { n: 'Ananya', note: 'Unique, without equal' },
-  { n: 'Diya', note: 'Lamp' }, { n: 'Aanya', note: 'Grace' },
-  { n: 'Saanvi', note: 'Goddess Lakshmi' }, { n: 'Aadhya', note: 'The first power' },
-  { n: 'Meera', note: 'Devotee; the poet-saint' }, { n: 'Kavya', note: 'Poetry' },
-  { n: 'Riya', note: 'Singer, graceful' }, { n: 'Ishita', note: 'Mastery' },
-  { n: 'Sanjana', note: 'Gentle, creator' }, { n: 'Aarohi', note: 'Ascending musical scale' },
-  { n: 'Zara', note: 'Blooming flower · Arabic' }, { n: 'Ayesha', note: 'Living · Arabic' },
-  { n: 'Fatima', note: 'One who abstains · Arabic' }, { n: 'Aryan', note: 'Noble' },
-  { n: 'Gurpreet', note: 'Love of the Guru · Punjabi' },
-  { n: 'Harpreet', note: 'Love of God · Punjabi' },
-  { n: 'Simran', note: 'Remembrance of God · Punjabi' },
-];
+/** One letter's shard, fetched once and kept. */
+export async function shard(letter) {
+  const k = String(letter || '').toLowerCase().slice(0, 1);
+  if (!/^[a-z]$/.test(k)) return [];
+  if (shardCache.has(k)) return shardCache.get(k);
+  const p = fetch(`${BASE}/names/${k}.json`)
+    .then((r) => (r.ok ? r.json() : []))
+    .catch(() => []);
+  shardCache.set(k, p);
+  return p;
+}
 
-export const DIRECTORIES = [
-  { id: 'in-sur',  n: 'Indian surnames', list: INDIAN_SURNAMES },
-  { id: 'in-name', n: 'Indian first names', list: INDIAN_GIVEN },
-  { id: 'world',   n: 'World surnames', list: WORLD_SURNAMES },
-];
+/**
+ * Search the directory. A prefix match is answered from one shard; a
+ * contains-match has to read every shard, which is why it only does that once
+ * the query is long enough to be worth it.
+ */
+export async function searchDirectory(q, { kind = '', cc = '', lang = '', comm = '', reg = '', limit = 300 } = {}) {
+  const term = q.trim().toLowerCase();
+  let pool;
+  if (term.length >= 1) {
+    const first = await shard(term[0]);
+    const prefix = first.filter((r) => r.n.toLowerCase().startsWith(term));
+    /* A prefix hit inside the right shard is the common case and is instant.
+       Only widen when that is thin and the term is long enough to be specific. */
+    if (prefix.length >= 8 || term.length < 3) pool = prefix;
+    else {
+      const all = await allNames();
+      pool = all.filter((r) => r.n.toLowerCase().includes(term));
+    }
+  } else {
+    pool = await allNames();
+  }
+  const out = pool.filter((r) => {
+    if (kind && r.k !== kind) return false;
+    if (cc && !(r.c || []).includes(cc)) return false;
+    if (lang && !(r.l || []).includes(lang)) return false;
+    if (comm && !(r.comm || []).includes(comm)) return false;
+    if (reg && !(r.reg || []).includes(reg)) return false;
+    return true;
+  });
+  /* Exact match first, then the best-attested names. */
+  out.sort((a, b) => {
+    const ax = a.n.toLowerCase() === term ? 1 : 0, bx = b.n.toLowerCase() === term ? 1 : 0;
+    if (ax !== bx) return bx - ax;
+    const as = a.n.toLowerCase().startsWith(term) ? 1 : 0, bs = b.n.toLowerCase().startsWith(term) ? 1 : 0;
+    if (as !== bs) return bs - as;
+    return (b.b || 0) - (a.b || 0) || a.n.localeCompare(b.n);
+  });
+  return { total: out.length, rows: out.slice(0, limit) };
+}
 
-/** Flag emoji are not used anywhere in this app; countries render as codes. */
-export const COUNTRY_NAMES = {
-  IN: 'India', PK: 'Pakistan', BD: 'Bangladesh', NP: 'Nepal', LK: 'Sri Lanka',
-  US: 'United States', GB: 'United Kingdom', CA: 'Canada', AU: 'Australia', NZ: 'New Zealand',
-  AE: 'UAE', SA: 'Saudi Arabia', QA: 'Qatar', KW: 'Kuwait', OM: 'Oman', BH: 'Bahrain',
-  MY: 'Malaysia', SG: 'Singapore', ID: 'Indonesia', TH: 'Thailand', PH: 'Philippines',
-  CN: 'China', JP: 'Japan', KR: 'South Korea', VN: 'Vietnam', TW: 'Taiwan', HK: 'Hong Kong',
-  DE: 'Germany', FR: 'France', IT: 'Italy', ES: 'Spain', PT: 'Portugal', NL: 'Netherlands',
-  BE: 'Belgium', CH: 'Switzerland', AT: 'Austria', SE: 'Sweden', NO: 'Norway', DK: 'Denmark',
-  FI: 'Finland', PL: 'Poland', CZ: 'Czechia', HU: 'Hungary', RO: 'Romania', GR: 'Greece',
-  RU: 'Russia', UA: 'Ukraine', TR: 'Turkey', IL: 'Israel', IR: 'Iran', IQ: 'Iraq',
-  EG: 'Egypt', MA: 'Morocco', DZ: 'Algeria', TN: 'Tunisia', NG: 'Nigeria', GH: 'Ghana',
-  KE: 'Kenya', TZ: 'Tanzania', UG: 'Uganda', ZA: 'South Africa', ET: 'Ethiopia',
-  BR: 'Brazil', MX: 'Mexico', AR: 'Argentina', CL: 'Chile', CO: 'Colombia', PE: 'Peru',
-  MU: 'Mauritius', FJ: 'Fiji', TT: 'Trinidad & Tobago', GY: 'Guyana', SR: 'Suriname',
-  AF: 'Afghanistan', MM: 'Myanmar', KH: 'Cambodia', BT: 'Bhutan', MV: 'Maldives',
-};
+let allCache = null;
+/** Every shard, loaded in waves. Only needed for filter-only browsing. */
+export async function allNames() {
+  if (allCache) return allCache;
+  const letters = 'abcdefghijklmnopqrstuvwxyz'.split('');
+  const out = [];
+  for (let i = 0; i < letters.length; i += 7) {
+    const wave = await Promise.all(letters.slice(i, i + 7).map((l) => shard(l)));
+    for (const w of wave) out.push(...w);
+  }
+  allCache = out;
+  return out;
+}
+
+/** The directory's own record for one exact name, if it has one. */
+export async function directoryEntry(name) {
+  const rows = await shard(name.trim()[0] || '');
+  const t = name.trim().toLowerCase();
+  return rows.find((r) => r.n.toLowerCase() === t) || null;
+}
+
+/** Facet values with real counts, for the filter chips. */
+export async function facets() {
+  const all = await allNames();
+  const bump = (m, k) => m.set(k, (m.get(k) || 0) + 1);
+  const comm = new Map(), reg = new Map(), lang = new Map(), cc = new Map();
+  for (const r of all) {
+    for (const x of r.comm || []) bump(comm, x);
+    for (const x of r.reg || []) bump(reg, x);
+    for (const x of r.l || []) bump(lang, x);
+    for (const x of r.c || []) bump(cc, x);
+  }
+  const top = (m) => [...m.entries()].map(([k, n]) => ({ k, n })).sort((a, b) => b.n - a.n);
+  return { comm: top(comm), reg: top(reg), lang: top(lang), cc: top(cc), total: all.length };
+}
+
+/**
+ * The full record for a name: the shipped directory first (instant, works
+ * offline), then the live registers layered on top for anything the build
+ * could not settle — notably the bearer list and the usage statistics.
+ */
+export async function deepLookup(raw) {
+  const name = raw.trim();
+  if (!name) throw new Error('Type a name first');
+  const [entry, live] = await Promise.all([
+    directoryEntry(name).catch(() => null),
+    lookup(name).catch(() => null),
+  ]);
+  return { entry, ...(live || { query: titleCase(name), facts: [], best: null, wiki: null, stats: { countries: [] }, sources: [] }) };
+}
 
 export const countryName = (cc) => COUNTRY_NAMES[cc] || cc;

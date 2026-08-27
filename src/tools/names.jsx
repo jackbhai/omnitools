@@ -1,25 +1,31 @@
 /**
- * Names & surnames directory.
+ * Names & Surnames — the full directory.
  *
- * Search any name and get the whole picture: what kind of name it is, what it
- * means, the language and script it comes from, which countries use it, its
- * age and gender skew, and the recorded people who carry it.
+ * 5,695 names ship with the app: 4,964 surnames and 731 given names, built from
+ * the citizenship register and 23 encyclopedia categories, sharded by first
+ * letter so opening the tool costs one small file rather than 619 KB.
  *
- * Or browse: 60 Indian surnames with their community and region, 32 Indian
- * first names with their meanings, 41 world surnames. Every entry in those
- * lists is one the deep lookup can actually answer for.
+ * Search is instant and works offline. Tapping any name opens its deep record,
+ * which adds the live layers — the register's bearer list and the usage
+ * statistics — on top of what shipped.
+ *
+ * Filters are real facets counted from the data, not a hand-written list:
+ * community (Khatri, Brahmin, Jat, Rajput, Sikh…), region (Punjab, Sindh,
+ * Bengal, Tamil Nadu…), language, and country.
  */
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as N from '../core/names';
 import { Icon } from '../ui/icons';
 import { Card, Spin, Empty, fmt } from '../ui/kit';
 
 const TABS = [
-  { id: 'look',  n: 'Look up',   i: 'search' },
-  { id: 'in-sur',n: 'Surnames',  i: 'list'   },
-  { id: 'in-name',n: 'First names', i: 'smile' },
-  { id: 'world', n: 'World',     i: 'earth'  },
+  { id: 'all',     n: 'All names',  i: 'list',  kind: '' },
+  { id: 'surname', n: 'Surnames',   i: 'badge', kind: 'surname' },
+  { id: 'given',   n: 'First names',i: 'smile', kind: 'given' },
+  { id: 'look',    n: 'Deep record',i: 'search' },
 ];
+
+const CC_NAME = { IN: 'India', PK: 'Pakistan', NP: 'Nepal' };
 
 const Bar = ({ p, tone = 'var(--green)' }) => (
   <span style={{ display: 'block', height: 4, borderRadius: 3, background: 'var(--s3)', overflow: 'hidden' }}>
@@ -27,12 +33,35 @@ const Bar = ({ p, tone = 'var(--green)' }) => (
   </span>
 );
 
-function Result({ d, onPick }) {
-  const s = d.stats || {};
-  const best = d.best;
-  const [showAll, setShowAll] = useState(false);
+/* ------------------------------------------------------------- deep record */
+function Record({ name, onBack }) {
+  const [d, setD] = useState(null);
+  const [busy, setBusy] = useState(true);
+  const [err, setErr] = useState('');
   const [people, setPeople] = useState(null);
   const [busyP, setBusyP] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setBusy(true); setErr(''); setD(null); setPeople(null);
+    N.deepLookup(name)
+      .then((r) => { if (alive) setD(r); })
+      .catch((e) => { if (alive) setErr(e.message); })
+      .finally(() => { if (alive) setBusy(false); });
+    return () => { alive = false; };
+  }, [name]);
+
+  if (busy) return (<><button className="btn ghost sm" onClick={onBack}>&larr; Back</button>
+    <Spin t="Reading every register" /></>);
+  if (err || !d) return (<><button className="btn ghost sm" onClick={onBack}>&larr; Back</button>
+    <div className="err" style={{ marginTop: 12 }}><h4>Nothing found</h4><p>{err}</p></div></>);
+
+  const e = d.entry || {};
+  const s = d.stats || {};
+  const best = d.best;
+  const kindLabel = e.k === 'given'
+    ? (e.g === 'm' ? 'First name · usually male' : e.g === 'f' ? 'First name · usually female' : 'First name')
+    : (e.k === 'surname' ? 'Surname' : best?.kind || '');
 
   const loadPeople = async () => {
     setBusyP(true);
@@ -42,31 +71,54 @@ function Result({ d, onPick }) {
   };
 
   return (<>
-    <Card style={{ marginTop: 12 }}>
-      <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 30, letterSpacing: .8, margin: 0 }}
+    <button className="btn ghost sm" onClick={onBack}>&larr; Back</button>
+
+    <Card style={{ marginTop: 10 }}>
+      <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 32, letterSpacing: .8, margin: 0 }}
         className="gradtext">{d.query}</h2>
-      {best?.native && best.native !== d.query && (
-        <div style={{ fontSize: 19, marginTop: 4, color: 'var(--cyan)' }}>{best.native}</div>)}
+      {(e.nat || best?.native) && (e.nat || best.native) !== d.query && (
+        <div style={{ fontSize: 19, marginTop: 4, color: 'var(--cyan)' }}>{e.nat || best.native}</div>)}
       <div className="btnrow" style={{ marginTop: 8 }}>
-        {best?.kind && <span className="pill on">{best.kind}</span>}
-        {best?.language && <span className="pill">{best.language}</span>}
-        {best?.bearers > 0 && <span className="pill">{fmt(best.bearers)} recorded people</span>}
+        {kindLabel && <span className="pill on">{kindLabel}</span>}
+        {(e.b || best?.bearers) > 0 && <span className="pill">{fmt(e.b || best.bearers)} recorded people</span>}
+        {(e.c || []).map((c) => <span className="pill" key={c}>{CC_NAME[c] || c}</span>)}
         {s.gender && <span className="pill">{s.gender === 'male' ? 'Mostly male' : 'Mostly female'}
           {s.genderProb ? ` ${Math.round(s.genderProb * 100)}%` : ''}</span>}
       </div>
-      {best?.desc && <p className="dim sm" style={{ margin: '10px 0 0', lineHeight: 1.5 }}>{best.desc}</p>}
-      {best?.meaning && <div className="kv" style={{ marginTop: 8 }}>
-        <span>Meaning</span><b>{best.meaning}</b></div>}
     </Card>
 
-    {d.wiki && (
+    {(e.comm?.length || e.reg?.length || e.l?.length || e.o?.length || e.m) && (
+      <Card>
+        <div className="chead"><Icon n="info" size={15} /> Where it belongs</div>
+        {e.comm?.length > 0 && <div className="kv"><span>Community</span>
+          <b style={{ fontSize: 12.5 }}>{e.comm.join(', ')}</b></div>}
+        {e.reg?.length > 0 && <div className="kv"><span>Region</span>
+          <b style={{ fontSize: 12.5 }}>{e.reg.join(', ')}</b></div>}
+        {e.l?.length > 0 && <div className="kv"><span>Language</span>
+          <b style={{ fontSize: 12.5 }}>{e.l.join(', ')}</b></div>}
+        {e.o?.length > 0 && <div className="kv"><span>Root language</span>
+          <b style={{ fontSize: 12.5 }}>{e.o.join(', ')}</b></div>}
+        {e.m && <div className="kv"><span>Meaning</span>
+          <b style={{ fontSize: 12, textAlign: 'right' }}>{e.m}</b></div>}
+      </Card>)}
+
+    {(e.s || d.wiki) && (
       <Card>
         <div className="chead"><Icon n="book" size={15} /> What it means</div>
-        <p style={{ fontSize: 13.5, lineHeight: 1.6, margin: 0, color: 'var(--fg2)' }}>{d.wiki.extract}</p>
-        {d.wiki.url && (
+        <p style={{ fontSize: 13.5, lineHeight: 1.6, margin: 0, color: 'var(--fg2)' }}>
+          {d.wiki?.extract || e.s}</p>
+        {(d.wiki?.url || e.w) && (
           <a className="btn ghost sm" style={{ display: 'block', textAlign: 'center', marginTop: 10, textDecoration: 'none' }}
-            href={d.wiki.url} target="_blank" rel="noreferrer">Read the full article</a>)}
+            href={d.wiki?.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(e.w)}`}
+            target="_blank" rel="noreferrer">Read the full article</a>)}
       </Card>)}
+
+    {!e.s && !d.wiki && (
+      <div className="note" style={{ marginTop: 12 }}>
+        No article could be confirmed as being about this name rather than about
+        a person or a place that shares the spelling, so nothing is claimed here.
+        The register facts above are still exact.
+      </div>)}
 
     {s.countries?.length > 0 && (
       <Card>
@@ -74,8 +126,7 @@ function Result({ d, onPick }) {
         {s.countries.slice(0, 8).map((c) => (
           <div key={c.cc} style={{ marginBottom: 9 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 3 }}>
-              <b>{N.countryName(c.cc)}</b>
-              <span className="dim">{(c.p * 100).toFixed(1)}%</span>
+              <b>{N.countryName(c.cc)}</b><span className="dim">{(c.p * 100).toFixed(1)}%</span>
             </div>
             <Bar p={c.p} />
           </div>))}
@@ -86,42 +137,26 @@ function Result({ d, onPick }) {
 
     {(s.age != null || s.gender) && (
       <div className="g2" style={{ marginTop: 12 }}>
-        {s.age != null && (
-          <div className="stat"><div className="v">{s.age}</div><div className="l">Median age</div>
-            {s.ageSample ? <div className="s">{fmt(s.ageSample)} samples</div> : null}</div>)}
-        {s.gender && (
-          <div className="stat">
-            <div className="v" style={{ fontSize: 17 }}>{s.gender === 'male' ? 'Male' : 'Female'}</div>
-            <div className="l">Usually</div>
-            {s.genderProb ? <div className="s">{Math.round(s.genderProb * 100)}% confident</div> : null}</div>)}
+        {s.age != null && <div className="stat"><div className="v">{s.age}</div><div className="l">Median age</div>
+          {s.ageSample ? <div className="s">{fmt(s.ageSample)} samples</div> : null}</div>}
+        {s.gender && <div className="stat">
+          <div className="v" style={{ fontSize: 17 }}>{s.gender === 'male' ? 'Male' : 'Female'}</div>
+          <div className="l">Usually</div>
+          {s.genderProb ? <div className="s">{Math.round(s.genderProb * 100)}% confident</div> : null}</div>}
       </div>)}
 
     {s.quota && (
       <div className="note warn" style={{ marginTop: 12 }}>
-        The free usage-statistics allowance for today is spent — that is a shared
-        limit of 100 lookups per day, not a fault. Country, age and gender will
-        return tomorrow. Everything above still comes from the name register and
-        the encyclopedia.
+        The free usage-statistics allowance for today is spent — a shared limit of
+        100 lookups a day, not a fault. Country, age and gender return tomorrow.
+        Everything above is from the directory and the register.
       </div>)}
-
-    {d.facts.length > 1 && (
-      <Card>
-        <div className="chead">This name is registered {d.facts.length} ways</div>
-        {(showAll ? d.facts : d.facts.slice(0, 3)).map((f) => (
-          <div className="kv" key={f.qid}>
-            <span>{f.kind || 'name'}</span>
-            <b style={{ fontSize: 12 }}>{f.language || '—'}{f.bearers ? ` · ${fmt(f.bearers)} people` : ''}</b>
-          </div>))}
-        {d.facts.length > 3 && (
-          <button className="btn ghost sm" style={{ marginTop: 8, width: '100%' }}
-            onClick={() => setShowAll((v) => !v)}>{showAll ? 'Show fewer' : 'Show all'}</button>)}
-      </Card>)}
 
     <Card>
       <div className="chead"><Icon n="smile" size={15} /> People with this name</div>
       {!people && !busyP && (
         <button className="btn" style={{ width: '100%' }} onClick={loadPeople}>
-          Show recorded people{best?.bearers ? ` · ${fmt(best.bearers)}` : ''}</button>)}
+          Show recorded people{(e.b || best?.bearers) ? ` · ${fmt(e.b || best.bearers)}` : ''}</button>)}
       {busyP && <Spin t="Reading the register" />}
       {people?.length > 0 && (
         <div className="list" style={{ marginTop: 4 }}>
@@ -130,7 +165,7 @@ function Result({ d, onPick }) {
               style={{ textDecoration: 'none' }}>
               {p.img
                 ? <img src={p.img} alt="" loading="lazy" referrerPolicy="no-referrer"
-                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    onError={(ev) => { ev.currentTarget.style.display = 'none'; }}
                     style={{ width: 40, height: 40, borderRadius: 11, objectFit: 'cover', flex: '0 0 auto' }} />
                 : <span style={{ width: 40, height: 40, borderRadius: 11, background: 'var(--s2)',
                     display: 'grid', placeItems: 'center', flex: '0 0 auto', color: 'var(--fg3)' }}>
@@ -148,98 +183,164 @@ function Result({ d, onPick }) {
     </Card>
 
     <div className="src"><span className="dot" />
-      <span>{d.sources.length ? `Merged from ${d.sources.length}: ${d.sources.join(', ')}`
-        : 'No source recognised this name'}</span></div>
+      <span>{[d.entry && 'shipped directory', d.facts?.length && 'name register',
+        d.wiki && 'encyclopedia'].filter(Boolean).join(' · ') || 'no source recognised this name'}</span></div>
   </>);
 }
 
+/* ------------------------------------------------------------------ shell */
 export function Names() {
-  const [tab, setTab] = useState('look');
+  const [tab, setTab] = useState('all');
   const [q, setQ] = useState('');
-  const [filter, setFilter] = useState('');
-  const [d, setD] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState({ total: 0, rows: [] });
+  const [meta, setMeta] = useState(null);
+  const [fac, setFac] = useState(null);
+  const [filters, setFilters] = useState({ cc: '', lang: '', comm: '', reg: '' });
+  const [showF, setShowF] = useState(false);
+  const [open, setOpen] = useState(null);
+  const [busy, setBusy] = useState(true);
   const [err, setErr] = useState('');
   const token = useRef(0);
 
-  const run = async (name) => {
-    const my = ++token.current;
-    setBusy(true); setErr(''); setD(null); setTab('look'); setQ(name);
-    try {
-      const r = await N.lookup(name);
-      if (token.current !== my) return;
-      if (!r.facts.length && !r.wiki && !r.stats.countries.length) {
-        setErr(`Nothing is recorded for "${name}". Check the spelling, or try the surname on its own.`);
-      } else setD(r);
-    } catch (e) {
-      if (token.current !== my) return;
-      setErr(e.message === 'Failed to fetch'
-        ? 'Could not reach the name register. Check your connection and retry.' : e.message);
-    } finally { if (token.current === my) setBusy(false); }
-  };
+  const kind = TABS.find((t) => t.id === tab)?.kind ?? '';
+  const anyFilter = Object.values(filters).some(Boolean);
 
-  const dir = N.DIRECTORIES.find((x) => x.id === tab);
-  const list = useMemo(() => {
-    if (!dir) return [];
-    const s = filter.trim().toLowerCase();
-    return s ? dir.list.filter((x) => (x.n + ' ' + x.note).toLowerCase().includes(s)) : dir.list;
-  }, [dir, filter]);
+  useEffect(() => { N.directoryMeta().then(setMeta).catch(() => {}); }, []);
+  useEffect(() => { if (showF && !fac) N.facets().then(setFac).catch(() => {}); }, [showF]);  // eslint-disable-line
+
+  useEffect(() => {
+    if (tab === 'look') return;
+    const my = ++token.current;
+    setBusy(true); setErr('');
+    const t = setTimeout(() => {
+      N.searchDirectory(q, { kind, ...filters, limit: 400 })
+        .then((r) => {
+          if (token.current !== my) return;
+          setRes(r);
+          if (!r.rows.length) setErr(q.trim() ? `No name matches "${q.trim()}".` : 'No name matches those filters.');
+        })
+        .catch((e) => { if (token.current === my) { setRes({ total: 0, rows: [] }); setErr(e.message); } })
+        .finally(() => { if (token.current === my) setBusy(false); });
+    }, q.trim() ? 180 : 0);
+    return () => clearTimeout(t);
+  }, [q, tab, filters.cc, filters.lang, filters.comm, filters.reg]);   // eslint-disable-line
+
+  if (open) return <Record name={open} onBack={() => setOpen(null)} />;
+
+  const chip = (key, value, label, n) => (
+    <button key={key + value} className={`cat ${filters[key] === value ? 'on' : ''}`}
+      onClick={() => setFilters((f) => ({ ...f, [key]: f[key] === value ? '' : value }))}>
+      {label}{n ? ` · ${n}` : ''}</button>);
 
   return (<>
     <div className="cats">
       {TABS.map((t) => (
         <button key={t.id} className={`cat ${tab === t.id ? 'on' : ''}`}
-          onClick={() => { setTab(t.id); setFilter(''); }}>
+          onClick={() => { setTab(t.id); setErr(''); }}>
           <Icon n={t.i} size={13} /> {t.n}</button>))}
     </div>
 
-    {tab === 'look' && (<>
+    {tab === 'look' ? (<>
       <form className="search" onSubmit={(e) => {
         e.preventDefault(); e.currentTarget.querySelector('input')?.blur();
-        if (q.trim()) run(q.trim());
+        if (q.trim()) setOpen(q.trim());
       }}>
         <Icon n="search" size={18} />
         <input value={q} onChange={(e) => setQ(e.target.value)} enterKeyHint="search"
-          placeholder="Any first name or surname…" autoComplete="off" spellCheck="false" />
+          placeholder="Any name, even one not in the directory…" autoComplete="off" spellCheck="false" />
       </form>
       <div className="btnrow">
-        {['Sharma', 'Singh', 'Patel', 'Priya', 'Aarav', 'Khan', 'Nair'].map((x) => (
-          <button key={x} className="cat" onClick={() => run(x)}>{x}</button>))}
+        {['Raheja', 'Manchanda', 'Saluja', 'Grover', 'Sethi', 'Chhabra'].map((x) => (
+          <button key={x} className="cat" onClick={() => { setQ(x); setOpen(x); }}>{x}</button>))}
       </div>
-    </>)}
+      <div className="note" style={{ marginTop: 12 }}>
+        This looks a name up live, so it works for spellings the directory does
+        not carry. If no register has it, the page says so rather than inventing
+        an answer.
+      </div>
+    </>) : (<>
+      <div className="search">
+        <Icon n="search" size={18} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} enterKeyHint="search"
+          placeholder={meta ? `Search ${fmt(meta.total)} names…` : 'Search names…'}
+          autoComplete="off" spellCheck="false" />
+        <button onClick={() => setShowF((v) => !v)} aria-label="Filters"
+          style={{ background: 'none', border: 0, color: anyFilter ? 'var(--green)' : 'var(--fg3)',
+            display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+          <Icon n="filter" size={17} /></button>
+      </div>
 
-    {dir && (<>
-      <div className="search" style={{ marginTop: 4 }}>
-        <Icon n="search" size={17} />
-        <input value={filter} onChange={(e) => setFilter(e.target.value)}
-          placeholder={`Filter ${dir.list.length} names…`} autoComplete="off" spellCheck="false" />
-      </div>
-      <div className="dim sm" style={{ margin: '0 0 8px' }}>
-        {list.length === dir.list.length ? `${list.length} names` : `${list.length} of ${dir.list.length}`}
-        {' · tap any for the full record'}
-      </div>
-      {list.length === 0
-        ? <Empty t="No name matches that" />
-        : <div className="list">
-            {list.map((x) => (
-              <button className="row" key={x.n} onClick={() => run(x.n)}
-                style={{ textAlign: 'left', cursor: 'pointer', background: 'none', border: 0, width: '100%' }}>
-                <span style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--s2)',
-                  display: 'grid', placeItems: 'center', flex: '0 0 auto', color: 'var(--green)',
-                  fontWeight: 800, fontSize: 14 }}>{x.n[0]}</span>
-                <div className="main"><b>{x.n}</b><span className="dim sm">{x.note}</span></div>
-                <Icon n="chevron" size={15} style={{ color: 'var(--fg3)' }} />
-              </button>))}
-          </div>}
-    </>)}
+      {showF && (<>
+        {!fac && <Spin t="Counting the directory" />}
+        {fac && (<>
+          <div className="dim sm" style={{ margin: '2px 0 6px' }}>Country</div>
+          <div className="btnrow" style={{ marginTop: 0 }}>
+            <button className={`cat ${!filters.cc ? 'on' : ''}`}
+              onClick={() => setFilters((f) => ({ ...f, cc: '' }))}>Any</button>
+            {fac.cc.map((x) => chip('cc', x.k, CC_NAME[x.k] || x.k, x.n))}
+          </div>
+          <div className="dim sm" style={{ margin: '10px 0 6px' }}>Community</div>
+          <div className="btnrow" style={{ marginTop: 0 }}>
+            <button className={`cat ${!filters.comm ? 'on' : ''}`}
+              onClick={() => setFilters((f) => ({ ...f, comm: '' }))}>Any</button>
+            {fac.comm.slice(0, 18).map((x) => chip('comm', x.k, x.k, x.n))}
+          </div>
+          <div className="dim sm" style={{ margin: '10px 0 6px' }}>Region</div>
+          <div className="btnrow" style={{ marginTop: 0 }}>
+            <button className={`cat ${!filters.reg ? 'on' : ''}`}
+              onClick={() => setFilters((f) => ({ ...f, reg: '' }))}>Any</button>
+            {fac.reg.slice(0, 20).map((x) => chip('reg', x.k, x.k, x.n))}
+          </div>
+          <div className="dim sm" style={{ margin: '10px 0 6px' }}>Language</div>
+          <div className="btnrow" style={{ marginTop: 0 }}>
+            <button className={`cat ${!filters.lang ? 'on' : ''}`}
+              onClick={() => setFilters((f) => ({ ...f, lang: '' }))}>Any</button>
+            {fac.lang.slice(0, 16).map((x) => chip('lang', x.k, x.k, x.n))}
+          </div>
+          {anyFilter && (
+            <button className="btn ghost sm" style={{ marginTop: 10, width: '100%' }}
+              onClick={() => setFilters({ cc: '', lang: '', comm: '', reg: '' })}>Clear all filters</button>)}
+        </>)}
+      </>)}
 
-    {busy && <Spin t="Reading the name register" />}
-    {!busy && err && (
-      <div className="err" style={{ marginTop: 12 }}>
-        <h4>Nothing found</h4><p>{err}</p>
-        <button className="btn sm" style={{ marginTop: 10 }} onClick={() => run(q)}>Retry</button>
-      </div>)}
-    {!busy && d && tab === 'look' && <Result d={d} onPick={run} />}
+      {busy && <Spin t="Searching the directory" />}
+      {!busy && err && <div className="state"><span>{err}</span></div>}
+      {!busy && res.rows.length > 0 && (<>
+        <div className="dim sm" style={{ margin: '10px 0 8px' }}>
+          {res.total > res.rows.length
+            ? `${fmt(res.rows.length)} of ${fmt(res.total)} names`
+            : `${fmt(res.total)} name${res.total === 1 ? '' : 's'}`}
+          {meta && !q.trim() && !anyFilter && ` · ${fmt(meta.surnames)} surnames, ${fmt(meta.given)} first names`}
+        </div>
+        <div className="list">
+          {res.rows.map((r) => (
+            <button className="row" key={r.n} onClick={() => setOpen(r.n)}
+              style={{ textAlign: 'left', cursor: 'pointer', background: 'none', border: 0, width: '100%' }}>
+              <span style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--s2)',
+                display: 'grid', placeItems: 'center', flex: '0 0 auto', color: 'var(--green)',
+                fontWeight: 800, fontSize: 14 }}>{r.n[0]}</span>
+              <div className="main" style={{ minWidth: 0 }}>
+                <b>{r.n}</b>
+                <span className="dim sm">
+                  {[r.k === 'given' ? (r.g === 'm' ? 'first name, male' : r.g === 'f' ? 'first name, female' : 'first name') : 'surname',
+                    (r.comm || [])[0], (r.reg || []).slice(0, 2).join(' & '), (r.l || [])[0]]
+                    .filter(Boolean).join(' · ')}
+                </span>
+              </div>
+              {r.b > 0 && <span className="dim" style={{ fontSize: 10.5, flex: '0 0 auto' }}>{fmt(r.b)}</span>}
+              <Icon n="chevron" size={15} style={{ color: 'var(--fg3)', flex: '0 0 auto' }} />
+            </button>))}
+        </div>
+        {res.total > res.rows.length && (
+          <div className="dim sm" style={{ marginTop: 10, textAlign: 'center' }}>
+            Narrow the search to see the rest.</div>)}
+      </>)}
+
+      {meta && (
+        <div className="src"><span className="dot" />
+          <span>{fmt(meta.total)} names · {fmt(meta.withProse)} with a sourced description ·
+            {' '}{fmt(meta.withCommunity)} with community · {fmt(meta.withRegion)} with region</span></div>)}
+    </>)}
   </>);
 }
 

@@ -103,7 +103,7 @@ const TOOLS = [
   { id:'dict',      n:'Dictionary',    i:'book',     c:'Learn', t:'live', d:'Definitions + audio',       C:L.Dictionary },
   { id:'books',     n:'Books',         i:'books',    c:'Learn', t:'live', d:'Open Library',              C:L.Books },
   { id:'country',   n:'Countries',     i:'earth',    c:'Learn', t:'live', d:'250 countries, full detail', C:W.Countries },
-  { id:'names',     n:'Names & Surnames', i:'smile', c:'Learn', t:'live', d:'Meaning, origin, bearers',  C:Names },
+  { id:'names',     n:'Names & Surnames', i:'smile', c:'Learn', t:'live', d:'5,695 names · caste, region',C:Names },
   { id:'worlddata', n:'World Data',    i:'chart',    c:'Learn', t:'live', d:'16 indicators, 25 years',   C:WorldData },
 
   // ---------- Media ----------
