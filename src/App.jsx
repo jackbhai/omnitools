@@ -9,6 +9,7 @@ import { PlayerProvider, usePlayer } from './core/player';
 import { MiniPlayer, FullPlayer } from './ui/PlayerUI';
 import { Downloader } from './tools/downloader';
 import * as A from './tools/ahm7';
+import * as AD from './tools/ahm7-deep';
 import * as MP from './tools/metro-planner';
 import * as BP from './tools/bus-planner';
 import * as TR from './tools/trains2';
@@ -93,8 +94,8 @@ const TOOLS = [
   { id:'metro',     n:'Metro',         i:'🚇', c:'Travel', t:'live', d:'12 city networks',      C:T.Metro },
   { id:'nearby',    n:'Near Me',       i:'📍', c:'Travel', t:'live', d:'ATM, food, fuel…',      C:T.Nearby },
   { id:'guide',     n:'Travel Guide',  i:'🧭', c:'Travel', t:'live', d:'City info + SOS',       C:T.TravelGuide },
-  { id:'manga',     n:'Manga',         i:'📖', c:'AHM7', t:'live', d:'Read & search',         C:A.Manga },
-  { id:'novels',    n:'Novels',        i:'📕', c:'AHM7', t:'live', d:'Story library',         C:A.Novels },
+  { id:'manga',     n:'Manga',         i:'📖', c:'AHM7', t:'live', d:'Read chapters + pages',         C:AD.Manga },
+  { id:'novels',    n:'Novels',        i:'📕', c:'AHM7', t:'live', d:'Read full chapters',         C:AD.Novels },
   { id:'med',       n:'Medicine',      i:'💊', c:'AHM7', t:'live', d:'Uses, dosage, warnings',         C:MedicineDeep },
   { id:'courses',   n:'Courses',       i:'🎓', c:'AHM7', t:'live', d:'1000+ free courses',    C:A.Courses },
   { id:'tempmail',  n:'Temp Mail',     i:'📨', c:'AHM7', t:'live', d:'Disposable inbox',      C:A.TempMail },

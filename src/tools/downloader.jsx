@@ -233,8 +233,11 @@ export function Downloader() {
 
       {/* ---------------- VIDEO + QUALITY ---------------- */}
       <Card>
-        <div className="chead">🎬 Video — pick a quality</div>
-        {info.qualities?.length > 0 ? (
+        <div className="chead">🎬 Video</div>
+        {info.qualities?.length > 0 ? (<>
+          <div className="dim sm" style={{ marginBottom: 8 }}>
+            {info.qualities.length} qualities available
+          </div>
           <div className="list" style={{ border: 0 }}>
             {info.qualities.map((v, i) => (
               <div className="row" key={i} style={{ paddingLeft: 0, paddingRight: 0 }}>
@@ -243,14 +246,23 @@ export function Downloader() {
                   <span className="dim sm">{(v.mime || '').split(';')[0]}
                     {v.size ? ` · ${(v.size / 1048576).toFixed(1)} MB` : ''}</span>
                 </div>
-                <button className="btn sm" onClick={() => grab(v.url, `${sanitize(info.title)}-${v.q}.mp4`)}>{saving.includes(v.q) ? (note || '…') : '⬇'}</button>
+                <button className="btn sm" disabled={!!saving}
+                  onClick={() => grab(v.url, `${sanitize(info.title)}-${v.q}.mp4`)}>
+                  {saving.includes(v.q) ? (note || '…') : '⬇'}</button>
               </div>))}
           </div>
-        ) : info.video ? (
-          <button className="btn" style={{ width: '100%' }}
+        </>) : info.video ? (<>
+          <button className="btn" style={{ width: '100%' }} disabled={!!saving}
             onClick={() => grab(info.video, `${sanitize(info.title)}.mp4`)}>
-            {saving.endsWith('.mp4') ? (note || 'Downloading…') : '⬇ Download video'}</button>
-        ) : <span className="dim sm">No downloadable video stream found.</span>}
+            {saving.endsWith('.mp4') ? (note || 'Downloading…') : '⬇ Download video (best available)'}</button>
+          <div className="src" style={{ marginTop: 10 }}>
+            <span className="dot warn" />
+            <span>This source returns a single best-quality file, not a quality list.
+              Every open API that exposed per-quality streams (Piped mirrors) is
+              currently blocked by YouTube, so a selector would be empty.
+              Tip: the audio-only option above is much smaller if you just want sound.</span>
+          </div>
+        </>) : <span className="dim sm">No downloadable video stream found.</span>}
       </Card>
 
       <div className="src">

@@ -73,23 +73,36 @@ function cacheSet(id, rec) {
 const withTimeout = (p, ms) =>
   Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))]);
 
-async function viaProxy(target, ms = 26000) {
-  let lastErr;
-  for (const wrap of PROXIES) {
+/**
+ * Race ALL proxies at once instead of trying them one-by-one.
+ *
+ * The old code was sequential: a dead proxy burned the full 26 s timeout before
+ * the working one was even attempted, so playback often fell back to the
+ * ad-filled embed even though a good proxy existed. Measured live:
+ *   proxy.cors.sh  200 in 13.3 s
+ *   allorigins     408 after  7.9 s
+ *   codetabs       522 after 19.7 s
+ * Racing means the first success wins and slow failures cost nothing.
+ */
+function viaProxy(target, ms = 30000) {
+  const attempt = async (wrap) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
     try {
-      const r = await withTimeout(fetch(wrap(target)), ms);
+      const r = await fetch(wrap(target), { signal: ctrl.signal });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const txt = await r.text();
-      // allorigins/get wraps the payload in { contents: "..." }
-      let j;
-      try { j = JSON.parse(txt); } catch { throw new Error('bad json'); }
-      if (j && typeof j.contents === 'string') {
-        try { j = JSON.parse(j.contents); } catch {}
-      }
+      let j = JSON.parse(txt);
+      if (j && typeof j.contents === 'string') j = JSON.parse(j.contents);
+      if (!j || (!j.mediaInfo && !j.success)) throw new Error('unusable payload');
       return j;
-    } catch (e) { lastErr = e; }
-  }
-  throw lastErr || new Error('all proxies failed');
+    } finally { clearTimeout(timer); }
+  };
+
+  // Promise.any resolves on the FIRST success and ignores the failures.
+  return Promise.any(PROXIES.map(attempt)).catch(() => {
+    throw new Error('every proxy failed');
+  });
 }
 
 /** Fetch any AHM7 alldl result through the proxy chain (no CORS on AHM7). */
