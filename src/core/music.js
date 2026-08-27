@@ -88,7 +88,9 @@ function toTrack(v) {
     artist: (v.uploaderName || v.uploader || '').replace(/ - Topic$/, '').trim(),
     dur: secs(v.duration),
     art: (v.thumbnail || '').replace(/^\/\//, 'https://'),
-    views: v.views,
+    // The mirror sends -1 when it does not know the play count; treating
+    // that as a number rendered "-1 plays" under every track.
+    views: typeof v.views === 'number' && v.views > 0 ? v.views : null,
     needsResolve: true,
   };
 }

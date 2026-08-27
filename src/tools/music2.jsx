@@ -105,7 +105,7 @@ function TrackList({ tracks, player, onPlay, loading, more, onMore, onRemove }) 
               <span className="dim sm">
                 {t.artist || ''}
                 {t.dur ? ` · ${mmss(t.dur)}` : ''}
-                {t.views ? ` · ${fmt(t.views)} plays` : ''}
+                {t.views > 0 ? ` · ${fmt(t.views)} plays` : ''}
               </span>
             </div>
             <div style={{ display: 'flex', gap: 2, alignItems: 'center', flex: '0 0 auto' }}>
