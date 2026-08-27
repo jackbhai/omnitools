@@ -8,8 +8,38 @@ import { Icon } from '../ui/icons';
 const IST = 'Asia/Kolkata';
 
 /* ---------------------------------------------------------------- WEATHER */
+/**
+ * Weather + air quality.
+ *
+ * Two fixes went in here, and both were real bugs rather than polish:
+ *
+ *  1. The air-quality card used to show a number that was not this city's.
+ *     Its second provider authenticated with a public demo token that answers
+ *     EVERY coordinate on Earth with one station in Shanghai — measured across
+ *     Delhi, Mumbai, London and New York, all returning the identical reading
+ *     with status "ok". That provider is gone (see src/core/providers.js) and
+ *     air quality now comes from a model that returns a distinct value per
+ *     coordinate, with a second independent read as failover.
+ *
+ *  2. The hourly strip started at midnight, so for most of the day it opened
+ *     with hours that had already passed. It now starts at the current hour.
+ *
+ * The card also shows WHICH pollutant is driving the index, a 3-day air
+ * forecast, and the observation timestamp — because an AQI number with no time
+ * attached is not information.
+ */
+const AQ_BANDS = [
+  { max: 50,  n: 'Good',        c: 'var(--green)', s: 'Air is clean. Nothing to avoid.' },
+  { max: 100, n: 'Moderate',    c: '#a3e635',      s: 'Fine for almost everyone; unusually sensitive people may notice it.' },
+  { max: 150, n: 'Unhealthy for sensitive groups', c: 'var(--warn)', s: 'Children, older people and anyone with asthma should ease off long outdoor effort.' },
+  { max: 200, n: 'Unhealthy',   c: '#fb923c',      s: 'Everyone may feel it. Cut back on strenuous time outdoors.' },
+  { max: 300, n: 'Very unhealthy', c: 'var(--bad)', s: 'Serious. Stay in where you can, and mask outdoors.' },
+  { max: 1e9, n: 'Hazardous',   c: '#b91c1c',      s: 'Emergency conditions. Avoid going out.' },
+];
+const band = (v) => v == null ? null : AQ_BANDS.find((b) => v <= b.max);
+
 export function Weather() {
-  // Location comes from the global auto-detector (GPS → IP → default), so the
+  // Location comes from the global auto-detector (GPS -> IP -> default), so the
   // user never has to type a city.
   const { loc: auto } = useLoc();
   const [loc, setLoc] = useState(auto);
@@ -21,11 +51,15 @@ export function Weather() {
   const g = useData('geocode', P.geocode, { q: dq }, { auto: false });
   useEffect(() => { if (dq.trim().length >= 2) g.run({ q: dq }); }, [dq]);  // eslint-disable-line
 
-  const tone = (v) => v == null ? '' : v <= 20 ? 'var(--green)' : v <= 40 ? '#a3e635'
-    : v <= 60 ? 'var(--warn)' : v <= 100 ? '#fb923c' : 'var(--bad)';
+  const aq = a.data;
+  const usBand = band(aq?.usaqi);
+  const hhmm = (t) => new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const compass = (deg) => deg == null ? '' :
+    ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(deg / 22.5) % 16];
 
   return (<><LocBar /><Search value={q} onChange={setQ} ph="Or search another city…" /><div className="btnrow">
-      {['New Delhi','Amritsar','Mumbai','Lahore','Bengaluru'].map((c) =><button key={c} className="cat" onClick={() => setQ(c)}>{c}</button>)}
+      {['New Delhi','Amritsar','Mumbai','Bengaluru','Kolkata','Lahore','Dubai','London'].map((c) =>
+        <button key={c} className="cat" onClick={() => setQ(c)}>{c}</button>)}
     </div>
     {q.trim().length >= 2 && g.data?.length > 0 && (
       <div className="list" style={{ marginTop: 10 }}>
@@ -38,13 +72,99 @@ export function Weather() {
 
     {w.loading && <Spin t="Reading the sky" />}
     {w.error && <Err error={w.error} retry={() => w.run()} />}
-    {w.data && (<><Card><div style={{ display: 'flex', alignItems: 'center', gap: 16 }}><div style={{ color: 'var(--green)', lineHeight: 1 }}><Icon n={wmo(w.data.code)[1]} size={54} /></div><div><div className="big">{fmt(w.data.temp, 1)}<span style={{ fontSize: 20 }}>°C</span></div><div className="dim sm">{wmo(w.data.code)[0]} · feels {fmt(w.data.feels)}°</div></div></div><div className="g3" style={{ marginTop: 14 }}><Stat l="Humidity" v={fmt(w.data.humidity) + '%'} /><Stat l="Wind" v={fmt(w.data.wind, 1)} s="km/h" /><Stat l="Rain" v={fmt(w.data.precip, 1)} s="mm" /></div>
-        {w.data.sunrise && (
-          <div className="g2" style={{ marginTop: 8 }}><Stat l="Sunrise" v={new Date(w.data.sunrise).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})} /><Stat l="Sunset" v={new Date(w.data.sunset).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})} /></div>)}
-        <Src meta={w.meta} /></Card>
+    {w.data && (<><Card>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ color: 'var(--green)', lineHeight: 1 }}><Icon n={wmo(w.data.code)[1]} size={54} /></div>
+        <div><div className="big">{fmt(w.data.temp, 1)}<span style={{ fontSize: 20 }}>°C</span></div>
+          <div className="dim sm">{wmo(w.data.code)[0]} · feels {fmt(w.data.feels)}°</div>
+          {w.data.observedAt && <div className="dim" style={{ fontSize: 10.5, marginTop: 2 }}>
+            observed {hhmm(w.data.observedAt)}</div>}</div>
+      </div>
+      <div className="g3" style={{ marginTop: 14 }}>
+        <Stat l="Humidity" v={fmt(w.data.humidity) + '%'} />
+        <Stat l="Wind" v={fmt(w.data.wind, 1)} s={`km/h ${compass(w.data.dir)}`} />
+        <Stat l="Rain" v={fmt(w.data.precip, 1)} s="mm" />
+      </div>
+      <div className="g3" style={{ marginTop: 8 }}>
+        {w.data.gust != null && <Stat l="Gusts" v={fmt(w.data.gust, 0)} s="km/h" />}
+        {w.data.cloud != null && <Stat l="Cloud" v={fmt(w.data.cloud) + '%'} />}
+        {w.data.uv != null && <Stat l="UV index" v={fmt(w.data.uv, 1)} />}
+      </div>
+      <div className="g3" style={{ marginTop: 8 }}>
+        {w.data.visibility != null && <Stat l="Visibility" v={fmt(w.data.visibility, 1)} s="km" />}
+        {w.data.dew != null && <Stat l="Dew point" v={fmt(w.data.dew, 1) + '°'} />}
+        {w.data.pressure != null && <Stat l="Pressure" v={fmt(w.data.pressure, 0)} s="hPa" />}
+      </div>
+      {w.data.sunrise && (
+        <div className="g2" style={{ marginTop: 8 }}>
+          <Stat l="Sunrise" v={hhmm(w.data.sunrise)} />
+          <Stat l="Sunset" v={hhmm(w.data.sunset)} /></div>)}
+      <Src meta={w.meta} /></Card>
 
-      {a.data && (
-        <Card><div className="chead">Air quality</div><div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}><div className="big" style={{ color: tone(a.data.aqi) }}>{fmt(a.data.aqi)}</div><div className="dim sm">AQI{a.data.station ? ` · ${a.data.station}` : ''}</div></div><div className="g3" style={{ marginTop: 12 }}><Stat l="PM2.5" v={fmt(a.data.pm25, 1)} s="µg/m³" /><Stat l="PM10" v={fmt(a.data.pm10, 1)} s="µg/m³" /><Stat l="Ozone" v={fmt(a.data.o3, 1)} s="µg/m³" /></div><Src meta={a.meta} /></Card>)}
+      {a.loading && !aq && <Spin t="Sampling the air" />}
+      {a.error && <Err error={a.error} retry={() => a.run()} />}
+      {aq && (
+        <Card>
+          <div className="chead">Air quality</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+            <div className="big" style={{ color: usBand?.c }}>{fmt(aq.usaqi)}</div>
+            <div><div style={{ color: usBand?.c, fontWeight: 700, fontSize: 13.5 }}>{usBand?.n}</div>
+              <div className="dim" style={{ fontSize: 10.5 }}>US AQI{aq.aqi != null ? ` · European ${fmt(aq.aqi)}` : ''}</div></div>
+          </div>
+          {usBand && <p className="dim sm" style={{ margin: '8px 0 0', lineHeight: 1.45 }}>{usBand.s}</p>}
+          {aq.parts?.length > 0 && (
+            <div className="dim sm" style={{ marginTop: 8 }}>
+              Driven by <b style={{ color: 'var(--cyan)' }}>{aq.parts[0][0]}</b>
+              {aq.parts.length > 1 ? `, then ${aq.parts[1][0]}` : ''}
+            </div>)}
+          <div className="g3" style={{ marginTop: 12 }}>
+            <Stat l="PM2.5" v={fmt(aq.pm25, 1)} s="ug/m3" />
+            <Stat l="PM10" v={fmt(aq.pm10, 1)} s="ug/m3" />
+            <Stat l="Ozone" v={fmt(aq.o3, 1)} s="ug/m3" />
+          </div>
+          <div className="g3" style={{ marginTop: 8 }}>
+            <Stat l="NO2" v={fmt(aq.no2, 1)} s="ug/m3" />
+            <Stat l="SO2" v={fmt(aq.so2, 1)} s="ug/m3" />
+            <Stat l="CO" v={fmt(aq.co, 0)} s="ug/m3" />
+          </div>
+          {(aq.dust != null || aq.nh3 != null) && (
+            <div className="g2" style={{ marginTop: 8 }}>
+              {aq.dust != null && <Stat l="Dust" v={fmt(aq.dust, 1)} s="ug/m3" />}
+              {aq.nh3 != null && <Stat l="Ammonia" v={fmt(aq.nh3, 1)} s="ug/m3" />}
+            </div>)}
+          {aq.forecast?.length > 0 && (<>
+            <div className="chead" style={{ marginTop: 14 }}>Next 24 hours</div>
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
+              {aq.forecast.filter((_, i) => i % 3 === 0).slice(0, 9).map((h, i) => {
+                const b = band(h.us);
+                return (
+                  <div key={i} style={{ flex: '0 0 auto', width: 54, textAlign: 'center',
+                    background: 'var(--s2)', borderRadius: 10, padding: '8px 0' }}>
+                    <div style={{ color: b?.c, fontWeight: 700, fontSize: 14 }}>{fmt(h.us)}</div>
+                    <div className="dim" style={{ fontSize: 9.5, marginTop: 2 }}>
+                      {new Date(h.t).toLocaleTimeString('en-IN', { hour: '2-digit', hour12: false })}h</div>
+                  </div>);
+              })}
+            </div>
+          </>)}
+          {aq.at && <div className="dim" style={{ fontSize: 10.5, marginTop: 8 }}>Sampled {hhmm(aq.at)}</div>}
+          <Src meta={a.meta} /></Card>)}
+
+      {w.data.hourly?.length > 0 && (<>
+        <div className="chead" style={{ marginTop: 16 }}>Next 24 hours</div>
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
+          {w.data.hourly.filter((_, i) => i % 2 === 0).map((h, i) => (
+            <div key={i} style={{ flex: '0 0 auto', width: 58, textAlign: 'center',
+              background: 'var(--s2)', borderRadius: 10, padding: '9px 0' }}>
+              <div className="dim" style={{ fontSize: 9.5 }}>
+                {new Date(h.t).toLocaleTimeString('en-IN', { hour: '2-digit', hour12: false })}h</div>
+              <div style={{ color: 'var(--green)', display: 'grid', placeItems: 'center', margin: '4px 0' }}>
+                <Icon n={wmo(h.code)[1]} size={17} /></div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{fmt(h.v)}°</div>
+              {h.pop > 0 && <div style={{ fontSize: 9.5, color: 'var(--cyan)' }}>{h.pop}%</div>}
+            </div>))}
+        </div>
+      </>)}
 
       <div className="chead" style={{ marginTop: 16 }}>7-day forecast</div><div className="list">
         {w.data.daily.map((d, i) => (

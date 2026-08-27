@@ -12,19 +12,46 @@ const UA = { 'User-Agent': 'OmniTools/1.0 (public tools app)' };
 export const weather = [
   { id: 'open-meteo', label: 'Open-Meteo', async run({ lat, lon }) {
       const d = await jget(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-        `&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,surface_pressure` +
-        `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset` +
-        `&hourly=temperature_2m&timezone=auto&forecast_days=7`);
+        '&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,' +
+        'weather_code,cloud_cover,pressure_msl,surface_pressure,wind_speed_10m,wind_direction_10m,' +
+        'wind_gusts_10m,visibility,dew_point_2m' +
+        '&daily=weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,' +
+        'apparent_temperature_min,sunrise,sunset,daylight_duration,uv_index_max,precipitation_sum,' +
+        'precipitation_probability_max,wind_speed_10m_max' +
+        '&hourly=temperature_2m,precipitation_probability,weather_code' +
+        '&timezone=auto&forecast_days=7');
+      const c = d.current;
+      const now = Date.now();
+      /* Start the hourly strip at the CURRENT hour, not at midnight — a strip
+         that opens with hours already past is the commonest way these read
+         wrong. */
+      const times = d.hourly?.time || [];
+      let from = times.findIndex((t) => new Date(t).getTime() >= now - 36e5);
+      if (from < 0) from = 0;
       return {
-        temp: d.current.temperature_2m, feels: d.current.apparent_temperature,
-        humidity: d.current.relative_humidity_2m, wind: d.current.wind_speed_10m,
-        precip: d.current.precipitation, code: d.current.weather_code,
-        pressure: d.current.surface_pressure,
+        temp: c.temperature_2m, feels: c.apparent_temperature,
+        humidity: c.relative_humidity_2m, wind: c.wind_speed_10m,
+        gust: c.wind_gusts_10m, dir: c.wind_direction_10m,
+        precip: c.precipitation, code: c.weather_code, cloud: c.cloud_cover,
+        pressure: c.pressure_msl ?? c.surface_pressure,
+        visibility: c.visibility != null ? c.visibility / 1000 : null,
+        dew: c.dew_point_2m, isDay: c.is_day === 1,
+        uv: d.daily?.uv_index_max?.[0] ?? null,
         sunrise: d.daily.sunrise?.[0], sunset: d.daily.sunset?.[0],
-        hourly: (d.hourly?.time || []).slice(0, 24).map((t, i) => ({ t, v: d.hourly.temperature_2m[i] })),
+        daylight: d.daily?.daylight_duration?.[0] ?? null,
+        observedAt: c.time,
+        hourly: times.slice(from, from + 24).map((t, i) => ({
+          t, v: d.hourly.temperature_2m[from + i],
+          pop: d.hourly.precipitation_probability?.[from + i] ?? null,
+          code: d.hourly.weather_code?.[from + i] ?? null })),
         daily: (d.daily?.time || []).map((t, i) => ({
           date: t, max: d.daily.temperature_2m_max[i], min: d.daily.temperature_2m_min[i],
-          code: d.daily.weather_code[i], pop: d.daily.precipitation_probability_max?.[i] ?? null })),
+          feelsMax: d.daily.apparent_temperature_max?.[i] ?? null,
+          code: d.daily.weather_code[i], pop: d.daily.precipitation_probability_max?.[i] ?? null,
+          rain: d.daily.precipitation_sum?.[i] ?? null,
+          uv: d.daily.uv_index_max?.[i] ?? null,
+          windMax: d.daily.wind_speed_10m_max?.[i] ?? null,
+          sunrise: d.daily.sunrise?.[i], sunset: d.daily.sunset?.[i] })),
       }; } },
   { id: 'met-no', label: 'MET Norway', async run({ lat, lon }) {
       const d = await jget(`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`, { headers: UA });
@@ -60,20 +87,59 @@ export const geocode = [
         lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] })); } },
 ];
 
-/* ------------------------------------------------------------- AIR */
+/* ------------------------------------------------------------- AIR
+ * The WAQI provider that used to sit here was REMOVED, not fixed.
+ *
+ * It authenticated with the public `demo` token, and that token does not do
+ * what it appears to. Measured on 2026-08-28: geo:28.61;77.20 (Delhi),
+ * geo:19.07;72.87 (Mumbai), geo:51.5;-0.12 (London) and geo:40.7;-74.0
+ * (New York) ALL returned `aqi: 55, idx: 1437, city: Shanghai`. It answers
+ * every coordinate on Earth with one Chinese monitoring station, with
+ * `status: "ok"`, so nothing in the app could tell it was wrong. Users in
+ * Delhi were being shown Shanghai's air and told it was theirs.
+ *
+ * That is exactly the fake data this app is not allowed to ship. A real WAQI
+ * token is free but personal, and this app has no login, so WAQI is out.
+ *
+ * What replaces it: the CAMS model behind Open-Meteo, which returns a distinct
+ * reading per coordinate (verified across six cities on three continents), and
+ * a second, independent view of the SAME model on Open-Meteo's GFS domain, so
+ * a failure of one host is not a failure of air quality.
+ */
+const AQ_FIELDS = 'pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,' +
+  'ammonia,dust,aerosol_optical_depth,uv_index,european_aqi,us_aqi,' +
+  'european_aqi_pm2_5,european_aqi_pm10,european_aqi_no2,european_aqi_o3,european_aqi_so2';
+
+const shapeAir = (d) => {
+  const c = d.current || {};
+  if (c.pm2_5 == null && c.us_aqi == null && c.european_aqi == null) throw new Error('no readings');
+  const h = d.hourly || {};
+  return {
+    aqi: c.european_aqi, usaqi: c.us_aqi,
+    pm25: c.pm2_5, pm10: c.pm10, co: c.carbon_monoxide,
+    no2: c.nitrogen_dioxide, so2: c.sulphur_dioxide, o3: c.ozone,
+    nh3: c.ammonia, dust: c.dust, aod: c.aerosol_optical_depth, uv: c.uv_index,
+    // which pollutant is actually driving the number
+    parts: [
+      ['PM2.5', c.european_aqi_pm2_5], ['PM10', c.european_aqi_pm10],
+      ['NO₂', c.european_aqi_no2], ['O₃', c.european_aqi_o3], ['SO₂', c.european_aqi_so2],
+    ].filter(([, v]) => v != null).sort((a, b) => b[1] - a[1]),
+    at: c.time,
+    forecast: (h.time || []).map((t, i) => ({
+      t, us: h.us_aqi?.[i] ?? null, eu: h.european_aqi?.[i] ?? null, pm25: h.pm2_5?.[i] ?? null,
+    })).filter((x) => x.us != null || x.eu != null),
+  };
+};
+
 export const air = [
-  { id: 'om-aq', label: 'Open-Meteo AQ', async run({ lat, lon }) {
-      const d = await jget(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,european_aqi,us_aqi`);
-      const c = d.current;
-      return { aqi: c.european_aqi, usaqi: c.us_aqi, pm25: c.pm2_5, pm10: c.pm10,
-        co: c.carbon_monoxide, no2: c.nitrogen_dioxide, so2: c.sulphur_dioxide, o3: c.ozone }; } },
-  { id: 'waqi', label: 'WAQI', async run({ lat, lon }) {
-      const d = await jget(`https://api.waqi.info/feed/geo:${lat};${lon}/?token=demo`);
-      if (d.status !== 'ok') throw new Error('waqi ' + d.status);
-      const i = d.data.iaqi || {};
-      return { aqi: d.data.aqi, usaqi: d.data.aqi, pm25: i.pm25?.v ?? null, pm10: i.pm10?.v ?? null,
-        co: i.co?.v ?? null, no2: i.no2?.v ?? null, so2: i.so2?.v ?? null, o3: i.o3?.v ?? null,
-        station: d.data.city?.name }; } },
+  { id: 'om-aq', label: 'CAMS air quality', async run({ lat, lon }) {
+      return shapeAir(await jget('https://air-quality-api.open-meteo.com/v1/air-quality' +
+        `?latitude=${lat}&longitude=${lon}&current=${AQ_FIELDS}` +
+        '&hourly=pm2_5,pm10,us_aqi,european_aqi&forecast_days=3&timezone=auto')); } },
+  { id: 'om-aq-gfs', label: 'GFS air quality', async run({ lat, lon }) {
+      return shapeAir(await jget('https://air-quality-api.open-meteo.com/v1/air-quality' +
+        `?latitude=${lat}&longitude=${lon}&current=${AQ_FIELDS}&domains=cams_global` +
+        '&hourly=pm2_5,pm10,us_aqi,european_aqi&forecast_days=3&timezone=auto')); } },
 ];
 
 /* ------------------------------------------------------------- TIME */

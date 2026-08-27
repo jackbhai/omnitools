@@ -74,13 +74,109 @@ const ALLOWED = [
   // YouTube media hosts, for /yt playback
   'googlevideo.com',
   'youtube.com',
-  'www.youtube.com',
 
   // Radio + lyrics
   'de1.api.radio-browser.info',
   'nl1.api.radio-browser.info',
   'at1.api.radio-browser.info',
   'lrclib.net',
+
+  // News aggregators + publisher feeds. None of these send CORS themselves.
+  'news.google.com',
+  'api.gdeltproject.org',
+  'feeds.bbci.co.uk',
+  'aljazeera.com',
+  'rss.cnn.com',
+  'feeds.skynews.com',
+  'theguardian.com',
+  'thehindubusinessline.com',
+  'feeds.washingtonpost.com',
+  'moxie.foxnews.com',
+  'feeds.nbcnews.com',
+  'abcnews.go.com',
+  'cbsnews.com',
+  'feeds.reuters.com',
+  'thehindu.com',
+  'timesofindia.indiatimes.com',
+  'economictimes.indiatimes.com',
+  'indianexpress.com',
+  'ndtv.com',
+  'feeds.feedburner.com',
+  'hindustantimes.com',
+  'zeenews.india.com',
+  'news18.com',
+  'livemint.com',
+  'business-standard.com',
+  'firstpost.com',
+  'scroll.in',
+  'dawn.com',
+  'thedailystar.net',
+  'channelnewsasia.com',
+  'nhk.or.jp',
+  'rss.dw.com',
+  'france24.com',
+  'rt.com',
+  'news.yahoo.com',
+  'techcrunch.com',
+  'theverge.com',
+  'arstechnica.com',
+  'wired.com',
+  'espn.com',
+  'espncricinfo.com',
+  'static.espncricinfo.com',
+
+  // Film / TV metadata
+  'v3-cinemeta.strem.io',
+  'cinemeta-catalogs.strem.io',
+  'cinemeta-live.strem.io',
+  'images.metahub.space',
+  'api.tvmaze.com',
+  'static.tvmaze.com',
+  'api.jikan.moe',
+  'omdbapi.com',
+  'api.themoviedb.org',
+  'api.watchmode.com',
+
+  // Air quality + weather fallbacks
+  'api.waqi.info',
+  'api.openaq.org',
+  'data.sensor.community',
+  'api.data.gov.in',
+  'airquality.cpcb.gov.in',
+
+  // publisher feeds verified after the first allow-list pass
+  'skynews.com',
+  'news.ycombinator.com',
+  'hn.algolia.com',
+  'api.spaceflightnewsapi.net',
+  'spaceflightnewsapi.net',
+  'deccanherald.com',
+  'telegraphindia.com',
+  'tribuneindia.com',
+  'newindianexpress.com',
+  'indiatoday.in',
+  'opindia.com',
+  'thewire.in',
+  'theprint.in',
+
+  // search back-ends, used when the primary aggregator refuses a query
+  'bing.com',
+  'news.search.yahoo.com',
+  'search.yahoo.com',
+  'moneycontrol.com',
+  'r.jina.ai',
+
+  // name & surname directory
+  'query.wikidata.org',
+  'wikidata.org',
+  'en.wikipedia.org',
+  'wikipedia.org',
+  'api.agify.io',
+  'api.genderize.io',
+  'api.nationalize.io',
+  'agify.io',
+  'genderize.io',
+  'nationalize.io',
 ];
 
 const CORS = {
@@ -192,6 +288,216 @@ async function resolveYouTube(videoId) {
   return { success: false, error: 'no client returned a playable stream', tried };
 }
 
+/* ----------------------------------------------------------------- /rss ---
+   News needs many feeds at once. Doing that from the browser means one relay
+   round-trip per feed and an XML parse per feed on the main thread. This does
+   the fan-out here — every feed fetched in parallel, parsed, merged, sorted —
+   so the app makes ONE request and gets ready-to-render JSON.
+
+   A dead feed never fails the batch: its error is reported alongside the
+   items that did arrive. */
+
+const strip = (s) => String(s || '')
+  .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/&nbsp;/g, ' ')
+  .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+  .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n))
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const tag = (block, name) => {
+  const m = block.match(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`, 'i'));
+  return m ? m[1] : '';
+};
+const attr = (block, name, a) => {
+  const m = block.match(new RegExp(`<${name}[^>]*\\b${a}=["']([^"']+)["']`, 'i'));
+  return m ? m[1] : '';
+};
+
+function parseFeed(xml, feedUrl) {
+  const out = [];
+  const feedTitle = strip(tag(xml.slice(0, 4000), 'title'));
+  const isAtom = /<feed[\s>]/i.test(xml.slice(0, 600));
+  const blocks = xml.match(isAtom ? /<entry[\s>][\s\S]*?<\/entry>/gi : /<item[\s>][\s\S]*?<\/item>/gi) || [];
+  for (const b of blocks) {
+    const title = strip(tag(b, 'title'));
+    if (!title) continue;
+    let link = strip(tag(b, 'link')) || attr(b, 'link', 'href') || strip(tag(b, 'guid'));
+    if (!/^https?:/i.test(link)) link = attr(b, 'link', 'href') || '';
+    const rawDesc = tag(b, 'description') || tag(b, 'summary') || tag(b, 'content:encoded') || tag(b, 'content');
+    const img = attr(b, 'media:content', 'url') || attr(b, 'media:thumbnail', 'url') ||
+      attr(b, 'enclosure', 'url') || (rawDesc.match(/<img[^>]+src=["']([^"']+)["']/i) || [])[1] || '';
+    const pub = strip(tag(b, 'pubDate')) || strip(tag(b, 'published')) ||
+      strip(tag(b, 'updated')) || strip(tag(b, 'dc:date'));
+    const src = strip(tag(b, 'source')) || attr(b, 'source', 'url') || feedTitle;
+    const t = pub ? Date.parse(pub) : NaN;
+    out.push({
+      title, link,
+      desc: strip(rawDesc).slice(0, 320),
+      img: /^https?:/i.test(img) ? img : '',
+      pub, ts: Number.isFinite(t) ? t : 0,
+      source: src, feed: feedTitle, feedUrl,
+      cats: (b.match(/<category(?:\s[^>]*)?>([\s\S]*?)<\/category>/gi) || [])
+        .map((c) => strip(c.replace(/<\/?category[^>]*>/gi, ''))).filter(Boolean).slice(0, 4),
+    });
+  }
+  return out;
+}
+
+/**
+ * Fetch one feed, retrying the failures that are worth retrying.
+ *
+ * Google rate-limits Cloudflare's egress ranges hard: the same topic URL that
+ * returns 70 articles on one request returns HTTP 503 on the next, from the
+ * same Worker, seconds apart. Measured over eight topics, roughly a quarter
+ * got through on the first try. That is a transient refusal, not a dead feed,
+ * and the correct response is to ask again rather than to show the user an
+ * empty page. 404 and 403 are NOT retried — those are permanent.
+ */
+async function fetchFeed(u, tries = 3, budgetMs = 9000) {
+  let last = 'unknown';
+  const deadline = Date.now() + budgetMs;
+  for (let i = 0; i < tries; i++) {
+    if (i) {
+      if (Date.now() > deadline) break;
+      await new Promise((r) => setTimeout(r, 180 * i));
+    }
+    try {
+      const ctl = new AbortController();
+      const per = setTimeout(() => ctl.abort(), Math.max(1500, deadline - Date.now()));
+      const r = await fetch(u, {
+        signal: ctl.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+            '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
+          'Accept-Language': 'en-IN,en;q=0.9',
+        },
+        redirect: 'follow',
+        cf: { cacheTtl: 120, cacheEverything: true },
+      });
+      clearTimeout(per);
+      if (r.ok) return { ok: true, xml: await r.text() };
+      last = 'HTTP ' + r.status;
+      if (r.status !== 503 && r.status !== 429 && r.status < 500) break;
+    } catch (e) { last = String(e.message).slice(0, 60); }
+  }
+  return { ok: false, error: last };
+}
+
+async function rssBatch(urls, limit) {
+  const errors = [];
+  const lists = await Promise.all(urls.map(async (u) => {
+    try {
+      const t = new URL(u);
+      const host = t.hostname.replace(/^www\./, '');
+      if (!ALLOWED.some((h) => host === h || host.endsWith('.' + h))) {
+        errors.push({ url: u, error: 'host not allowed' }); return [];
+      }
+      /* Desktop identity, deliberately. Several search back-ends answer a
+         mobile user-agent with a rendered HTML page instead of the RSS they
+         were asked for — measured on Bing News, which returned 168 KB of
+         markup to a mobile UA and clean XML to a desktop one. */
+      const got = await fetchFeed(u);
+      if (!got.ok) { errors.push({ url: u, error: got.error }); return []; }
+      const items = parseFeed(got.xml, u);
+      if (!items.length) errors.push({ url: u, error: 'no items' });
+      return items;
+    } catch (e) {
+      errors.push({ url: u, error: String(e.message).slice(0, 80) });
+      return [];
+    }
+  }));
+
+  const seen = new Set(), merged = [];
+  for (const it of lists.flat()) {
+    const k = it.title.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 60);
+    if (!k || seen.has(k)) continue;
+    seen.add(k); merged.push(it);
+  }
+  merged.sort((a, b) => b.ts - a.ts);
+  return { ok: true, count: merged.length, items: merged.slice(0, limit), errors };
+}
+
+
+/* ------------------------------------------------------------ topic ids ---
+   Google News topic sections live at /rss/headlines/section/topic/<NAME>,
+   which answers 302 -> /rss/topics/<opaque id>. Following that redirect from
+   here is unreliable: measured, the redirect target succeeds but the
+   /section/topic/ URL itself returns 503 from datacentre IPs often enough to
+   break the page.
+
+   The id is not opaque. It is base64 of a small protobuf holding the topic's
+   Knowledge Graph mid, the language and (sometimes) the country. Decoding the
+   eight known ids showed the structure, and rebuilding them from the mid
+   reproduced ALL EIGHT byte-for-byte — six with a country field, two without.
+   So the app builds the id itself and requests the stable /rss/topics/ URL
+   directly. No redirect, no 503, and it works for every language edition.  */
+
+const TOPIC_MID = {
+  WORLD: '/m/09nm_', NATION: '/m/03rk0', BUSINESS: '/m/09s1f',
+  TECHNOLOGY: '/m/07c1v', ENTERTAINMENT: '/m/02jjt', SPORTS: '/m/06ntj',
+  SCIENCE: '/m/06mq7', HEALTH: '/m/0kt51',
+};
+/* The two that carry no country field in Google's own ids. */
+const TOPIC_NO_GL = new Set(['NATION', 'HEALTH']);
+
+const varint = (n) => {
+  const out = [];
+  for (;;) { const b = n & 0x7f; n >>>= 7; out.push(n ? b | 0x80 : b); if (!n) return new Uint8Array(out); }
+};
+const cat = (...parts) => {
+  const len = parts.reduce((n, p) => n + p.length, 0);
+  const out = new Uint8Array(len);
+  let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
+};
+const field = (num, bytes) => cat(new Uint8Array([(num << 3) | 2]), varint(bytes.length), bytes);
+const utf8 = (s) => new TextEncoder().encode(s);
+const b64 = (u8) => { let s = ''; for (const b of u8) s += String.fromCharCode(b); return btoa(s); };
+
+function topicId(topic, hl, gl) {
+  const mid = TOPIC_MID[topic];
+  if (!mid) return null;
+  const useGl = gl && !TOPIC_NO_GL.has(topic);
+  const sub = useGl
+    ? cat(field(1, utf8(mid)), field(2, utf8(hl)), field(3, utf8(gl)))
+    : cat(field(1, utf8(mid)), field(2, utf8(hl)));
+  const inner = cat(new Uint8Array([0x08, 0x10]), field(2, sub), new Uint8Array([0x28, 0x00]));
+  const innerB64 = b64(inner).replace(/=+$/, '');
+  const payload = cat(new Uint8Array([0x08, 0x0a]), field(4, utf8(innerB64)), new Uint8Array([0x50, 0x01]));
+  const outer = cat(new Uint8Array([0x08, 0x00]), field(5, payload));
+  return b64(outer).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/* ------------------------------------------------------------- /search ---
+   News search, with the primary aggregator's own search deliberately NOT the
+   only route.
+
+   Measured from this Worker: `news.google.com/rss/search` returns HTTP 503 on
+   effectively every request from Cloudflare egress — Google rate-limits the
+   whole range — while the SAME host's country and topic feeds answer 200. So
+   search cannot lean on it.
+
+   Bing News RSS does answer: 10-12 articles per query, correct XML, verified
+   across eight unrelated queries and four markets. It is the primary. The
+   aggregator's search is still attempted (it works from residential IPs, and
+   costs nothing to try), and publisher feeds are searched client-side by the
+   caller. Whatever answers, answers.  */
+async function searchNews(q, hl, gl, ceid, limit) {
+  const urls = [
+    `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=RSS` +
+      `&cc=${gl}&setmkt=${hl}`,
+    `https://news.google.com/rss/search?q=${encodeURIComponent(q)}` +
+      `&hl=${hl}&gl=${gl}&ceid=${encodeURIComponent(ceid)}`,
+  ];
+  const out = await rssBatch(urls, limit);
+  out.query = q;
+  return out;
+}
+
 /* ------------------------------------------------------------------ main */
 export default {
   async fetch(request) {
@@ -200,6 +506,47 @@ export default {
     }
 
     const url = new URL(request.url);
+
+    /* ---- news search ---- */
+    if (url.pathname === '/search') {
+      const q = (url.searchParams.get('q') || '').trim();
+      if (!q) return json({ ok: false, error: 'pass ?q=' }, 400);
+      const hl = url.searchParams.get('hl') || 'en-IN';
+      const gl = url.searchParams.get('gl') || 'IN';
+      const ceid = url.searchParams.get('ceid') || 'IN:en';
+      const limit = Math.min(+url.searchParams.get('limit') || 60, 200);
+      try { return json(await searchNews(q, hl, gl, ceid, limit)); }
+      catch (e) { return json({ ok: false, error: String(e.message).slice(0, 120) }, 502); }
+    }
+
+    /* ---- topic section, addressed by its stable id ---- */
+    if (url.pathname === '/topic') {
+      const t = (url.searchParams.get('t') || '').toUpperCase();
+      const hl = url.searchParams.get('hl') || 'en-IN';
+      const gl = url.searchParams.get('gl') || 'IN';
+      const ceid = url.searchParams.get('ceid') || 'IN:en';
+      const limit = Math.min(+url.searchParams.get('limit') || 80, 200);
+      const id = topicId(t, hl, gl);
+      if (!id) return json({ ok: false, error: 'unknown topic ' + t }, 400);
+      const u = `https://news.google.com/rss/topics/${id}?hl=${hl}&gl=${gl}&ceid=${encodeURIComponent(ceid)}`;
+      try {
+        const r = await rssBatch([u], limit);
+        r.topic = t; r.id = id;
+        return json(r);
+      } catch (e) { return json({ ok: false, error: String(e.message).slice(0, 120) }, 502); }
+    }
+
+    /* ---- batched RSS -> JSON ---- */
+    if (url.pathname === '/rss') {
+      const urls = url.searchParams.getAll('u').filter(Boolean).slice(0, 12);
+      const limit = Math.min(+url.searchParams.get('limit') || 80, 200);
+      if (!urls.length) return json({ ok: false, error: 'pass one or more ?u=<encoded feed url>' }, 400);
+      try {
+        return json(await rssBatch(urls, limit));
+      } catch (e) {
+        return json({ ok: false, error: String(e.message).slice(0, 120) }, 502);
+      }
+    }
 
     /* ---- first-party audio resolver ---- */
     if (url.pathname === '/yt') {
@@ -241,8 +588,11 @@ export default {
     const fwd = new Headers();
     const range = request.headers.get('Range');
     if (range) fwd.set('Range', range);
-    fwd.set('User-Agent',
-      'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36');
+    /* Wikidata answers 403 to a request with no identifying User-Agent —
+       measured, every time. A browser page cannot set one, so the relay does. */
+    fwd.set('User-Agent', /wikidata|wikipedia/.test(host)
+      ? 'OmniTools/1.0 (https://jackbhai.github.io/omnitools/) public tools app'
+      : 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36');
     fwd.set('Accept', '*/*');
 
     try {

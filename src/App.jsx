@@ -19,6 +19,9 @@ import { Medicine as MedicineDeep } from './tools/medicine';
 import { Handwriting } from './tools/handwriting';
 import { Hub } from './tools/travel-hub';
 import * as W from './tools/world';
+import { News } from './tools/news';
+import { Screen } from './tools/screen';
+import { Names } from './tools/names';
 import { providerStats } from './core/engine';
 import { Icon } from './ui/icons';
 
@@ -99,12 +102,12 @@ const TOOLS = [
   { id:'dict',      n:'Dictionary',    i:'book',     c:'Learn', t:'live', d:'Definitions + audio',       C:L.Dictionary },
   { id:'books',     n:'Books',         i:'books',    c:'Learn', t:'live', d:'Open Library',              C:L.Books },
   { id:'country',   n:'Countries',     i:'earth',    c:'Learn', t:'live', d:'250 countries, full detail', C:W.Countries },
-  { id:'names',     n:'Name Lookup',   i:'smile',    c:'Learn', t:'live', d:'Origin, age, gender',       C:W.NameLookup },
+  { id:'names',     n:'Names & Surnames', i:'smile', c:'Learn', t:'live', d:'Meaning, origin, bearers',  C:Names },
 
   // ---------- Media ----------
   { id:'dl',        n:'Downloader',    i:'download', c:'Media', t:'live', d:'Video / audio / thumbnail', C:Downloader },
-  { id:'news',      n:'Tech News',     i:'news',     c:'Media', t:'live', d:'HN + Lobsters',             C:L.News },
-  { id:'movies',    n:'Movies & TV',   i:'film',     c:'Media', t:'live', d:'Search titles',             C:L.Movies },
+  { id:'news',      n:'News',          i:'news',     c:'Media', t:'live', d:'52 countries · every topic', C:News },
+  { id:'movies',    n:'Movies & TV',   i:'film',     c:'Media', t:'live', d:'Cast, seasons, episodes',    C:Screen },
   { id:'jokes',     n:'Jokes',         i:'smile',    c:'Media', t:'live', d:'Random joke',               C:L.Jokes },
   { id:'quotes',    n:'Quotes',        i:'quote',    c:'Media', t:'live', d:'Inspiration',               C:L.Quotes },
 
