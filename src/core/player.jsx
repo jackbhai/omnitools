@@ -12,6 +12,11 @@ const Ctx = createContext(null);
 export const usePlayer = () => useContext(Ctx);
 
 const BANDS = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+/* 0.05s of silence — played on tap so the <audio> element is unlocked before
+   the ~7s stream resolution finishes and the user gesture expires. */
+const SILENCE = 'data:audio/mpeg;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA' +
+  'gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgP////////////////////////////////8AAAA5' +
+  'TEFNRTMuOTlyAc0AAAAAAAAAABSAJAJAQgAAgAAAAnGMUJAtAAAAAAAAAAAAAAAAAAAA';
 export const PRESETS = {
   Flat: [0,0,0,0,0,0,0,0,0,0],
   'Bass Boost': [10,8,6,3,0,0,0,0,0,0],
@@ -92,6 +97,8 @@ export function PlayerProvider({ children }) {
     // if every proxy path fails.
     if (t.needsResolve && t.id) {
       setYt(null);
+      // Consume the user gesture NOW so the element is unlocked for later.
+      try { el.src = SILENCE; el.play().catch(() => {}); } catch {}
       try {
         setLoading(true);
         const r = await resolveAudio(t.id, { onProgress: setStage });
@@ -122,6 +129,13 @@ export function PlayerProvider({ children }) {
         return;
       } catch (e) {
         console.warn('[player] direct audio failed:', e && e.message, e);
+        // Autoplay refusal is NOT a stream failure - keep the ad-free audio.
+        if (el.src && el.src !== SILENCE &&
+            (e?.name === 'NotAllowedError' || /gesture|interact|play\(\)/i.test(e?.message || ''))) {
+          setStage(''); setLoading(false); setPlaying(false);
+          setErr('Tap ▶ to start');
+          return;
+        }
         // If the stream resolved but autoplay was blocked, keep the audio
         // element loaded so a tap on play works - do NOT drop to the embed.
         if (el.src && (e?.name === 'NotAllowedError' || /gesture|interact/i.test(e?.message || ''))) {
