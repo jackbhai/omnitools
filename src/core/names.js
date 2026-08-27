@@ -161,12 +161,50 @@ LIMIT ${limit * 4}`;
   return out.slice(0, limit);
 }
 
-/** The prose explanation, straight from the encyclopedia. */
+/* --------------------------------------------------------------- triage
+ * Wikipedia titles collide, and taking whatever came back is how a name tool
+ * starts lying. Asking for "Rakheja" returned the biography of a sari draper;
+ * "Mangatram" returned a 1992 Hindi film; "Grover" returns the Sesame Street
+ * Muppet. All three were being shown to the user under the heading "What it
+ * means".
+ *
+ * So the same test the offline build applies is applied here: a page is used
+ * ONLY if its opening prose defines a name. A page that opens by describing a
+ * person, a place, a company or a work is discarded, and the screen says
+ * nothing rather than something false.
+ */
+const BIO_OR_THING = new RegExp(
+  '^\\s*[A-Z][\\w.\'-]*(?:\\s+[A-Z][\\w.\'-]*){0,4}' +
+  '\\s*(?:\\([^)]{0,80}\\))?\\s*(?:,\\s*[^,]{0,40},)?\\s*' +
+  '(?:was|is|are|were)\\s+(?:an?|the)\\s+(?:[a-z-]+\\s+){0,3}' +
+  '(actor|actress|singer|player|politician|cricketer|footballer|director|writer|poet|author|' +
+  'businessman|businesswoman|character|Muppet|scientist|journalist|musician|dancer|producer|' +
+  'entrepreneur|activist|filmmaker|physician|lawyer|professor|general|officer|king|emperor|' +
+  'stylist|draper|model|chef|designer|' +
+  'city|town|village|municipality|district|tehsil|taluk|state|province|region|river|mountain|' +
+  'lake|island|valley|fort|temple|mosque|church|palace|company|corporation|firm|bank|brand|' +
+  'university|college|school|hospital|airport|newspaper|magazine|channel|party|' +
+  'film|movie|novel|book|song|album|band|series|game|festival|award|genus|species|dish)\\b', 'i');
+
+const DEFINES_NAME = /\b(sur ?name|family name|given name|male name|female name|masculine|feminine|patronymic|clan|caste|community)\b/i;
+
+/** True when this article is about the NAME, not about someone who has it. */
+function aboutTheName(extract) {
+  const first = String(extract || '').replace(/\s+/g, ' ').slice(0, 400);
+  if (!first) return false;
+  if (/\bmay refer to\b/i.test(first.slice(0, 120))) return false;  // disambiguation
+  const defines = DEFINES_NAME.test(first.slice(0, 220));
+  if (BIO_OR_THING.test(first) && !defines) return false;
+  return defines;
+}
+
+/** The prose explanation, straight from the encyclopedia — when it is real. */
 export async function meaning(raw) {
   const name = titleCase(raw);
   const tryPage = async (title) => {
     const d = await getJson(`${WIKI}/page/summary/${enc(title)}`, { ms: 14000, relay: true });
     if (!d.extract || d.type === 'disambiguation') return null;
+    if (!aboutTheName(d.extract)) return null;      // the whole point
     return {
       title: d.title,
       extract: d.extract,
@@ -174,22 +212,29 @@ export async function meaning(raw) {
       url: d.content_urls?.desktop?.page || '',
     };
   };
-  /* The plain title is usually the name article; when it is a person instead,
-     the "(surname)" and "(name)" pages are the disambiguated ones. */
+  /* The disambiguated titles first: they are the ones that carry the name
+     article when the plain title is taken by a person. */
   for (const t of [`${name} (surname)`, `${name} (name)`, `${name} (given name)`, name]) {
     try {
       const r = await tryPage(t);
-      if (r && /\b(surname|name|family name|given name)\b/i.test(r.extract.slice(0, 200))) return r;
-      if (r && t !== name) return r;
+      if (r) return r;
     } catch { /* try the next form */ }
   }
-  /* Last resort: ask the search index which article is about this name. */
+  /* Last resort: ask the search index — and hold its answer to the same test.
+     Previously the first hit was returned unchecked, which is how a sari
+     draper ended up being offered as the meaning of a surname. */
   try {
     const s = await getJson(
-      `${WIKIAPI}?action=query&list=search&srsearch=${enc(name + ' surname OR given name')}` +
-      '&format=json&origin=*&srlimit=3', { ms: 14000 });
-    const hit = (s.query?.search || [])[0];
-    if (hit) return tryPage(hit.title);
+      `${WIKIAPI}?action=query&list=search&srsearch=${enc(`${name} surname`)}` +
+      '&format=json&origin=*&srlimit=3', { ms: 14000, relay: true });
+    for (const hit of s.query?.search || []) {
+      /* Only consider a result whose title IS the name, in one of its forms —
+         a search for "Mangatram" happily returns the film it appears in. */
+      const t = hit.title.replace(/\s*\((surname|name|given name)\)\s*$/i, '').trim();
+      if (t.toLowerCase() !== name.toLowerCase()) continue;
+      const r = await tryPage(hit.title);
+      if (r) return r;
+    }
   } catch { /* nothing more to try */ }
   return null;
 }
