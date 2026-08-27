@@ -7,6 +7,7 @@
  */
 import React, { useState } from 'react';
 import { jget } from '../core/engine';
+import { ahm7Json } from '../core/audio-resolve';
 import { Card, Spin, Err, Chips, Copy, fmt } from '../ui/kit';
 
 const PIPED = ['https://api.piped.private.coffee', 'https://pipedapi.kavin.rocks', 'https://pipedapi.adminforge.de'];
@@ -34,7 +35,8 @@ export function Downloader() {
 
     // 1) AHM7 — broadest platform coverage
     try {
-      const d = await jget(`https://ahm7xmakki.com/api/alldl?url=${encodeURIComponent(url.trim())}`, { ms: 30000 });
+      // must go through the CORS proxy - AHM7 sends no ACAO header
+      const d = await ahm7Json(url.trim());
       const m = d.mediaInfo || {};
       if (m.videoUrl || m.audioUrl) {
         got = {

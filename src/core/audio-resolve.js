@@ -27,11 +27,26 @@ const AHM7 = 'https://ahm7xmakki.com/api/alldl?url=';
 /* Ordered by measured reliability. allorigins/raw was the only one that
    returned usable JSON on every attempt; the rest stay as backups. */
 const PROXIES = [
+  (u) => `https://proxy.cors.sh/${u}`,                                   // handles nested queries
   (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
   (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-  (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+  (u) => `https://cors.isomorphic-git.org/${u}`,
   (u) => `https://thingproxy.freeboard.io/fetch/${u}`,
 ];
+
+/** Strip tracking params so the upstream URL stays simple and cacheable. */
+export function cleanMediaUrl(raw) {
+  try {
+    const u = new URL(String(raw).trim());
+    for (const k of ['si', 'igsi', 'igshid', 'feature', 'utm_source', 'utm_medium',
+                     'utm_campaign', 'fbclid', 'gclid', '_r', 's']) u.searchParams.delete(k);
+    if (u.hostname.endsWith('youtu.be')) {
+      const id = u.pathname.slice(1);
+      if (id) return `https://www.youtube.com/watch?v=${id}`;
+    }
+    return u.toString().replace(/\?$/, '');
+  } catch { return String(raw).trim(); }
+}
 
 const MEM = new Map();          // videoId -> { audio, expires }
 const LS = 'omni:aud:';
@@ -75,6 +90,11 @@ async function viaProxy(target, ms = 26000) {
     } catch (e) { lastErr = e; }
   }
   throw lastErr || new Error('all proxies failed');
+}
+
+/** Fetch any AHM7 alldl result through the proxy chain (no CORS on AHM7). */
+export async function ahm7Json(pageUrl) {
+  return viaProxy(`${AHM7}${encodeURIComponent(cleanMediaUrl(pageUrl))}`, 32000);
 }
 
 /**
