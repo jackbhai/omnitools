@@ -5,8 +5,10 @@
  */
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { lyricsPool } from './ytmusic';
-import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached } from './audio-resolve';
+import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached,
+         pauseWarming, resumeWarming } from './audio-resolve';
 import { resolve } from './engine';
+import { notePlay } from './library';
 
 const Ctx = createContext(null);
 export const usePlayer = () => useContext(Ctx);
@@ -65,6 +67,7 @@ export function PlayerProvider({ children }) {
   const audio = useRef(null);
   const retriedRef = useRef(null);      // last id we already re-resolved once
   const recoveringRef = useRef(false);  // a re-resolve is in flight
+  const autoRadio = useRef(false);      // keep the queue topped up forever
   const [queue, setQueue] = useState([]);
   const [idx, setIdx] = useState(-1);
   const [track, setTrack] = useState(null);
@@ -93,6 +96,9 @@ export function PlayerProvider({ children }) {
     setErr(''); setLyrics(null);
     if (list) { setQueue(list); setIdx(list.findIndex((x) => (x.id ?? x.url) === (t.id ?? t.url))); }
     setTrack(t); setLoading(true);
+    // Do not let background resolves steal bandwidth from the track the user
+    // is waiting for — released again as soon as it is actually playing.
+    pauseWarming();
     if (retriedRef.current !== t.id) retriedRef.current = null;
     recoveringRef.current = false;
 
@@ -102,6 +108,7 @@ export function PlayerProvider({ children }) {
     if (t.needsResolve && t.id) {
       setYt(null);
       const cached = isCached(t.id);
+
       // Consume the user gesture NOW so the element is unlocked for later.
       // Skipped when the stream is already cached: we can set the real src
       // immediately and avoid the extra load cycle entirely.
@@ -127,6 +134,13 @@ export function PlayerProvider({ children }) {
         // No crossOrigin here: the CDN 302-redirects and a tainted CORS
         // handshake can kill playback. Audio first, EQ best-effort after.
         el.removeAttribute('crossorigin');
+        /* Tear the previous connection down BEFORE opening the new one.
+           The CDN allows a single active link per client: measured, resolving
+           a second link while the first is still streaming makes one of them
+           return HTTP 403, which surfaced as MediaError 4 mid-playlist.
+           Assigning a new src alone does not reliably abort the old request,
+           so this forces it. */
+        try { el.pause(); el.removeAttribute('src'); el.load(); } catch {}
         // A cached link can already be dead. If it is, the element fires
         // `error` the moment the src is set — before play() rejects — so the
         // handler must know a recovery is possible and stay quiet. Arming
@@ -139,6 +153,8 @@ export function PlayerProvider({ children }) {
         recoveringRef.current = false;
         try { chain.attach(el); chain.resume(); } catch {}
         setPlaying(true); setStage(''); setLoading(false); setErr('');
+        resumeWarming();
+        notePlay(meta);   // recently-played list in the Library tab
         if ('mediaSession' in navigator) {
           try {
             navigator.mediaSession.metadata = new MediaMetadata({
@@ -149,7 +165,7 @@ export function PlayerProvider({ children }) {
         // warm the next few tracks so skipping is instant
         if (list) {
           const i = list.findIndex((x) => (x.id ?? x.url) === (t.id ?? t.url));
-          if (i >= 0) prefetchNext(list, i, 3);
+          if (i >= 0) prefetchNext(list, i, 4);
         }
         resolve('lyrics', lyricsPool, { title: meta.title || '', artist: meta.artist || '' }, { ttl: 864e5 })
           .then((r2) => setLyrics(r2.data)).catch(() => setLyrics(null));
@@ -163,7 +179,7 @@ export function PlayerProvider({ children }) {
         // loaded and one tap will start it. NEVER fall back to the ad embed.
         if (blocked && el.src && el.src !== SILENCE) {
           setStage(''); setLoading(false); setPlaying(false);
-          setErr('Ready — tap play to start');
+          setErr('Ready — tap play to start'); resumeWarming();
           resolve('lyrics', lyricsPool, { title: t.title || '', artist: t.artist || '' }, { ttl: 864e5 })
             .then((r2) => setLyrics(r2.data)).catch(() => setLyrics(null));
           return;
@@ -185,6 +201,7 @@ export function PlayerProvider({ children }) {
             el.src = r.audio; el.playbackRate = rate;
             await el.play();
             setPlaying(true); setStage(''); setLoading(false); setErr('');
+            resumeWarming();
             return;
           } catch { /* fall through to the honest error */ }
           finally { recoveringRef.current = false; }
@@ -192,7 +209,7 @@ export function PlayerProvider({ children }) {
         // Everything failed. Say so — do not silently serve ads.
         setStage(''); setLoading(false); setPlaying(false);
         el.pause(); el.removeAttribute('src'); el.load();
-        setErr('Could not get an ad-free stream right now. Tap retry.');
+        setErr('Could not get an ad-free stream right now. Tap retry.'); resumeWarming();
         return;
       }
     }
@@ -216,7 +233,7 @@ export function PlayerProvider({ children }) {
       resolve('lyrics', lyricsPool, { title: meta.title || '', artist: meta.artist || '' }, { ttl: 864e5 })
         .then((r) => setLyrics(r.data)).catch(() => setLyrics(null));
     } catch (e) {
-      setErr(e.message || 'Could not play this track');
+      setErr(e.message || 'Could not play this track'); resumeWarming();
       setPlaying(false);
     }
     setLoading(false);
@@ -241,9 +258,77 @@ export function PlayerProvider({ children }) {
     if (shuffle) n = Math.floor(Math.random() * queue.length);
     else n = idx + d;
     if (n < 0) n = queue.length - 1;
-    if (n >= queue.length) { if (repeat === 'off') return; n = 0; }
+    if (n >= queue.length) {
+      // Endless play: rather than stopping at the end of the list, keep going.
+      // `autoRadio` is topped up by the effect below, so this rarely fires.
+      if (repeat === 'off' && !autoRadio.current) return;
+      n = 0;
+    }
     setIdx(n); play(queue[n], queue);
   }, [queue, idx, shuffle, repeat, play]);
+
+  /** Append more tracks to the queue (used by radio / infinite scroll). */
+  const extendQueue = useCallback((more) => {
+    if (!more?.length) return;
+    setQueue((q) => {
+      const seen = new Set(q.map((t) => t.id ?? t.url));
+      const add = more.filter((t) => t && !seen.has(t.id ?? t.url));
+      return add.length ? [...q, ...add] : q;
+    });
+  }, []);
+
+  /** Turn endless radio on/off. When on, the queue never runs dry. */
+  const setRadio = useCallback((on) => { autoRadio.current = !!on; }, []);
+
+  /**
+   * ENDLESS PLAY — top the queue up before it runs out.
+   *
+   * With radio on, once fewer than three tracks remain after the current one
+   * the queue is extended with material built around what is playing (more by
+   * the artist, similar titles, the genre seed). The user never hits the end
+   * and playback never stops on its own.
+   */
+  useEffect(() => {
+    if (!autoRadio.current || idx < 0 || !queue.length) return;
+    if (queue.length - idx > 3) return;
+    let live = true;
+    (async () => {
+      try {
+        const { radioQueue } = await import('./music');
+        const more = await radioQueue(queue[idx], { limit: 30 });
+        if (live && more.length) extendQueue(more);
+      } catch { /* queue simply does not grow this time */ }
+    })();
+    return () => { live = false; };
+  }, [queue, idx, extendQueue]);
+
+  /**
+   * Resolve the NEXT track's URL early — but do NOT download its bytes.
+   *
+   * MEASURED, THE HARD WAY: this audio CDN allows only ONE active connection
+   * per client. Buffering the next track in a second <audio> element killed
+   * the track that was already playing — MediaError code 4 about 11 s in,
+   * every single time. Direct measurement of the CDN:
+   *
+   *   two connections, same track        -> one side gets HTTP 403
+   *   two connections, different tracks  -> the PLAYING one gets HTTP 403
+   *   sustained A + burst B              -> B truncates (IncompleteRead)
+   *
+   * So byte-level preloading is off the table: it breaks the very thing it was
+   * meant to improve. What is safe — and still where nearly all the delay was
+   * — is resolving the next URL ahead of time. That request goes to a
+   * different host, costs the CDN nothing, and removes the 8-15 s lookup.
+   * What remains is a single CDN connect of roughly a second, which is the
+   * unavoidable price of the one-connection limit.
+   */
+  useEffect(() => {
+    if (!queue.length || idx < 0) return;
+    const nxt = queue[idx + 1];
+    if (!nxt?.id) return;
+    let live = true;
+    const t = setTimeout(() => { if (live) prefetchAudio(nxt.id, 0); }, 1200);
+    return () => { live = false; clearTimeout(t); };
+  }, [queue, idx]);
 
   const seek = useCallback((s) => { if (audio.current) audio.current.currentTime = s; }, []);
 
@@ -282,7 +367,7 @@ export function PlayerProvider({ children }) {
   const value = {
     audio, yt, stage, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, err, lyrics,
     eq, preset, bass, treb, comp, rate, sleep,
-    play, toggle, step, seek, retry, setShuffle, setRepeat, setFull, setSleep, applyPreset,
+    play, toggle, step, seek, retry, extendQueue, setRadio, setShuffle, setRepeat, setFull, setSleep, applyPreset,
     setEqBand: (i, v) => { const n = [...eq]; n[i] = v; setEq(n); chain.band(i, v); setPreset('Custom'); },
     setBassV: (v) => { setBass(v); chain.setBass(v); },
     setTrebV: (v) => { setTreb(v); chain.setTreb(v); },
@@ -307,6 +392,9 @@ export function PlayerProvider({ children }) {
           const t = track;
           if (!t) return;
           if (!t.id) { setErr('Stream failed — tap retry'); return; }
+          // A dropped stream must never leave the user staring at a dead
+          // player: pause background work so the retry gets the whole pipe.
+          pauseWarming();
           // `error` fires more than once while a fresh src is being swapped
           // in — the element reports the failed load, then reports again as
           // the new source attaches. Announcing a failure during a recovery
@@ -332,8 +420,8 @@ export function PlayerProvider({ children }) {
               el.playbackRate = rate;
               return el.play();
             })
-            .then(() => { setStage(''); setErr(''); setPlaying(true); })
-            .catch(() => { setStage(''); setErr('Stream failed — tap retry'); })
+            .then(() => { setStage(''); setErr(''); setPlaying(true); resumeWarming(); })
+            .catch(() => { setStage(''); setErr('Stream failed — tap retry'); resumeWarming(); })
             .finally(() => { recoveringRef.current = false; });
         }}
       />

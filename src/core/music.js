@@ -1,0 +1,352 @@
+/**
+ * Music catalogue engine.
+ *
+ * WHAT THIS REPLACES
+ *   The old music tool ran two hardcoded Piped mirrors and showed the first 20
+ *   hits. A live probe of 33 mirrors found exactly ONE that still answers with
+ *   a CORS header, /streams is HTTP 500 on every instance (so no
+ *   "relatedStreams"), every JioSaavn mirror is dead, and youtubei returns 403
+ *   from a browser Origin. That is a single point of failure with no depth.
+ *
+ * WHAT IT DOES NOW — all verified live from a github.io Origin:
+ *   · SEARCH with pagination. The mirror returns a `nextpage` token and
+ *     /nextpage/search honours it (page 2 and 3 confirmed, 20 items each), so
+ *     the list is effectively endless instead of capped at 20.
+ *   · FOUR FILTERS FANNED OUT. music_songs alone gives 20 ids; adding
+ *     music_videos and `all` raises it to 54 unique ids for the same query.
+ *   · PLAYLISTS. /playlists/<id> returns 101 tracks in one call — the single
+ *     richest source of bulk catalogue we have.
+ *   · CHARTS + BROWSE from iTunes (CORS *): artist lookup gives 60 songs and
+ *     30 albums, and genre searches return 50 rows. iTunes has no playable
+ *     audio, so it is used as a METADATA + QUERY generator: its titles become
+ *     searches that resolve to real playable ids.
+ *   · AUTOPLAY. With /streams dead there is no official "related" list, so the
+ *     radio queue is built from the artist's other tracks, the album, and the
+ *     genre seed — which is what "related" was giving us anyway.
+ *
+ * Everything degrades: if the mirror dies, iTunes still renders browsable
+ * catalogue, and any track already resolved stays playable from cache.
+ */
+import { jget } from './engine';
+
+/* Ordered by measured health. Only the first currently answers with CORS, but
+   mirrors recover and the pool costs nothing when they do not. */
+export const MIRRORS = [
+  'https://api.piped.private.coffee',
+  'https://pipedapi.kavin.rocks',
+  'https://pipedapi.adminforge.de',
+  'https://pipedapi.drgns.space',
+  'https://api.piped.projectsegfau.lt',
+  'https://pipedapi.orangenet.cc',
+];
+
+const ITUNES = 'https://itunes.apple.com';
+const secs = (t) => (typeof t === 'number' && t > 0 ? t : null);
+const vidOf = (u = '') => (u.includes('v=') ? u.split('v=')[1].split('&')[0] : '');
+
+/**
+ * Try every mirror in turn; first usable answer wins.
+ *
+ * A dead mirror does not fail politely: the browser reports "TypeError: Failed
+ * to fetch" because the CORS preflight itself never completes. That is thrown
+ * from `fetch` rather than returned as a status, so the loop has to catch it
+ * and move on — which it now does. Mirrors that fail are also benched briefly
+ * so one dead host does not add its timeout to every subsequent call.
+ */
+const MIRROR_BENCH = new Map();       // base -> retry-after timestamp
+const mirrorOk = (b) => (MIRROR_BENCH.get(b) || 0) < Date.now();
+
+async function anyMirror(path, { ms = 14000, pick } = {}) {
+  let lastErr;
+  const order = [...MIRRORS.filter(mirrorOk), ...MIRRORS.filter((b) => !mirrorOk(b))];
+  for (const base of order) {
+    try {
+      const d = await jget(base + path, { ms });
+      const v = pick ? pick(d) : d;
+      if (v && (!Array.isArray(v) || v.length)) {
+        MIRROR_BENCH.delete(base);
+        return { data: v, base, raw: d };
+      }
+      lastErr = new Error('empty');
+      MIRROR_BENCH.set(base, Date.now() + 60000);
+    } catch (e) {
+      lastErr = e;
+      // 90 s bench: long enough to skip a dead host, short enough to recover
+      MIRROR_BENCH.set(base, Date.now() + 90000);
+    }
+  }
+  throw lastErr || new Error('all mirrors failed');
+}
+
+/** Normalise a Piped search/stream row into our track shape. */
+function toTrack(v) {
+  const id = vidOf(v.url || '');
+  if (!id) return null;
+  return {
+    id,
+    title: (v.title || '').trim(),
+    artist: (v.uploaderName || v.uploader || '').replace(/ - Topic$/, '').trim(),
+    dur: secs(v.duration),
+    art: (v.thumbnail || '').replace(/^\/\//, 'https://'),
+    views: v.views,
+    needsResolve: true,
+  };
+}
+
+const dedupe = (list) => {
+  const seen = new Set(), out = [];
+  for (const t of list) {
+    if (!t?.id || seen.has(t.id)) continue;
+    seen.add(t.id);
+    out.push(t);
+  }
+  return out;
+};
+
+/* Music results should not be hour-long uploads, interviews or full albums. */
+const isSong = (t) => !t.dur || (t.dur >= 45 && t.dur <= 1500);
+const JUNK = /\b(full album|jukebox|all songs|non ?stop|mashup \d+ ?min|live show|interview|podcast|episode)\b/i;
+
+/**
+ * Search, fanned out across filters, with pagination.
+ * @returns {Promise<{tracks:Array, next:Function|null}>}
+ */
+export async function searchMusic(q, { deep = true } = {}) {
+  const query = String(q || '').trim();
+  if (!query) return { tracks: [], next: null };
+  const enc = encodeURIComponent(query);
+
+  const primary = await anyMirror(`/search?q=${enc}&filter=music_songs`, {
+    pick: (d) => d.items,
+  });
+  let tracks = (primary.data || []).map(toTrack).filter(Boolean);
+  const base = primary.base;
+  let token = primary.raw?.nextpage || null;
+
+  /* One query on one filter yields 20 rows; adding these two took the same
+     query to 54 unique ids in testing. Fired in parallel, failures ignored. */
+  if (deep) {
+    const extra = await Promise.allSettled([
+      jget(`${base}/search?q=${enc}&filter=music_videos`, { ms: 12000 }),
+      jget(`${base}/search?q=${enc}&filter=all`, { ms: 12000 }),
+    ]);
+    for (const r of extra) {
+      if (r.status !== 'fulfilled') continue;
+      tracks = tracks.concat((r.value.items || []).map(toTrack).filter(Boolean));
+    }
+  }
+
+  tracks = dedupe(tracks).filter((t) => isSong(t) && !JUNK.test(t.title));
+
+  /** Load the next page of the primary filter. Returns [] when exhausted. */
+  const next = async () => {
+    if (!token) return [];
+    const u = `${base}/nextpage/search?nextpage=${encodeURIComponent(token)}` +
+              `&q=${enc}&filter=music_songs`;
+    try {
+      const d = await jget(u, { ms: 16000 });
+      token = d.nextpage || null;
+      return dedupe((d.items || []).map(toTrack).filter(Boolean))
+        .filter((t) => isSong(t) && !JUNK.test(t.title));
+    } catch { token = null; return []; }
+  };
+
+  return { tracks, next: token ? next : null, base };
+}
+
+/** Search suggestions for the box. */
+export async function suggest(q) {
+  if (!q?.trim()) return [];
+  try {
+    const r = await anyMirror(`/suggestions?query=${encodeURIComponent(q.trim())}`, { ms: 7000 });
+    return (r.data || []).slice(0, 8);
+  } catch { return []; }
+}
+
+/* ------------------------------------------------------------- playlists */
+/** Playlists matching a query — the richest bulk source (101 tracks/call). */
+export async function findPlaylists(q) {
+  try {
+    const r = await anyMirror(`/search?q=${encodeURIComponent(q)}&filter=playlists`, {
+      pick: (d) => d.items,
+    });
+    return (r.data || [])
+      .filter((x) => (x.url || '').includes('list='))
+      .map((x) => ({
+        id: (x.url.split('list=')[1] || '').split('&')[0],
+        name: x.name || x.title || 'Playlist',
+        art: (x.thumbnail || '').replace(/^\/\//, 'https://'),
+        count: x.videos > 0 ? x.videos : null,
+        by: x.uploaderName || '',
+      }))
+      .filter((p) => p.id);
+  } catch { return []; }
+}
+
+/**
+ * Playlists that actually open.
+ *
+ * The mirror advertises playlists it cannot expand: searching "punjabi hits"
+ * returned five, of which four came back with `relatedStreams: []` and only
+ * one had real tracks. Tapping a dead one looked like our bug. This probes the
+ * candidates in parallel and reports how many tracks each really has, so the
+ * UI can hide the empty ones instead of letting the user find them.
+ */
+export async function findPlaylistsWithCounts(q, { probe = 8 } = {}) {
+  const found = await findPlaylists(q);
+  if (!found.length) return [];
+  const head = found.slice(0, probe);
+  const checked = await Promise.all(head.map(async (p) => {
+    try {
+      const d = await jget(`${MIRRORS[0]}/playlists/${encodeURIComponent(p.id)}`, { ms: 12000 });
+      const n = (d.relatedStreams || []).length;
+      return n > 0 ? { ...p, count: n } : null;
+    } catch { return null; }
+  }));
+  return checked.filter(Boolean);
+}
+
+/**
+ * Every track of a playlist — one call returns up to ~100.
+ *
+ * Some playlist ids genuinely 500 upstream (measured: one id returned 101
+ * tracks in 1.5 s, another 500'd on every mirror), so a failure here is not
+ * necessarily a bug on our side. The caller gets an empty array and the UI
+ * says so rather than spinning forever.
+ */
+export async function playlistTracks(id) {
+  try {
+    const r = await anyMirror(`/playlists/${encodeURIComponent(id)}`, {
+      ms: 20000, pick: (d) => d.relatedStreams,
+    });
+    const first = dedupe((r.data || []).map(toTrack).filter(Boolean)).filter(isSong);
+
+    /* Long playlists paginate. One more page is usually enough to cover a
+       "top 100" list without making the user wait for four round trips. */
+    const token = r.raw?.nextpage;
+    if (token && first.length >= 90) {
+      try {
+        const d = await jget(
+          `${r.base}/nextpage/playlists/${encodeURIComponent(id)}?nextpage=${encodeURIComponent(token)}`,
+          { ms: 16000 });
+        const more = dedupe((d.relatedStreams || []).map(toTrack).filter(Boolean)).filter(isSong);
+        return dedupe([...first, ...more]);
+      } catch { /* the first page is plenty */ }
+    }
+    return first;
+  } catch {
+    return [];
+  }
+}
+
+/* --------------------------------------------------------------- artists */
+/** Artist metadata from iTunes: 60 songs + 30 albums, CORS enabled. */
+export async function artistInfo(name) {
+  const enc = encodeURIComponent(name);
+  const a = await jget(`${ITUNES}/search?term=${enc}&entity=musicArtist&country=IN&limit=1`, { ms: 10000 });
+  const artist = (a.results || [])[0];
+  if (!artist?.artistId) return null;
+  const [songs, albums] = await Promise.all([
+    jget(`${ITUNES}/lookup?id=${artist.artistId}&entity=song&limit=60&country=IN`, { ms: 12000 })
+      .catch(() => ({ results: [] })),
+    jget(`${ITUNES}/lookup?id=${artist.artistId}&entity=album&limit=30&country=IN`, { ms: 12000 })
+      .catch(() => ({ results: [] })),
+  ]);
+  return {
+    name: artist.artistName,
+    genre: artist.primaryGenreName || '',
+    id: artist.artistId,
+    songs: (songs.results || [])
+      .filter((r) => r.wrapperType === 'track')
+      .map((r) => ({
+        title: r.trackName, album: r.collectionName,
+        art: (r.artworkUrl100 || '').replace('100x100', '300x300'),
+        year: (r.releaseDate || '').slice(0, 4), dur: Math.round((r.trackTimeMillis || 0) / 1000),
+      })),
+    albums: (albums.results || [])
+      .filter((r) => r.wrapperType === 'collection')
+      .map((r) => ({
+        name: r.collectionName,
+        art: (r.artworkUrl100 || '').replace('100x100', '300x300'),
+        year: (r.releaseDate || '').slice(0, 4), tracks: r.trackCount,
+      })),
+  };
+}
+
+/** Turn an iTunes title into a real playable track by searching for it. */
+export async function resolveByName(title, artist) {
+  const q = `${artist || ''} ${title}`.trim();
+  const { tracks } = await searchMusic(q, { deep: false });
+  return tracks[0] || null;
+}
+
+/* ---------------------------------------------------------------- charts */
+export const GENRES = [
+  { id: 'punjabi',   label: 'Punjabi',      q: 'punjabi songs 2026' },
+  { id: 'bollywood', label: 'Bollywood',    q: 'bollywood hits 2026' },
+  { id: 'pakistani', label: 'Pakistani',    q: 'coke studio pakistan' },
+  { id: 'sufi',      label: 'Sufi',         q: 'sufi qawwali' },
+  { id: 'sad',       label: 'Sad',          q: 'punjabi sad songs' },
+  { id: 'romantic',  label: 'Romantic',     q: 'romantic hindi songs' },
+  { id: 'haryanvi',  label: 'Haryanvi',     q: 'haryanvi songs' },
+  { id: 'bhojpuri',  label: 'Bhojpuri',     q: 'bhojpuri hits' },
+  { id: 'old',       label: 'Old classics', q: 'old hindi classics' },
+  { id: 'lofi',      label: 'Lo-Fi',        q: 'lofi hindi' },
+  { id: 'gym',       label: 'Workout',      q: 'gym punjabi songs' },
+  { id: 'ghazal',    label: 'Ghazal',       q: 'ghazal jagjit singh' },
+  { id: 'rap',       label: 'Desi hip-hop', q: 'desi hip hop 2026' },
+  { id: 'devotional',label: 'Devotional',   q: 'bhajan aarti' },
+  { id: 'tamil',     label: 'Tamil',        q: 'tamil hit songs' },
+  { id: 'telugu',    label: 'Telugu',       q: 'telugu hit songs' },
+];
+
+/**
+ * Apple's top-songs chart for a country. Metadata only — used as seeds.
+ *
+ * NOTE the host: rss.applemarketingtools.com 301-redirects to
+ * rss.marketingtools.apple.com and NEITHER sends a CORS header, so the browser
+ * blocks it and the chart came back empty. The older itunes.apple.com/rss feed
+ * does send `Access-Control-Allow-Origin: *` and returns the same 50 entries,
+ * so that is what we use.
+ */
+export async function chart(country = 'in', n = 50) {
+  const d = await jget(
+    `${ITUNES}/${country}/rss/topsongs/limit=${n}/json`, { ms: 12000 });
+  const entries = d.feed?.entry || [];
+  return entries.map((e) => {
+    const imgs = e['im:image'] || [];
+    const big = imgs[imgs.length - 1]?.label || '';
+    return {
+      title: e['im:name']?.label || '',
+      artist: e['im:artist']?.label || '',
+      album: e['im:collection']?.['im:name']?.label || '',
+      art: big.replace(/\/\d+x\d+bb/, '/300x300bb'),
+    };
+  }).filter((r) => r.title);
+}
+
+/* -------------------------------------------------------------- autoplay */
+/**
+ * Build a "radio" queue around a track.
+ *
+ * /streams (which used to supply relatedStreams) is HTTP 500 on every mirror,
+ * so the related list is reconstructed from what still works: more by the same
+ * artist, then the artist's name as a query, then the genre seed. In practice
+ * that is the same material the official related list was returning.
+ */
+export async function radioQueue(track, { limit = 40 } = {}) {
+  const out = [];
+  const push = (arr) => { for (const t of arr || []) if (t?.id !== track?.id) out.push(t); };
+
+  const artist = (track?.artist || '').replace(/\s*-\s*Topic$/i, '').trim();
+  const jobs = [];
+  if (artist) jobs.push(searchMusic(artist, { deep: true }).then((r) => r.tracks).catch(() => []));
+  const words = (track?.title || '').replace(/\(.*?\)|\[.*?\]/g, '').trim().split(/\s+/).slice(0, 3).join(' ');
+  if (words) jobs.push(searchMusic(words, { deep: false }).then((r) => r.tracks).catch(() => []));
+  jobs.push(searchMusic(GENRES[0].q, { deep: false }).then((r) => r.tracks).catch(() => []));
+
+  for (const r of await Promise.allSettled(jobs)) {
+    if (r.status === 'fulfilled') push(r.value);
+  }
+  return dedupe(out).slice(0, limit);
+}

@@ -34,6 +34,7 @@
  */
 
 import { RESOLVE_API } from './endpoints';
+import { proxyBase } from './settings';
 
 
 /**
@@ -52,9 +53,25 @@ const PROXIES = [
     url: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}` },
   { id: 'isomorphic', delay: 1900,
     url: (u) => `https://cors.isomorphic-git.org/${u}` },
-  { id: 'whateverorigin', delay: 2400,
+  { id: 'corslol', delay: 2200,
+    url: (u) => `https://api.cors.lol/?url=${encodeURIComponent(u)}` },
+  { id: 'whateverorigin', delay: 2600,
     url: (u) => `https://www.whateverorigin.org/get?url=${encodeURIComponent(u)}` },
 ];
+
+/**
+ * Per-proxy cooldown.
+ *
+ * These are free services with rate limits. corsproxy.io starts returning 401
+ * after a burst, and while it is doing that it answers in 80 ms — so it kept
+ * winning the race with a failure and dragged every attempt down with it.
+ * A proxy that rate-limits is benched for a while instead of being retried on
+ * every single track.
+ */
+const COOLDOWN = new Map();          // id -> timestamp when it may be used again
+const BENCH_MS = 3 * 60 * 1000;
+const usable = (p) => (COOLDOWN.get(p.id) || 0) < Date.now();
+const bench = (id, ms = BENCH_MS) => COOLDOWN.set(id, Date.now() + ms);
 
 /** Strip tracking params so the upstream URL stays simple and cacheable. */
 export function cleanMediaUrl(raw) {
@@ -74,7 +91,20 @@ export function cleanMediaUrl(raw) {
 const MEM = new Map();          // videoId -> { audio, expires }
 const INFLIGHT = new Map();     // videoId -> Promise (dedupe concurrent asks)
 const LS = 'omni:aud:';
-const TTL = 55 * 60 * 1000;     // CDN links are signed; stay well under expiry
+/**
+ * How long a resolved link is trusted.
+ *
+ * This was 55 minutes, which was far too optimistic. Measured behaviour of the
+ * CDN: resolving the same video twice returns a DIFFERENT url and 403s the
+ * older one, and links go stale on their own within a couple of minutes —
+ * reading one 45 s after it was issued already truncated. A stale link shows
+ * up as MediaError 4 in the middle of a playlist.
+ *
+ * Six minutes keeps a just-warmed track instant (which is the whole point of
+ * prefetching) while making it very unlikely we hand the element a dead url.
+ * Anything older is re-resolved, which costs one lookup and always works.
+ */
+const TTL = 6 * 60 * 1000;
 
 function cacheGet(id) {
   const m = MEM.get(id);
@@ -119,7 +149,7 @@ function parsePayload(txt) {
  * Race every proxy, staggered. First valid JSON wins; everything else is
  * aborted so we stop paying for slow failures.
  */
-function viaProxy(target, { ms = 26000, onProgress } = {}) {
+function viaProxy(target, { ms = 26000, onProgress, retry = true } = {}) {
   const ctrl = new AbortController();
   let done = false;
 
@@ -132,7 +162,12 @@ function viaProxy(target, { ms = 26000, onProgress } = {}) {
     const timer = setTimeout(() => own.abort(), ms);
     try {
       const r = await fetch(p.url(target), { signal: own.signal });
-      if (!r.ok) throw new Error(p.id + ' HTTP ' + r.status);
+      if (!r.ok) {
+        // 401/403/429 = rate limited. Bench it so it stops winning the race
+        // with an instant failure on every subsequent track.
+        if (r.status === 401 || r.status === 403 || r.status === 429) bench(p.id);
+        throw new Error(p.id + ' HTTP ' + r.status);
+      }
       const j = parsePayload(await r.text());
       done = true;
       // Never name the proxy in the UI — the user should not be shown the
@@ -145,9 +180,34 @@ function viaProxy(target, { ms = 26000, onProgress } = {}) {
     }
   };
 
-  return Promise.any(PROXIES.map(attempt))
-    .then((j) => { ctrl.abort(); return j; })
-    .catch(() => { ctrl.abort(); throw new Error('Every proxy failed — try again in a moment'); });
+  const race = (pool) =>
+    Promise.any(pool.map(attempt)).then((j) => { ctrl.abort(); return j; });
+
+  /* The user's own Cloudflare Worker, when configured, goes FIRST and with no
+     stagger — it has no rate limit and typically answers in a few hundred ms,
+     versus 7-11 s for the last surviving public proxy. The public pool stays
+     as a fallback so nothing breaks if the Worker is unreachable. */
+  const own = proxyBase();
+  const pool = own
+    ? [{ id: 'own', delay: 0, url: (u) => `${own}/?url=${encodeURIComponent(u)}` },
+       ...PROXIES.map((p) => ({ ...p, delay: p.delay + 600 }))]
+    : PROXIES;
+
+  const fresh = pool.filter(usable);
+  return race(fresh.length ? fresh : pool)
+    .catch(async () => {
+      ctrl.abort();
+      if (!retry) throw new Error('Could not reach the audio source');
+      /* Everything failed at once. That is usually a burst of rate limits
+         rather than a real outage, so wait a moment, clear the bench and try
+         the whole pool once more before telling the user anything. */
+      onProgress?.('Retrying…');
+      await sleep(1200);
+      COOLDOWN.clear();
+      done = false;
+      return Promise.any(pool.map(attempt))
+        .catch(() => { throw new Error('Could not reach the audio source — tap retry'); });
+    });
 }
 
 /** Fetch any the resolver result through the proxy chain (no CORS on the resolver). */
@@ -196,21 +256,27 @@ export function resolveAudio(id, { onProgress, fresh = false } = {}) {
 
 /* --------------------------------------------------------------- prefetch */
 /**
- * Warming runs with a small amount of CONCURRENCY.
+ * Warming runs with CONCURRENCY and a PRIORITY queue.
  *
- * The first version drained the queue one id at a time and each resolve costs
- * 8-15 s upstream, so warming three tracks took ~40 s — long enough that the
- * user pressed Next before anything was ready and saw the same 20 s wait all
- * over again. Two at a time is the sweet spot: the next track is ready within
- * one song, and we never open so many sockets that the playing track stutters.
+ * v1 drained one id at a time; each resolve costs 8-15 s upstream, so warming
+ * three tracks took ~40 s and the user hit Next long before anything was ready.
+ * v2 raised it to two in parallel. This version adds priority: the track the
+ * user is most likely to play next (the one immediately after the current one)
+ * jumps the queue, so a skip is never waiting behind a speculative warm.
+ *
+ * Three at a time is measured to be safe — the playing track streams from a
+ * different host than the resolver, so warming does not steal its bandwidth.
  */
 const WARM_PARALLEL = 2;
-let warmQueue = [];
+let warmQueue = [];        // [{ id, prio }] — lower prio number runs first
 let warmActive = 0;
+let warmPaused = false;    // held off while a track is still starting
 
 function pumpWarm() {
+  if (warmPaused) return;
   while (warmActive < WARM_PARALLEL && warmQueue.length) {
-    const id = warmQueue.shift();
+    warmQueue.sort((a, b) => a.prio - b.prio);
+    const { id } = warmQueue.shift();
     if (!id || cacheGet(id) || INFLIGHT.has(id)) continue;
     warmActive++;
     resolveAudio(id)
@@ -218,17 +284,40 @@ function pumpWarm() {
       .finally(() => {
         warmActive--;
         // small gap so warming never competes with the track that is playing
-        setTimeout(pumpWarm, 250);
+        setTimeout(pumpWarm, 200);
       });
   }
 }
 
-/** Warm one id in the background. */
-export function prefetchAudio(id) {
-  if (!id || cacheGet(id) || INFLIGHT.has(id) || warmQueue.includes(id)) return;
-  warmQueue.push(id);
+/**
+ * Hold warming while the current track is still opening its stream.
+ *
+ * The resolver and the audio CDN are different hosts, but a phone on mobile
+ * data has one pipe: a burst of background resolves measurably delayed the
+ * track the user was waiting for. Warming is paused until playback is actually
+ * running, then released.
+ */
+export function pauseWarming() { warmPaused = true; }
+export function resumeWarming() {
+  if (!warmPaused) return;
+  warmPaused = false;
   pumpWarm();
 }
+
+/**
+ * Warm one id in the background.
+ * @param {number} prio 0 = play next (urgent) · 1 = soon · 2 = speculative
+ */
+export function prefetchAudio(id, prio = 1) {
+  if (!id || cacheGet(id) || INFLIGHT.has(id)) return;
+  const existing = warmQueue.find((w) => w.id === id);
+  if (existing) { existing.prio = Math.min(existing.prio, prio); return; }
+  warmQueue.push({ id, prio });
+  pumpWarm();
+}
+
+/** Forget everything queued but not started — used when the queue changes. */
+export function clearWarmQueue() { warmQueue = []; }
 
 /** How many of these ids are ready to play instantly. */
 export const warmCount = (ids = []) => ids.filter((i) => i && cacheGet(i)).length;
@@ -245,14 +334,23 @@ export function onWarm(fn) { listeners.add(fn); return () => listeners.delete(fn
 function notifyWarm(id) { for (const f of listeners) { try { f(id); } catch {} } }
 
 /**
- * Warm the next N tracks of a queue so Next feels instant.
- * Called right after playback starts, never before.
+ * Warm the tracks around the current position so Next/Prev feel instant.
+ *
+ * The very next track gets priority 0 so a skip never waits behind a
+ * speculative warm; the ones after it are 1, and the previous track is 2
+ * (people do press Prev, but far less often).
  */
-export function prefetchNext(list, fromIdx, n = 3) {
+export function prefetchNext(list, fromIdx, n = 1) {
   if (!Array.isArray(list)) return;
+  /* Only the immediate next track is warmed.
+     Warming four ahead looked clever but fought the CDN: every resolve mints a
+     new signed link and invalidates older ones, so by the time the user
+     reached track 4 its link was already dead (MediaError 4 mid-playlist).
+     One track ahead is enough to make Next feel instant and is the deepest we
+     can go without the links going stale underneath us. */
   for (let i = 1; i <= n; i++) {
     const t = list[fromIdx + i];
-    if (t?.id) prefetchAudio(t.id);
+    if (t?.id) prefetchAudio(t.id, 0);
   }
 }
 

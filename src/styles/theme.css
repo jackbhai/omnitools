@@ -466,3 +466,27 @@ button:not(.btn):not(.cat.on){color:var(--fg)}
 
 /* medicine detail: keep long label text readable */
 .card .dim[style*="pre-wrap"]{word-break:break-word}
+
+/* ---------------- music: chart numbers + inline spinner ---------------- */
+.chartno{width:24px;flex:0 0 auto;text-align:center;font-family:var(--font-mono);
+  font-size:12px;font-weight:700;color:var(--fg3)}
+.row:nth-child(-n+3) .chartno{color:var(--green)}
+.spin-sm{width:15px;height:15px;border-radius:50%;display:inline-block;
+  border:2px solid var(--line2);border-top-color:var(--green);animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.tile:disabled{opacity:.5}
+.tile small{font-size:10px;color:var(--fg3);margin-top:1px}
+
+/* ---------------- music library: row actions + bottom sheet ---------------- */
+.rowbtn{background:none;border:0;padding:5px;cursor:pointer;display:grid;place-items:center;
+  border-radius:7px;flex:0 0 auto}
+.rowbtn:active{background:var(--s3)}
+.sheet-bg{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.62);
+  display:flex;align-items:flex-end;justify-content:center;animation:fade .16s ease}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.sheet{width:100%;max-width:680px;background:var(--s1);border:1px solid var(--line);
+  border-radius:18px 18px 0 0;padding:16px 16px calc(16px + var(--safe-b));
+  animation:up .2s cubic-bezier(.2,.9,.3,1)}
+.steps{margin:6px 0 0;padding-left:20px;font-size:12.5px;line-height:1.85;color:var(--fg2)}
+.steps li{margin-bottom:3px}
+.steps b{color:var(--fg)}

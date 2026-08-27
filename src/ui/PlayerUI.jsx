@@ -31,10 +31,13 @@ export function MiniPlayer() {
             : p.loading ? (p.stage || 'Loading ad-free audio…')
             : (p.track.artist || p.track.country || '')}</span>
         </div>
-        <button className="mini-btn" onClick={(e) => { e.stopPropagation(); p.step(-1); }}>‹‹</button>
-        <button className="mini-btn play" onClick={(e) => { e.stopPropagation(); p.toggle(); }}>
-          {p.loading ? '⋯' : p.playing ? '⏸' : '▶'}</button>
-        <button className="mini-btn" onClick={(e) => { e.stopPropagation(); p.step(1); }}>››</button>
+        <button className="mini-btn" aria-label="Previous"
+          onClick={(e) => { e.stopPropagation(); p.step(-1); }}><Icon n="prev" size={17} /></button>
+        <button className="mini-btn play" aria-label={p.playing ? 'Pause' : 'Play'}
+          onClick={(e) => { e.stopPropagation(); p.toggle(); }}>
+          {p.loading ? <span className="spin-sm" /> : <Icon n={p.playing ? 'pause' : 'play'} size={15} />}</button>
+        <button className="mini-btn" aria-label="Next"
+          onClick={(e) => { e.stopPropagation(); p.step(1); }}><Icon n="next" size={17} /></button>
       </div>
     </div>
   </>);
@@ -179,10 +182,14 @@ export function FullPlayer() {
           onChange={(e) => p.seek(+e.target.value)} disabled={!p.dur} />
         <div className="times"><span>{mmss(p.pos)}</span><span>{mmss(p.dur)}</span></div>
         <div className="btns">
-          <button className={`cbtn ${p.shuffle ? 'act' : ''}`} onClick={() => p.setShuffle(!p.shuffle)}><Icon n="swap" size={18} /></button>
-          <button className="cbtn" onClick={() => p.step(-1)}>‹‹</button>
-          <button className="cbtn big" onClick={p.toggle}>{p.loading ? '⋯' : p.playing ? '⏸' : '▶'}</button>
-          <button className="cbtn" onClick={() => p.step(1)}>››</button>
+          <button className={`cbtn ${p.shuffle ? 'act' : ''}`} aria-label="Shuffle"
+            onClick={() => p.setShuffle(!p.shuffle)}><Icon n="swap" size={18} /></button>
+          <button className="cbtn" aria-label="Previous" onClick={() => p.step(-1)}>
+            <Icon n="prev" size={22} /></button>
+          <button className="cbtn big" aria-label={p.playing ? 'Pause' : 'Play'} onClick={p.toggle}>
+            {p.loading ? <span className="spin-sm" /> : <Icon n={p.playing ? 'pause' : 'play'} size={22} />}</button>
+          <button className="cbtn" aria-label="Next" onClick={() => p.step(1)}>
+            <Icon n="next" size={22} /></button>
           <button className={`cbtn ${p.repeat !== 'off' ? 'act' : ''}`}
             onClick={() => p.setRepeat(p.repeat === 'off' ? 'all' : p.repeat === 'all' ? 'one' : 'off')}>
             <Icon n="refresh" size={19} /></button>
