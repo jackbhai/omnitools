@@ -174,6 +174,25 @@ export async function searchMusic(q, { deep = true } = {}) {
   return { tracks, next: token ? next : null, base };
 }
 
+/**
+ * A single-shot search against the ONE mirror known to be healthy.
+ *
+ * `searchMusic` walks the whole pool, which is right for a user-initiated
+ * search but wrong when eighteen catalogue titles are being matched at once —
+ * that turned into hundreds of requests to dead or CORS-blocked hosts. This
+ * tries only the first healthy mirror and fails fast.
+ */
+export async function quickSearch(q, { ms = 9000 } = {}) {
+  const base = MIRRORS.find(mirrorOk) || MIRRORS[0];
+  try {
+    const d = await jget(`${base}/search?q=${encodeURIComponent(q)}&filter=music_songs`, { ms });
+    return (d.items || []).map(toTrack).filter(Boolean).filter(isSong);
+  } catch (e) {
+    MIRROR_BENCH.set(base, Date.now() + 90000);
+    return [];
+  }
+}
+
 /** Search suggestions for the box. */
 export async function suggest(q) {
   if (!q?.trim()) return [];

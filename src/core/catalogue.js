@@ -27,7 +27,7 @@
  *   93 radio stations that each expand to 40 tracks.
  */
 import { proxyBase } from './settings';
-import { searchMusic } from './music';
+import { searchMusic, quickSearch } from './music';
 
 const DZ = 'https://api.deezer.com';
 
@@ -238,13 +238,20 @@ export async function toPlayable(entry) {
   if (matchCache.has(key)) return matchCache.get(key);
 
   const p = (async () => {
+    /* One phrasing, one mirror.
+       Matching used to call searchMusic(), which walks the whole mirror pool.
+       With eighteen titles in flight that meant hundreds of requests to hosts
+       that are dead or CORS-blocked, and the console filled with ERR_FAILED
+       while the merge silently stalled. `quickSearch` hits only the mirror
+       that is currently healthy and gives up immediately otherwise — a miss on
+       one title must never hold up the other seventeen. */
     const tries = [
       `${entry.artist} ${entry.title}`.trim(),
       entry.title,
     ].filter(Boolean);
     for (const q of tries) {
       try {
-        const { tracks } = await searchMusic(q, { deep: false });
+        const tracks = await quickSearch(q);
         if (tracks.length) {
           const want = entry.title.toLowerCase().replace(/[^a-z0-9]/g, '');
           const exact = tracks.find((t) =>
