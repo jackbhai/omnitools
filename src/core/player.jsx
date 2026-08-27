@@ -6,7 +6,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { lyricsPool } from './ytmusic';
 import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached,
-         pauseWarming, resumeWarming } from './audio-resolve';
+         pauseWarming, resumeWarming, rememberTrack } from './audio-resolve';
 import { resolve } from './engine';
 import { notePlay } from './library';
 
@@ -267,6 +267,11 @@ export function PlayerProvider({ children }) {
       try {
         setLoading(true);
         if (!cached) setStage('Finding ad-free stream…');
+        /* Hand the resolver what we already know about this track. If the
+           primary source is down it can only find the song in the second
+           catalogue by NAME — the two share no ids — so without this there is
+           no fallback at all. */
+        rememberTrack(t.id, { title: t.title, artist: t.artist, art: t.art, dur: t.dur });
         const r = await resolveAudio(t.id, { onProgress: setStage });
         if (clock) clearInterval(clock);
         if (stale()) return;          // the user moved on; leave their track alone

@@ -19,7 +19,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as P from '../core/providers';
 import { usePlayer } from '../core/player';
-import { prefetchAudio, isCached, onWarm } from '../core/audio-resolve';
+import { prefetchAudio, isCached, onWarm, rememberTrack } from '../core/audio-resolve';
 import { searchMusic, suggest, findPlaylists, findPlaylistsWithCounts, playlistTracks, artistInfo,
          resolveByName, radioQueue, chart, GENRES } from '../core/music';
 import { catalogueReady, searchCatalogue, searchArtists, artistPage, albumTracks,
@@ -196,7 +196,7 @@ function playList(player, list, i) {
   player.setRadio(true);
   player.play(list[i], list);
   const nx = list[i + 1];
-  if (nx?.id) prefetchAudio(nx.id, 0);
+  if (nx?.id) { rememberTrack(nx.id, nx); prefetchAudio(nx.id, 0); }
 }
 
 /* ------------------------------------------------------------ search tab */
@@ -247,7 +247,7 @@ function SearchTab({ player }) {
          backfired: each resolve mints a fresh signed CDN link and invalidates
          the previous one, so deep prefetching left later tracks with dead
          links (MediaError 4). Two is enough for the common first tap. */
-      r.tracks.slice(0, 2).forEach((t, i) => t.id && prefetchAudio(t.id, i));
+      r.tracks.slice(0, 2).forEach((t, i) => { if (t.id) { rememberTrack(t.id, t); prefetchAudio(t.id, i); } });
     } catch (e) {
       if (my === seq.current) { setErr(e.message || 'Search failed'); setTracks([]); }
     } finally {
@@ -356,7 +356,7 @@ function ChartsTab({ player }) {
       const queue = [t, ...rest.filter(Boolean)];
       player.setRadio(true);
       player.play(t, queue);
-      if (queue[1]?.id) prefetchAudio(queue[1].id, 0);
+      if (queue[1]?.id) { rememberTrack(queue[1].id, queue[1]); prefetchAudio(queue[1].id, 0); }
     } catch { setErr('Could not find a stream for that track.'); }
     finally { setOpening(null); }
   };
@@ -408,7 +408,7 @@ function GenresTab({ player }) {
     try {
       const r = await searchMusic(g.q);
       setTracks(r.tracks);
-      r.tracks.slice(0, 2).forEach((t, i) => t.id && prefetchAudio(t.id, i));
+      r.tracks.slice(0, 2).forEach((t, i) => { if (t.id) { rememberTrack(t.id, t); prefetchAudio(t.id, i); } });
       // widen with catalogue material — this is where the regional depth is
       if (catalogueReady()) {
         const entries = await searchCatalogue(g.q, { limit: 40 }).catch(() => []);

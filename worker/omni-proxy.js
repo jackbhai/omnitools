@@ -180,6 +180,30 @@ const ALLOWED = [
 
   // surname & given-name census
   'forebears.io',
+
+  // hosts the audit found missing from this list
+  'api.worldbank.org',
+  'worldbank.org',
+  'themealdb.com',
+  'll.thespacedevs.com',
+  'thespacedevs.com',
+  'api.coingecko.com',
+  'coingecko.com',
+  'api.coinpaprika.com',
+  'coinpaprika.com',
+  'api.coinlore.net',
+  'coinlore.net',
+  'ipwho.is',
+  'get.geojs.io',
+  'geojs.io',
+  'ipinfo.io',
+  'ipapi.co',
+
+  // second, independent music catalogue with its own CDN
+  'jiosaavn.com',
+  'saavncdn.com',
+  'aac.saavncdn.com',
+  'c.saavncdn.com',
 ];
 
 const CORS = {

@@ -281,6 +281,24 @@ export async function resolveJson(pageUrl, opts = {}) {
  * Concurrent calls for the same id share one network request.
  * @returns {Promise<{audio:string, title?:string, artist?:string, art?:string, via:string}>}
  */
+
+/* ------------------------------------------------------------- track hints
+ * The fallback catalogue has no id in common with the primary one, so it can
+ * only be searched by name. The list screens already know the title and
+ * artist of everything they render, so they hand that over here. Without it a
+ * fallback is impossible — there is nothing to look up.
+ */
+const META = new Map();
+
+export function rememberTrack(id, { title, artist, art, dur } = {}) {
+  if (!id || !title) return;
+  const prev = META.get(id) || {};
+  META.set(id, { title, artist: artist || prev.artist, art: art || prev.art, dur: dur || prev.dur });
+  if (META.size > 600) META.delete(META.keys().next().value);
+}
+
+export const trackMeta = (id) => META.get(id) || null;
+
 export function resolveAudio(id, { onProgress, fresh = false } = {}) {
   // `fresh` forces a re-resolve: the CDN signs its links, so a cached one can
   // 404 long before our 55-minute TTL expires. The player asks for a fresh
@@ -293,21 +311,58 @@ export function resolveAudio(id, { onProgress, fresh = false } = {}) {
   const p = (async () => {
     onProgress?.('Finding ad-free stream…');
     const url = `${RESOLVE_API}${encodeURIComponent('https://www.youtube.com/watch?v=' + id)}`;
-    const d = await viaProxy(url, { onProgress });
-    const m = d?.mediaInfo || {};
-    const audio = m.audioUrl || m.videoUrl;
-    if (!audio) throw new Error('No audio stream returned');
-    const rec = {
-      audio,
-      title: m.title || '',
-      artist: m.author || '',
-      art: m.thumbnail || m.coverImage || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
-      dur: m.duration || 0,
-      expires: Date.now() + TTL,
-    };
+
+    let rec = null;
+    try {
+      const d = await viaProxy(url, { onProgress });
+      const m = d?.mediaInfo || {};
+      const audio = m.audioUrl || m.videoUrl;
+      if (!audio) throw new Error('No audio stream returned');
+      rec = {
+        audio,
+        title: m.title || '',
+        artist: m.author || '',
+        art: m.thumbnail || m.coverImage || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+        dur: m.duration || 0,
+        expires: Date.now() + TTL,
+        via: 'resolver',
+      };
+    } catch (primaryErr) {
+      /* SECOND SOURCE.
+         Everything used to hang off one upstream. An audit re-tested every
+         published alternative — 5 Cobalt instances, 9 Piped mirrors, 8
+         Invidious mirrors, SoundCloud and three community front-ends — and
+         not one returned a playable stream. A commercial catalogue's own web
+         API does, and its CDN sends `Access-Control-Allow-Origin: *`, so the
+         browser plays it directly with no relay in the audio path at all.
+
+         It is matched on title and artist, never on id: the two catalogues
+         share nothing. A weak match is refused rather than played, because
+         silently playing the wrong song is worse than failing. */
+      const meta = trackMeta(id);
+      if (!meta?.title) throw primaryErr;
+      onProgress?.('Primary source down — trying the second catalogue…');
+      let alt = null;
+      try {
+        const { matchTrack } = await import('./saavn');
+        alt = await matchTrack(meta);
+      } catch { /* the fallback is allowed to fail too */ }
+      if (!alt?.stream) throw primaryErr;
+      rec = {
+        audio: alt.stream,
+        title: alt.title || meta.title,
+        artist: alt.artist || meta.artist || '',
+        art: alt.art || meta.art || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+        dur: alt.dur || meta.dur || 0,
+        expires: Date.now() + TTL,
+        via: 'second catalogue',
+        alt: true,
+      };
+    }
+
     cacheSet(id, rec);
     notifyWarm(id);
-    return { ...rec, via: 'resolver' };
+    return rec;
   })();
 
   INFLIGHT.set(id, p);

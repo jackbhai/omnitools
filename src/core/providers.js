@@ -213,16 +213,36 @@ export const currency = [
       return { base, date: d.date, rates }; } },
 ];
 
-/* ------------------------------------------------------------- CRYPTO */
+/* ------------------------------------------------------------- CRYPTO
+ * CoinCap was removed, not repaired: api.coincap.io no longer resolves at all
+ * — DNS itself fails — and its v3 replacement answers 401 without a key. A
+ * provider that cannot be reached is worse than absent, because the engine
+ * spends a timeout on it before failing over.
+ *
+ * Three independent sources now, all verified CORS-open from a github.io
+ * origin and cross-checked against each other on the same minute:
+ * CoinLore, CoinGecko and CoinPaprika all returned Bitcoin at ~$80,240.
+ * Binance was tested too and is NOT used: it answers HTTP 451 (blocked for
+ * legal reasons) from several regions, which would look like a random failure.
+ */
 export const crypto = [
   { id: 'coinlore', label: 'CoinLore', async run() {
       const d = await jget('https://api.coinlore.net/api/tickers/?start=0&limit=40');
       return d.data.map((a) => ({ sym: a.symbol, name: a.name, price: +a.price_usd,
         change: +a.percent_change_24h, cap: +a.market_cap_usd, rank: +a.rank })); } },
-  { id: 'coincap', label: 'CoinCap', async run() {
-      const d = await jget('https://api.coincap.io/v2/assets?limit=40', { proxy: true });
-      return d.data.map((a) => ({ sym: a.symbol, name: a.name, price: +a.priceUsd,
-        change: +a.changePercent24Hr, cap: +a.marketCapUsd, rank: +a.rank })); } },
+  { id: 'coingecko', label: 'CoinGecko', async run() {
+      const d = await jget('https://api.coingecko.com/api/v3/coins/markets' +
+        '?vs_currency=usd&order=market_cap_desc&per_page=40&page=1&sparkline=false');
+      if (!Array.isArray(d)) throw new Error('shape');
+      return d.map((a) => ({ sym: (a.symbol || '').toUpperCase(), name: a.name,
+        price: a.current_price, change: a.price_change_percentage_24h,
+        cap: a.market_cap, rank: a.market_cap_rank })); } },
+  { id: 'coinpaprika', label: 'CoinPaprika', async run() {
+      const d = await jget('https://api.coinpaprika.com/v1/tickers?limit=40');
+      if (!Array.isArray(d)) throw new Error('shape');
+      return d.map((a) => ({ sym: a.symbol, name: a.name,
+        price: a.quotes?.USD?.price, change: a.quotes?.USD?.percent_change_24h,
+        cap: a.quotes?.USD?.market_cap, rank: a.rank })); } },
 ];
 
 /* ------------------------------------------------------------- INDIA */
@@ -455,12 +475,37 @@ export const country = [
         flag: '', area: null, tz: '' })); } },
 ];
 
+/* The IP pool used to be ipapi.co plus a bare ip-echo. ipapi.co rate-limits
+ * hard (measured: 403, then 429) and the echo returns no location at all, so a
+ * single bad minute left "My IP" with an address and nothing else. Four more
+ * were tested from a github.io origin — all CORS-open, all agreeing on the
+ * same address, all returning a city. */
 export const ipinfo = [
+  { id: 'ipwho', label: 'ipwho.is', async run() {
+      const d = await jget('https://ipwho.is/');
+      if (d.success === false) throw new Error(d.message || 'refused');
+      return { ip: d.ip, city: d.city, region: d.region, country: d.country,
+        cc: d.country_code, org: d.connection?.isp || d.connection?.org || '',
+        tz: d.timezone?.id || '', lat: d.latitude, lon: d.longitude,
+        currency: d.currency?.code || '' }; } },
+  { id: 'geojs', label: 'GeoJS', async run() {
+      const d = await jget('https://get.geojs.io/v1/ip/geo.json');
+      return { ip: d.ip, city: d.city, region: d.region, country: d.country,
+        cc: d.country_code, org: d.organization_name || '', tz: d.timezone || '',
+        lat: +d.latitude, lon: +d.longitude }; } },
+  { id: 'ipinfo-io', label: 'ipinfo.io', async run() {
+      const d = await jget('https://ipinfo.io/json');
+      const [lat, lon] = String(d.loc || ',').split(',');
+      return { ip: d.ip, city: d.city, region: d.region, country: d.country,
+        cc: d.country, org: d.org || '', tz: d.timezone || '',
+        lat: +lat || null, lon: +lon || null }; } },
   { id: 'ipapi-co', label: 'ipapi.co', async run() {
       const d = await jget('https://ipapi.co/json/');
-      return { ip: d.ip, city: d.city, region: d.region, country: d.country_name, cc: d.country_code,
-        org: d.org, tz: d.timezone, lat: d.latitude, lon: d.longitude, currency: d.currency }; } },
-  { id: 'ipify+', label: 'ipify', async run() {
+      if (d.error) throw new Error(d.reason || 'refused');
+      return { ip: d.ip, city: d.city, region: d.region, country: d.country_name,
+        cc: d.country_code, org: d.org, tz: d.timezone, lat: d.latitude,
+        lon: d.longitude, currency: d.currency }; } },
+  { id: 'ipify', label: 'ipify', async run() {
       const d = await jget('https://api.ipify.org?format=json');
       return { ip: d.ip, city: '', region: '', country: '', org: '', tz: '' }; } },
 ];
