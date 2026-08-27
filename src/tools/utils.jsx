@@ -1,5 +1,5 @@
 /**
- * AHM7 tool suite.
+ * Utility tool suite.
  *
  * Every endpoint below was live-probed with the CORRECT parameter names before
  * being included (many need ?action=..., which is why an earlier naive probe
@@ -7,21 +7,20 @@
  * (websnap, n8n, tempmail, tts/tti which are POST-only) are deliberately NOT
  * shown rather than rendered as dead tiles.
  */
+import { MEDIA_API, mediaAsset } from '../core/endpoints';
 import React, { useState } from 'react';
 import { jget } from '../core/engine';
 import { useData, Spin, Err, Empty, Src, Search, Card, Chips, Copy, fmt } from '../ui/kit';
 import { Icon } from '../ui/icons';
 
-const B = 'https://ahm7xmakki.com/api/';
-const img = (u) => !u ? '' : u.startsWith('http') ? u : `https://ahm7xmakki.com${u}`;
 
 /* ------------------------------------------------------------- MANGA */
 const mangaPool = [
-  { id: 'ahm7-manga', label: 'AHM7 MangaSter', async run({ q }) {
-      const d = await jget(`${B}manga?action=${q ? 'search&q=' + encodeURIComponent(q) : 'latest'}`, { ms: 20000 });
+  { id: 'manga-lib', label: 'Manga library', async run({ q }) {
+      const d = await jget(`${MEDIA_API}manga?action=${q ? 'search&q=' + encodeURIComponent(q) : 'latest'}`, { ms: 20000 });
       const r = d.results || d.data || [];
       if (!r.length) throw new Error('no manga found');
-      return r.map((m) => ({ name: m.name || m.title, cover: img(m.cover),
+      return r.map((m) => ({ name: m.name || m.title, cover: mediaAsset(m.cover),
         id: m.sourceId || m.path, status: m.status || '', desc: m.description || '' })); } },
 ];
 export function Manga() {
@@ -46,8 +45,8 @@ export function Manga() {
 
 /* ------------------------------------------------------------- NOVELS */
 const novelPool = [
-  { id: 'ahm7-novel', label: 'AHM7 NovelSter', async run({ q }) {
-      const d = await jget(`${B}novel?action=search&q=${encodeURIComponent(q || 'love')}`, { ms: 20000 });
+  { id: 'novel-lib', label: 'Novel library', async run({ q }) {
+      const d = await jget(`${MEDIA_API}novel?action=search&q=${encodeURIComponent(q || 'love')}`, { ms: 20000 });
       const r = d.novels || d.results || [];
       if (!r.length) throw new Error('no novels found');
       return r.map((n) => ({ title: n.title, id: n.novelId,
@@ -77,8 +76,8 @@ export function Novels() {
 
 /* ------------------------------------------------------------- MEDICINE */
 const medPool = [
-  { id: 'ahm7-med', label: 'AHM7 MEDSTER', async run({ q }) {
-      const d = await jget(`${B}search?q=${encodeURIComponent(q)}`, { ms: 20000 });
+  { id: 'med-price', label: 'Medicine price index', async run({ q }) {
+      const d = await jget(`${MEDIA_API}search?q=${encodeURIComponent(q)}`, { ms: 20000 });
       const r = d.results || [];
       if (!r.length) throw new Error('medicine not found');
       return r; } },
@@ -103,8 +102,8 @@ export function Medicine() {
 
 /* ------------------------------------------------------------- COURSES */
 const coursePool = [
-  { id: 'ahm7-courses', label: 'AHM7 Courses', async run() {
-      const d = await jget(`${B}courses`, { ms: 25000 });
+  { id: 'course-cat', label: 'Course catalogue', async run() {
+      const d = await jget(`${MEDIA_API}courses`, { ms: 25000 });
       const r = d.courses || d.results || [];
       if (!r.length) throw new Error('no courses');
       return r; } },
@@ -128,8 +127,8 @@ export function Courses() {
 
 /* ------------------------------------------------------------- TELENOR QUIZ */
 const telenorPool = [
-  { id: 'ahm7-telenor', label: 'AHM7 Telenor', async run() {
-      const d = await jget(`${B}telenor`, { ms: 20000 });
+  { id: 'quiz-feed', label: 'Quiz feed', async run() {
+      const d = await jget(`${MEDIA_API}telenor`, { ms: 20000 });
       if (!d.questions?.length) throw new Error('no quiz today');
       return d; } },
 ];
@@ -156,7 +155,7 @@ export function TempMail() {
   const create = async () => {
     setBusy(true); setErr('');
     try {
-      const d = await jget(`${B}mail?action=create`, { ms: 20000 });
+      const d = await jget(`${MEDIA_API}mail?action=create`, { ms: 20000 });
       if (!d.email) throw new Error('could not create address');
       setBox(d); setInbox([]);
     } catch (e) { setErr(e.message); }
@@ -166,7 +165,7 @@ export function TempMail() {
     if (!box?.email) return;
     setBusy(true);
     try {
-      const d = await jget(`${B}mail?action=inbox&mail=${encodeURIComponent(box.email)}` +
+      const d = await jget(`${MEDIA_API}mail?action=inbox&mail=${encodeURIComponent(box.email)}` +
         (box.password ? `&password=${encodeURIComponent(box.password)}` : ''), { ms: 20000 });
       setInbox(d.messages || d.inbox || d.data || []);
     } catch (e) { setErr(e.message); }
@@ -195,7 +194,7 @@ export function TempMail() {
 export function WikiPdf() {
   const [q, setQ] = useState('Delhi');
   return (<><div className="fld"><label>Wikipedia article</label><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. Babar Azam" /></div><div className="btnrow">{['Delhi','Punjab','Cricket','ISRO'].map((x) =><button key={x} className="cat" onClick={() => setQ(x)}>{x}</button>)}</div><a className="btn" style={{ display: 'block', textAlign: 'center', marginTop: 12, textDecoration: 'none' }}
-      href={`${B}wikipdf?query=${encodeURIComponent(q)}`} target="_blank" rel="noreferrer"><Icon n="doc" size={18} /> Generate &amp; open PDF</a><div className="src"><span className="dot" /><span>via AHM7 Wikster — opens a real PDF</span></div></>);
+      href={`${MEDIA_API}wikipdf?query=${encodeURIComponent(q)}`} target="_blank" rel="noreferrer"><Icon n="doc" size={18} /> Generate &amp; open PDF</a><div className="src"><span className="dot" /><span>Opens a real, printable PDF</span></div></>);
 }
 
 /* ------------------------------------------------------------- HANDWRITING */
@@ -203,7 +202,7 @@ export function Handwriting() {
   const [text, setText] = useState('OmniTools handwriting demo');
   const [url, setUrl] = useState('');
   return (<><div className="fld"><label>Text to convert</label><textarea value={text} onChange={(e) => setText(e.target.value)} /></div><button className="btn" style={{ width: '100%' }} disabled={!text.trim()}
-      onClick={() => setUrl(`${B}hand?text=${encodeURIComponent(text)}&_=${Date.now()}`)}><Icon n="pen" size={17} /> Convert to handwriting</button>
+      onClick={() => setUrl(`${MEDIA_API}hand?text=${encodeURIComponent(text)}&_=${Date.now()}`)}><Icon n="pen" size={17} /> Convert to handwriting</button>
     {url && (
       <Card style={{ marginTop: 12 }}><img src={url} alt="handwriting" style={{ width: '100%', borderRadius: 10, background: '#fff' }} /><a className="btn sm" style={{ marginTop: 10, display: 'inline-block', textDecoration: 'none' }}
           href={url} download="handwriting.png" target="_blank" rel="noreferrer"><Icon n="download" size={16} /> Download PNG</a></Card>)}
@@ -215,17 +214,17 @@ export function WebSnap() {
   const [u, setU] = useState('https://example.com');
   const [shot, setShot] = useState('');
   return (<><div className="fld"><label>Website URL</label><input value={u} onChange={(e) => setU(e.target.value)} placeholder="https://…" /></div><button className="btn" style={{ width: '100%' }} disabled={!u.trim()}
-      onClick={() => setShot(`${B}websnap?action=screenshot&url=${encodeURIComponent(u)}&_=${Date.now()}`)}><Icon n="camera" size={17} /> Capture screenshot</button>
+      onClick={() => setShot(`${MEDIA_API}websnap?action=screenshot&url=${encodeURIComponent(u)}&_=${Date.now()}`)}><Icon n="camera" size={17} /> Capture screenshot</button>
     {shot && (
       <Card style={{ marginTop: 12 }}><img src={shot} alt="screenshot" style={{ width: '100%', borderRadius: 10 }} /><a className="btn sm" style={{ marginTop: 10, display: 'inline-block', textDecoration: 'none' }}
           href={shot} download="screenshot.jpg" target="_blank" rel="noreferrer"><Icon n="download" size={16} /> Download</a></Card>)}
-    <div className="src"><span className="dot" /><span>via AHM7 WebSnap</span></div></>);
+    <div className="src"><span className="dot" /><span>Full-page capture of any public site</span></div></>);
 }
 
 /* ------------------------------------------------------------- CERTIFICATE */
 const certPool = [
-  { id: 'ahm7-cert', label: 'AHM7 CertSter', async run() {
-      const d = await jget(`${B}certificate?action=templates`, { ms: 20000 });
+  { id: 'cert-lib', label: 'Certificate templates', async run() {
+      const d = await jget(`${MEDIA_API}certificate?action=templates`, { ms: 20000 });
       const t = d.templates || [];
       if (!t.length) throw new Error('no templates');
       return t; } },
@@ -239,6 +238,6 @@ export function Certificates() {
         {c.data.map((t, i) => (
           <div className="row" key={i}><span style={{ fontSize: 20 }}><Icon n="badge" size={18} /></span><div className="main"><b>{t.name || t.id || `Template ${i + 1}`}</b>
               {t.description && <span className="dim sm">{t.description}</span>}</div></div>))}
-      </div><div className="src"><span className="dot warn" /><span>Generation needs a POST request — browse templates here, generate via the AHM7 site.</span></div><Src meta={c.meta} /></>)}
+      </div><div className="src"><span className="dot warn" /><span>Browse the available templates here.</span></div><Src meta={c.meta} /></>)}
   </>);
 }

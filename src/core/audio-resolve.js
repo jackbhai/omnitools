@@ -6,7 +6,7 @@
  *   Piped /streams   — 9 mirrors: 403 / 500 / 502 / dead. All blocked.
  *   Invidious        — 6 instances: 403, "shutdown", bot-check HTML. Dead.
  *   Cobalt           — needs a JWT now.
- *   AHM7 /api/alldl  — WORKS. 8-15 s to answer, and sends NO CORS header,
+ *   The media resolver  — WORKS. 8-15 s to answer, and sends NO CORS header,
  *                      so it must be wrapped in a proxy.
  *   Proxy race:  proxy.cors.sh  200 in 17.1 s   <- only reliable one
  *                corsproxy.io   200 in 10.8 s   <- fastest, but 403s on repeat
@@ -14,7 +14,7 @@
  *
  * WHY IT FELT SLOW AND SOMETIMES PLAYED ADS
  *   1. Every play() re-resolved from scratch — nothing was warmed ahead.
- *   2. AHM7 itself needs ~10 s, and the proxy adds its own hop on top, so the
+ *   2. the resolver itself needs ~10 s, and the proxy adds its own hop on top, so the
  *      user watched a spinner for 17-30 s with no feedback.
  *   3. When resolution finally finished the tap gesture had long expired, the
  *      browser refused play(), the old code read that as "no stream" and swapped
@@ -33,7 +33,8 @@
  *     silent spinner.
  */
 
-const AHM7 = 'https://ahm7xmakki.com/api/alldl?url=';
+import { RESOLVE_API } from './endpoints';
+
 
 /**
  * Proxy pool, ordered by measured latency.
@@ -134,7 +135,9 @@ function viaProxy(target, { ms = 26000, onProgress } = {}) {
       if (!r.ok) throw new Error(p.id + ' HTTP ' + r.status);
       const j = parsePayload(await r.text());
       done = true;
-      onProgress?.(`Got stream via ${p.id}`);
+      // Never name the proxy in the UI — the user should not be shown the
+      // plumbing. The id stays in the console for debugging only.
+      onProgress?.('Stream ready');
       return j;
     } finally {
       clearTimeout(timer);
@@ -147,9 +150,9 @@ function viaProxy(target, { ms = 26000, onProgress } = {}) {
     .catch(() => { ctrl.abort(); throw new Error('Every proxy failed — try again in a moment'); });
 }
 
-/** Fetch any AHM7 alldl result through the proxy chain (no CORS on AHM7). */
-export async function ahm7Json(pageUrl, opts = {}) {
-  return viaProxy(`${AHM7}${encodeURIComponent(cleanMediaUrl(pageUrl))}`, { ms: 30000, ...opts });
+/** Fetch any the resolver result through the proxy chain (no CORS on the resolver). */
+export async function resolveJson(pageUrl, opts = {}) {
+  return viaProxy(`${RESOLVE_API}${encodeURIComponent(cleanMediaUrl(pageUrl))}`, { ms: 30000, ...opts });
 }
 
 /**
@@ -157,14 +160,18 @@ export async function ahm7Json(pageUrl, opts = {}) {
  * Concurrent calls for the same id share one network request.
  * @returns {Promise<{audio:string, title?:string, artist?:string, art?:string, via:string}>}
  */
-export function resolveAudio(id, { onProgress } = {}) {
-  const hit = cacheGet(id);
+export function resolveAudio(id, { onProgress, fresh = false } = {}) {
+  // `fresh` forces a re-resolve: the CDN signs its links, so a cached one can
+  // 404 long before our 55-minute TTL expires. The player asks for a fresh
+  // copy when the <audio> element reports an error.
+  if (fresh) forgetAudio(id);   // declared below; hoisted
+  const hit = fresh ? null : cacheGet(id);
   if (hit) return Promise.resolve({ ...hit, via: 'cache' });
   if (INFLIGHT.has(id)) return INFLIGHT.get(id);
 
   const p = (async () => {
     onProgress?.('Finding ad-free stream…');
-    const url = `${AHM7}${encodeURIComponent('https://www.youtube.com/watch?v=' + id)}`;
+    const url = `${RESOLVE_API}${encodeURIComponent('https://www.youtube.com/watch?v=' + id)}`;
     const d = await viaProxy(url, { onProgress });
     const m = d?.mediaInfo || {};
     const audio = m.audioUrl || m.videoUrl;
@@ -179,7 +186,7 @@ export function resolveAudio(id, { onProgress } = {}) {
     };
     cacheSet(id, rec);
     notifyWarm(id);
-    return { ...rec, via: 'AHM7' };
+    return { ...rec, via: 'resolver' };
   })();
 
   INFLIGHT.set(id, p);

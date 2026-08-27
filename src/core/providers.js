@@ -2,6 +2,7 @@
  * Provider pools. Every entry was CORS-tested from a github.io Origin.
  * Multiple providers per capability => load spreading + automatic failover.
  */
+import { FILM_API } from './endpoints';
 import { jget } from './engine';
 import { builtinHolidays } from './festivals';
 
@@ -266,8 +267,8 @@ export const news = [
 ];
 
 export const movies = [
-  { id: 'ahm7-cine', label: 'AHM7 CineSearch', async run({ q }) {
-      const d = await jget(`https://ahm7xmakki.com/api/msearch?q=${encodeURIComponent(q)}`);
+  { id: 'cine-idx', label: 'Film index', async run({ q }) {
+      const d = await jget(`${FILM_API}${encodeURIComponent(q)}`);
       const arr = d.results || d.data || (Array.isArray(d) ? d : []);
       return arr.slice(0, 15).map((m) => ({ title: m.title || m.name, year: m.year || m.release_date || '',
         img: m.poster || m.image || m.thumbnail || '', rating: m.rating || m.vote_average || null,

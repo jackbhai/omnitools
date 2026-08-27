@@ -2,7 +2,7 @@
  * World medicine database — 253,802 Indian brands + global drug labels.
  *
  * WHY THIS EXISTS
- *   The old Medicine tool called AHM7 `/api/search`, which returns only
+ *   The old Medicine tool called the resolver `/api/search`, which returns only
  *   { id, name, price }. Eight detail endpoints were probed; none exist.
  *   So the app could never show what a medicine actually DOES.
  *

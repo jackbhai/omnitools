@@ -55,7 +55,7 @@ backup had to step in.
 | News | HN Algolia → Lobste.rs |
 | GitHub | GitHub REST → Codeberg |
 | Books | Open Library → Gutendex |
-| Movies/TV | AHM7 CineSearch → TVmaze |
+| Movies/TV | Film index → TVmaze |
 | Festivals | **Built-in table** → Google ICS → Nager.Date |
 | Music | Audius · Archive.org · Radio Browser (DE→NL) · iTunes |
 | ISS | WhereTheISS.at → Open Notify |

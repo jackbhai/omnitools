@@ -23,10 +23,10 @@ test proves it on the LIVE site (`jackbhai.github.io/omnitools/`), not locally.
 | 11 | Equalizer tab: 10 bands + presets | 10 sliders | ⬜ |
 | 12 | Queue tab lists the searched songs | ≥1 row | ⬜ |
 
-## P2 — AHM7 tools (explicitly demanded)
+## P2 — Everyday tools (explicitly demanded)
 | # | Requirement | Test | Status |
 |---|---|---|---|
-| 13 | AHM7 hub page listing every working endpoint | page renders | ⬜ |
+| 13 | Everyday hub listing every working tool | page renders | ⬜ |
 | 14 | Only endpoints that PASS a live probe are shown | no dead tiles | ⬜ |
 | 15 | Downloader (alldl) returns audio+thumb+video | 3 sections | ⬜ |
 | 16 | Movie search (msearch) returns results | ≥3 rows | ⬜ |

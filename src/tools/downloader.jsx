@@ -2,12 +2,12 @@
  * Universal downloader — separate buttons for VIDEO (with quality picker),
  * AUDIO extraction and THUMBNAIL grabbing, exactly as requested.
  *
- * Sources: AHM7 alldl (100+ platforms) primary, Piped mirrors as fallback for
+ * Sources: the resolver (100+ platforms) primary, Piped mirrors as fallback for
  * YouTube (they expose per-quality stream lists).
  */
 import React, { useRef, useState } from 'react';
 import { jget } from '../core/engine';
-import { ahm7Json } from '../core/audio-resolve';
+import { resolveJson } from '../core/audio-resolve';
 import { Card, Spin, Err, Chips, Copy, fmt } from '../ui/kit';
 import { Icon } from '../ui/icons';
 
@@ -37,17 +37,17 @@ export function Downloader() {
     const id = ytId(url);
     let got = null;
 
-    // 1) AHM7 — broadest platform coverage
+    // 1) the resolver — broadest platform coverage
     try {
-      // must go through the CORS proxy - AHM7 sends no ACAO header
-      const d = await ahm7Json(url.trim());
+      // must go through the CORS proxy - the resolver sends no ACAO header
+      const d = await resolveJson(url.trim());
       const m = d.mediaInfo || {};
       if (m.videoUrl || m.audioUrl) {
         got = {
           title: m.title || 'Media', author: m.author || '', platform: m.platform || '',
           thumb: m.thumbnail || m.coverImage || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : ''),
           audio: m.audioUrl || null, video: m.videoUrl || null,
-          qualities: [], audioOptions: [], id, via: 'AHM7',
+          qualities: [], audioOptions: [], id, via: 'resolver',
         };
       }
     } catch { /* try piped */ }
@@ -72,7 +72,7 @@ export function Downloader() {
               audioOptions: auds.map((a) => ({
                 q: `${Math.round((a.bitrate || 0) / 1000)} kbps ${(a.mimeType || '').split('/')[1] || ''}`,
                 url: a.url, size: a.contentLength })),
-              id, via: got ? 'AHM7 + Piped' : 'Piped',
+              id, via: got ? 'direct + index' : 'index',
             };
             break;
           }

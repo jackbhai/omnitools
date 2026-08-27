@@ -2,7 +2,7 @@
  * Medicine — every medicine in the world, with real detail.
  *
  * WHAT CHANGED AND WHY
- *   The previous version searched AHM7 `/api/search`, which returns only
+ *   The previous version searched the resolver `/api/search`, which returns only
  *   { id, name, price }. Eight detail endpoints were probed; none exist. So
  *   opening a medicine showed a price and nothing else — no uses, no dosage,
  *   no warnings. "Livosiz 5mg" returned nothing at all.

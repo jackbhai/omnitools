@@ -9,10 +9,11 @@
  *
  * Verified from a github.io Origin:
  *   api.piped.private.coffee/search  → 200, CORS: *, 20 items
- *   ahm7xmakki.com/api/alldl         → 200, returns audioUrl
+ *   media resolver /alldl               → 200, returns audioUrl
  *   c.ymcdn.org (the audio CDN)      → 206 Partial Content, audio/mp4, CORS: *
  * 206 + CORS means the <audio> element can stream AND seek it.
  */
+import { RESOLVE_API } from './endpoints';
 import { jget } from './engine';
 
 /* Multiple Piped mirrors — if one dies the pool moves on. */
@@ -52,22 +53,21 @@ export const ytSearch = PIPED.map((base, i) => ({
 }));
 
 /* ---------------------------------------------------------------- streams */
-const AHM7 = 'https://ahm7xmakki.com/api/alldl';
 
 /** Resolve a YouTube id to { audio, video, qualities, meta } for playback. */
 export async function resolveStream(id) {
   const url = `https://www.youtube.com/watch?v=${id}`;
 
-  // 1) AHM7 — verified to return a CORS-enabled, range-capable audio URL.
+  // 1) the resolver — verified to return a CORS-enabled, range-capable audio URL.
   try {
-    const d = await jget(`${AHM7}?url=${encodeURIComponent(url)}`, { ms: 25000 });
+    const d = await jget(`${RESOLVE_API}${encodeURIComponent(url)}`, { ms: 25000 });
     const m = d.mediaInfo || {};
     if (m.audioUrl || m.videoUrl) {
       return {
         audio: m.audioUrl || m.videoUrl,
         video: m.videoUrl || null,
         title: m.title, artist: m.author, art: m.thumbnail || m.coverImage,
-        qualities: [], via: 'AHM7',
+        qualities: [], via: 'resolver',
       };
     }
   } catch { /* fall through */ }

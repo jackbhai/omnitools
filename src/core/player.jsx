@@ -63,6 +63,8 @@ export const chain = new Chain();
 
 export function PlayerProvider({ children }) {
   const audio = useRef(null);
+  const retriedRef = useRef(null);      // last id we already re-resolved once
+  const recoveringRef = useRef(false);  // a re-resolve is in flight
   const [queue, setQueue] = useState([]);
   const [idx, setIdx] = useState(-1);
   const [track, setTrack] = useState(null);
@@ -91,6 +93,8 @@ export function PlayerProvider({ children }) {
     setErr(''); setLyrics(null);
     if (list) { setQueue(list); setIdx(list.findIndex((x) => (x.id ?? x.url) === (t.id ?? t.url))); }
     setTrack(t); setLoading(true);
+    if (retriedRef.current !== t.id) retriedRef.current = null;
+    recoveringRef.current = false;
 
     // YouTube tracks -> resolve to a DIRECT audio stream (no ads, keeps
     // playing in the background). The IFrame is only a last-resort fallback
@@ -103,7 +107,7 @@ export function PlayerProvider({ children }) {
       // immediately and avoid the extra load cycle entirely.
       if (!cached) { try { el.src = SILENCE; el.play().catch(() => {}); } catch {} }
 
-      // Progress that reflects reality: AHM7 needs ~8-15 s, so tell the user.
+      // Progress that reflects reality: the resolver needs ~8-15 s, so tell the user.
       let tick = 0;
       const clock = cached ? null : setInterval(() => {
         tick += 1;
@@ -123,10 +127,16 @@ export function PlayerProvider({ children }) {
         // No crossOrigin here: the CDN 302-redirects and a tainted CORS
         // handshake can kill playback. Audio first, EQ best-effort after.
         el.removeAttribute('crossorigin');
+        // A cached link can already be dead. If it is, the element fires
+        // `error` the moment the src is set — before play() rejects — so the
+        // handler must know a recovery is possible and stay quiet. Arming
+        // this BEFORE assigning src is what stops the "Stream failed" flash.
+        if (cached) { recoveringRef.current = true; retriedRef.current = t.id; }
         el.src = r.audio;
         el.playbackRate = rate;
         setStage('Buffering…');
         await el.play();
+        recoveringRef.current = false;
         try { chain.attach(el); chain.resume(); } catch {}
         setPlaying(true); setStage(''); setLoading(false); setErr('');
         if ('mediaSession' in navigator) {
@@ -158,17 +168,26 @@ export function PlayerProvider({ children }) {
             .then((r2) => setLyrics(r2.data)).catch(() => setLyrics(null));
           return;
         }
-        // A cached link can expire (CDN signs them). Drop it and retry once.
+        // A cached link can expire (the CDN signs them). Retry once with a
+        // forced re-resolve. Note this only catches a failure that surfaces
+        // through play(); a link that 404s AFTER play() resolves is handled by
+        // the element's onError, which does the same thing.
         if (cached) {
-          forgetAudio(t.id);
+          // Mute the element's onError for the duration: swapping the src
+          // makes it fire, and it would print "Stream failed" over a recovery
+          // that is about to succeed.
+          recoveringRef.current = true;
+          retriedRef.current = t.id;
+          setErr(''); setStage('Link expired — refreshing…');
           try {
-            const r = await resolveAudio(t.id, { onProgress: setStage });
+            const r = await resolveAudio(t.id, { fresh: true, onProgress: setStage });
             el.removeAttribute('crossorigin');
             el.src = r.audio; el.playbackRate = rate;
             await el.play();
             setPlaying(true); setStage(''); setLoading(false); setErr('');
             return;
           } catch { /* fall through to the honest error */ }
+          finally { recoveringRef.current = false; }
         }
         // Everything failed. Say so — do not silently serve ads.
         setStage(''); setLoading(false); setPlaying(false);
@@ -279,7 +298,44 @@ export function PlayerProvider({ children }) {
         onTimeUpdate={(e) => { setPos(e.target.currentTime); setDur(e.target.duration || 0); }}
         onEnded={() => { if (repeat === 'one') { audio.current.currentTime = 0; audio.current.play(); } else step(1); }}
         onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)}
-        onError={() => { if (track) setErr('Stream failed — try another source'); }}
+        onError={() => {
+          /* The CDN signs its links and they can expire while still in our
+             cache, so a track that played fine an hour ago comes back 404.
+             play() has already resolved by then, so the earlier try/catch
+             never sees it — the element fires `error` instead and the old
+             code just printed "Stream failed". Re-resolve once, silently. */
+          const t = track;
+          if (!t) return;
+          if (!t.id) { setErr('Stream failed — tap retry'); return; }
+          // `error` fires more than once while a fresh src is being swapped
+          // in — the element reports the failed load, then reports again as
+          // the new source attaches. Announcing a failure during a recovery
+          // that is about to succeed made a working retry look broken, so the
+          // message is only shown once the recovery has actually given up.
+          if (recoveringRef.current) return;
+          if (retriedRef.current === t.id) {
+            setErr('Stream failed — tap retry');
+            return;
+          }
+          recoveringRef.current = true;
+          retriedRef.current = t.id;
+          forgetAudio(t.id);
+          setStage('Link expired — refreshing…');
+          // Clear any stale error text: the recovery is in flight, so showing
+          // "Stream failed" here made a successful retry look broken.
+          setErr('');
+          resolveAudio(t.id, { fresh: true })
+            .then((r) => {
+              const el = audio.current;
+              if (!el || track?.id !== t.id) return;
+              el.src = r.audio;
+              el.playbackRate = rate;
+              return el.play();
+            })
+            .then(() => { setStage(''); setErr(''); setPlaying(true); })
+            .catch(() => { setStage(''); setErr('Stream failed — tap retry'); })
+            .finally(() => { recoveringRef.current = false; });
+        }}
       />
       {children}
     </Ctx.Provider>

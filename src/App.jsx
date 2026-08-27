@@ -8,8 +8,8 @@ import { LocProvider } from './core/geo';
 import { PlayerProvider, usePlayer } from './core/player';
 import { MiniPlayer, FullPlayer } from './ui/PlayerUI';
 import { Downloader } from './tools/downloader';
-import * as A from './tools/ahm7';
-import * as AD from './tools/ahm7-deep';
+import * as U from './tools/utils';
+import * as R from './tools/reader';
 import * as MP from './tools/metro-planner';
 import * as BP from './tools/bus-planner';
 import * as TR from './tools/trains2';
@@ -105,15 +105,15 @@ const TOOLS = [
   { id:'jokes',     n:'Jokes',         i:'smile',    c:'Media', t:'live', d:'Random joke',               C:L.Jokes },
   { id:'quotes',    n:'Quotes',        i:'quote',    c:'Media', t:'live', d:'Inspiration',               C:L.Quotes },
 
-  // ---------- AHM7 ----------
-  { id:'manga',     n:'Manga',         i:'book',     c:'AHM7', t:'live', d:'Read chapters + pages',      C:AD.Manga },
-  { id:'novels',    n:'Novels',        i:'books',    c:'AHM7', t:'live', d:'Read full chapters',         C:AD.Novels },
-  { id:'courses',   n:'Courses',       i:'cap',      c:'AHM7', t:'live', d:'1000+ free courses',         C:A.Courses },
-  { id:'tempmail',  n:'Temp Mail',     i:'mail',     c:'AHM7', t:'live', d:'Disposable inbox',           C:A.TempMail },
-  { id:'wikipdf',   n:'Wiki → PDF',    i:'doc',      c:'AHM7', t:'live', d:'Article as PDF',             C:A.WikiPdf },
-  { id:'hand',      n:'Handwriting',   i:'pen',      c:'AHM7', t:'live', d:'Text → handwriting, no ads', C:Handwriting },
-  { id:'websnap',   n:'Screenshot',    i:'camera',   c:'AHM7', t:'live', d:'Capture any site',           C:A.WebSnap },
-  { id:'certs',     n:'Certificates',  i:'badge',    c:'AHM7', t:'live', d:'Templates',                  C:A.Certificates },
+  // ---------- the resolver ----------
+  { id:'manga',     n:'Manga',         i:'book',     c:'Everyday', t:'live', d:'Read chapters + pages',      C:R.Manga },
+  { id:'novels',    n:'Novels',        i:'books',    c:'Everyday', t:'live', d:'Read full chapters',         C:R.Novels },
+  { id:'courses',   n:'Courses',       i:'cap',      c:'Everyday', t:'live', d:'1000+ free courses',         C:U.Courses },
+  { id:'tempmail',  n:'Temp Mail',     i:'mail',     c:'Everyday', t:'live', d:'Disposable inbox',           C:U.TempMail },
+  { id:'wikipdf',   n:'Wiki → PDF',    i:'doc',      c:'Everyday', t:'live', d:'Article as PDF',             C:U.WikiPdf },
+  { id:'hand',      n:'Handwriting',   i:'pen',      c:'Everyday', t:'live', d:'Neat page, ready to print', C:Handwriting },
+  { id:'websnap',   n:'Screenshot',    i:'camera',   c:'Everyday', t:'live', d:'Capture any site',           C:U.WebSnap },
+  { id:'certs',     n:'Certificates',  i:'badge',    c:'Everyday', t:'live', d:'Templates',                  C:U.Certificates },
 
   // ---------- Space ----------
   { id:'iss',       n:'ISS Tracker',   i:'satellite',c:'Space', t:'live', d:'Live position',             C:L.Space },
@@ -153,7 +153,7 @@ const TOOLS = [
   { id:'txtfile',   n:'Text → File',   i:'save',     c:'Convert', t:'off', d:'Save as any type',         C:C.TextToFile },
 ];
 
-const CATS = ['All', 'Travel', 'India', 'Health', 'AHM7', 'Convert', 'Music',
+const CATS = ['All', 'Travel', 'India', 'Health', 'Everyday', 'Convert', 'Music',
               'Time', 'Money', 'Learn', 'Media', 'Space', 'Text', 'Dev', 'Generate'];
 
 export default function App() {

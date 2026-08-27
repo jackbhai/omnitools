@@ -1,5 +1,5 @@
 /**
- * AHM7 tools, made DEEP.
+ * the resolver tools, made DEEP.
  *
  * The earlier versions only listed search results — tapping an item did
  * nothing, because the list endpoints return just titles. Probing revealed the
@@ -12,32 +12,31 @@
  *            /api/novel?action=chapters&novelId=<id>
  *            chapter.fileUrl is a plain .txt that we fetch and render
  */
+import { MEDIA_API, mediaAsset } from '../core/endpoints';
 import React, { useEffect, useMemo, useState } from 'react';
 import { jget } from '../core/engine';
 import { useData, Spin, Err, Empty, Src, Search, Card, Copy, fmt } from '../ui/kit';
 import { Icon } from '../ui/icons';
 
-const B = 'https://ahm7xmakki.com/api/';
-const img = (u) => !u ? '' : u.startsWith('http') ? u : `https://ahm7xmakki.com${u}`;
 
 /* ================================================================= MANGA */
 const mangaSearch = [
-  { id: 'ahm7-manga', label: 'AHM7 MangaSter', async run({ q }) {
-      const d = await jget(`${B}manga?action=${q ? 'search&q=' + encodeURIComponent(q) : 'latest'}`, { ms: 22000 });
+  { id: 'manga-lib', label: 'Manga library', async run({ q }) {
+      const d = await jget(`${MEDIA_API}manga?action=${q ? 'search&q=' + encodeURIComponent(q) : 'latest'}`, { ms: 22000 });
       const r = d.results || d.data || [];
       if (!r.length) throw new Error('no manga found');
-      return r.map((m) => ({ name: m.name || m.title, cover: img(m.cover),
+      return r.map((m) => ({ name: m.name || m.title, cover: mediaAsset(m.cover),
         id: m.sourceId || String(m.path || '').replace(/^\/manga\//, ''), status: m.status || '' })); } },
 ];
 const mangaChapters = [
-  { id: 'ahm7-ch', label: 'AHM7 chapters', async run({ id }) {
-      const d = await jget(`${B}manga?action=chapters&id=${encodeURIComponent(id)}`, { ms: 25000 });
+  { id: 'manga-ch', label: 'Chapter index', async run({ id }) {
+      const d = await jget(`${MEDIA_API}manga?action=chapters&id=${encodeURIComponent(id)}`, { ms: 25000 });
       if (!d.success) throw new Error('no chapters');
       return d; } },
 ];
 const mangaPages = [
-  { id: 'ahm7-pg', label: 'AHM7 pages', async run({ id }) {
-      const d = await jget(`${B}manga?action=pages&id=${encodeURIComponent(id)}`, { ms: 25000 });
+  { id: 'manga-pg', label: 'Page reader', async run({ id }) {
+      const d = await jget(`${MEDIA_API}manga?action=pages&id=${encodeURIComponent(id)}`, { ms: 25000 });
       if (!d.pages?.length) throw new Error('no pages');
       return d.pages; } },
 ];
@@ -71,7 +70,7 @@ export function Manga() {
       {pgs.data && (<>
         <div className="dim sm" style={{ marginBottom: 8 }}>{pgs.data.length} pages</div>
         {pgs.data.map((p, i) => (
-          <img key={i} src={img(p.url)} alt={`page ${i + 1}`} loading="lazy"
+          <img key={i} src={mediaAsset(p.url)} alt={`page ${i + 1}`} loading="lazy"
             style={{ width: '100%', display: 'block', borderRadius: 8, marginBottom: 6,
               background: 'var(--s2)', minHeight: 120 }} />))}
         <div className="btnrow" style={{ marginTop: 10 }}>
@@ -92,7 +91,7 @@ export function Manga() {
       {d && (<>
         <Card style={{ marginTop: 10 }}>
           <div style={{ display: 'flex', gap: 12 }}>
-            {d.cover && <img src={img(d.cover)} alt="" style={{ width: 78, borderRadius: 8 }} />}
+            {d.cover && <img src={mediaAsset(d.cover)} alt="" style={{ width: 78, borderRadius: 8 }} />}
             <div style={{ flex: 1, minWidth: 0 }}>
               <b style={{ fontSize: 15 }}>{d.title}</b>
               <div className="dim sm" style={{ marginTop: 4 }}>{d.status}</div>
@@ -150,22 +149,22 @@ export function Manga() {
 
 /* ================================================================ NOVELS */
 const novelSearch = [
-  { id: 'ahm7-novel', label: 'AHM7 NovelSter', async run({ q }) {
-      const d = await jget(`${B}novel?action=search&q=${encodeURIComponent(q || 'love')}`, { ms: 22000 });
+  { id: 'novel-lib', label: 'Novel library', async run({ q }) {
+      const d = await jget(`${MEDIA_API}novel?action=search&q=${encodeURIComponent(q || 'love')}`, { ms: 22000 });
       const r = d.novels || d.results || [];
       if (!r.length) throw new Error('no novels found');
       return r; } },
 ];
 const novelChapters = [
-  { id: 'ahm7-nch', label: 'AHM7 chapters', async run({ id }) {
-      const d = await jget(`${B}novel?action=chapters&novelId=${encodeURIComponent(id)}`, { ms: 25000 });
+  { id: 'novel-ch', label: 'Chapter index', async run({ id }) {
+      const d = await jget(`${MEDIA_API}novel?action=chapters&novelId=${encodeURIComponent(id)}`, { ms: 25000 });
       if (!d.chapters?.length) throw new Error('no chapters');
       return d.chapters; } },
 ];
 const novelText = [
-  { id: 'ahm7-read', label: 'AHM7 reader', async run({ fileUrl }) {
+  { id: 'novel-read', label: 'Chapter reader', async run({ fileUrl }) {
       // returns { ok, content } - not raw text
-      const d = await jget(`${B}novel?action=read&fileUrl=${encodeURIComponent(fileUrl)}`, { ms: 25000 });
+      const d = await jget(`${MEDIA_API}novel?action=read&fileUrl=${encodeURIComponent(fileUrl)}`, { ms: 25000 });
       const t = typeof d === 'string' ? d : (d.content || d.text || '');
       if (!t || t.length < 20) throw new Error('empty chapter');
       return t; } },
