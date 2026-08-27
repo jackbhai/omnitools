@@ -22,6 +22,7 @@ import * as W from './tools/world';
 import { News } from './tools/news';
 import { Screen } from './tools/screen';
 import { Names } from './tools/names';
+import { Launches, Recipes, WorldData } from './tools/extra';
 import { providerStats } from './core/engine';
 import { Icon } from './ui/icons';
 
@@ -103,6 +104,7 @@ const TOOLS = [
   { id:'books',     n:'Books',         i:'books',    c:'Learn', t:'live', d:'Open Library',              C:L.Books },
   { id:'country',   n:'Countries',     i:'earth',    c:'Learn', t:'live', d:'250 countries, full detail', C:W.Countries },
   { id:'names',     n:'Names & Surnames', i:'smile', c:'Learn', t:'live', d:'Meaning, origin, bearers',  C:Names },
+  { id:'worlddata', n:'World Data',    i:'chart',    c:'Learn', t:'live', d:'16 indicators, 25 years',   C:WorldData },
 
   // ---------- Media ----------
   { id:'dl',        n:'Downloader',    i:'download', c:'Media', t:'live', d:'Video / audio / thumbnail', C:Downloader },
@@ -110,6 +112,7 @@ const TOOLS = [
   { id:'movies',    n:'Movies & TV',   i:'film',     c:'Media', t:'live', d:'Cast, seasons, episodes',    C:Screen },
   { id:'jokes',     n:'Jokes',         i:'smile',    c:'Media', t:'live', d:'Random joke',               C:L.Jokes },
   { id:'quotes',    n:'Quotes',        i:'quote',    c:'Media', t:'live', d:'Inspiration',               C:L.Quotes },
+  { id:'recipes',   n:'Recipes',       i:'flask',    c:'Everyday', t:'live', d:'790 recipes, 37 cuisines', C:Recipes },
 
   // ---------- the resolver ----------
   { id:'manga',     n:'Manga',         i:'book',     c:'Everyday', t:'live', d:'Read chapters + pages',      C:R.Manga },
@@ -124,6 +127,7 @@ const TOOLS = [
   // ---------- Space ----------
   { id:'iss',       n:'ISS Tracker',   i:'satellite',c:'Space', t:'live', d:'Live position',             C:L.Space },
   { id:'quake',     n:'Earthquakes',   i:'earth',    c:'Space', t:'live', d:'USGS live feed',            C:L.Quakes },
+  { id:'launch',    n:'Rocket Launches',i:'satellite',c:'Space', t:'live', d:'Every launch worldwide',    C:Launches },
 
   // ---------- Text ----------
   { id:'case',      n:'Case Convert',  i:'type',     c:'Text', t:'off', d:'9 formats',                   C:O.CaseConvert },
