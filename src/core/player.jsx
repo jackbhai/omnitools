@@ -97,10 +97,13 @@ export function PlayerProvider({ children }) {
         const r = await resolveAudio(t.id, { onProgress: setStage });
         const meta = { ...t, art: t.art || r.art, artist: t.artist || r.artist, dlUrl: r.audio };
         setTrack(meta);
+        // No crossOrigin here: the CDN 302-redirects and a tainted CORS
+        // handshake can kill playback. Audio first, EQ best-effort after.
+        el.removeAttribute('crossorigin');
         el.src = r.audio;
         el.playbackRate = rate;
-        chain.attach(el); chain.resume();
         await el.play();
+        try { chain.attach(el); chain.resume(); } catch {}
         setPlaying(true); setStage(''); setLoading(false);
         if ('mediaSession' in navigator) {
           try {
@@ -226,7 +229,7 @@ export function PlayerProvider({ children }) {
   return (
     <Ctx.Provider value={value}>
       <audio
-        ref={audio} crossOrigin="anonymous" preload="none"
+        ref={audio} preload="none"
         onTimeUpdate={(e) => { setPos(e.target.currentTime); setDur(e.target.duration || 0); }}
         onEnded={() => { if (repeat === 'one') { audio.current.currentTime = 0; audio.current.play(); } else step(1); }}
         onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)}
