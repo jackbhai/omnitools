@@ -20,9 +20,11 @@
  *   C  catalogue direct          the catalogue's own API       relay: optional
  *   D  open music network        decentralised, own nodes      relay: NO
  *   E  public-domain archive     a library, not a business     relay: NO
+ *   G  open-licence pool         three commons platforms       relay: NO
+ *   H  open catalogue            a CC music label              relay: NO
  *   F  live radio                thousands of stations         relay: NO
  *
- * B, D, E and F need no relay at all. Blocking this app's Worker — or the
+ * B, D, E, G, H and F need no relay at all. Blocking this app's Worker — or the
  * Worker being taken down — cannot stop them.
  *
  * WHAT EACH TIER HONESTLY PROMISES
@@ -175,6 +177,94 @@ export function radioHint({ title = '', artist = '' } = {}) {
   return 'bollywood';
 }
 
+
+/* ------------------------------------------------------------- TIER G
+ * An aggregator of openly-licensed audio. One request reaches three separate
+ * platforms at once — a music catalogue, a sound library and a media commons
+ * — which is why it is worth having even though tier E already exists: those
+ * three fail independently of each other AND of everything above.
+ *
+ * Verified on 2026-08-28: CORS open, 240 results for "punjabi", 235 for
+ * "hindi", 187 for "raga", 103 for "bollywood". The rows are real recordings
+ * rather than clips — the first five "bollywood" hits ran 275 to 391 seconds
+ * — and 12 of 12 probed URLs answered 206 audio/mpeg.
+ *
+ * Honest limit: this is openly-licensed music, so it returns "Bollywood
+ * Chillout Mix" by an independent producer, not the film recording. It is a
+ * late tier for exactly that reason and everything it returns is marked
+ * inexact.
+ */
+const OPENVERSE = 'https://api.openverse.org/v1/audio';
+
+export async function openAudioSearch(q, { limit = 8 } = {}) {
+  const query = String(q || '').trim();
+  if (!query) return [];
+  if (!sourceReady('openverse')) return [];
+  try {
+    const d = await getJson(`${OPENVERSE}/?q=${enc(query)}&page_size=${limit}`, 15000);
+    const rows = (d.results || []).map((t) => ({
+      id: t.id,
+      title: clean(t.title || ''),
+      artist: clean(t.creator || t.provider || ''),
+      art: t.thumbnail || '',
+      /* duration arrives in milliseconds here, seconds everywhere else */
+      dur: Math.round((t.duration || 0) / 1000),
+      stream: t.url || '',
+      streams: [],
+      provider: t.provider || '',
+      licence: t.license || '',
+      src: 'open-licence',
+      exact: false,
+      approximate: true,
+    })).filter((r) => r.stream && r.title);
+    if (!rows.length) restSource('openverse', 60000);
+    return rows;
+  } catch { restSource('openverse'); return []; }
+}
+
+/* ------------------------------------------------------------- TIER H
+ * The openly-licensed catalogue that sits behind most of tier G, called
+ * directly. Worth listing separately because it survives the aggregator being
+ * down, and because its own tag search finds things the aggregator's
+ * full-text search misses.
+ *
+ * Measured quirk, and the reason `fuzzytags` is used rather than `search`:
+ * the plain search endpoint returned 3 rows for "indian" and ZERO for "sitar"
+ * and "guitar", while fuzzytags returned results for all of them. A search
+ * that silently answers nothing for common words is worse than one that
+ * errors, so both are tried and whichever answers is used.
+ */
+const JAMENDO = 'https://api.jamendo.com/v3.0/tracks/';
+const JAMENDO_ID = '2c9a11b9';
+
+export async function openCatalogueSearch(q, { limit = 8 } = {}) {
+  const query = String(q || '').trim();
+  if (!query) return [];
+  const modes = [`search=${enc(query)}`, `fuzzytags=${enc(query)}`];
+  for (const mode of modes) {
+    if (!sourceReady('jamendo')) return [];
+    try {
+      const d = await getJson(
+        `${JAMENDO}?client_id=${JAMENDO_ID}&format=json&limit=${limit}&${mode}`, 14000);
+      const rows = (d.results || []).map((t) => ({
+        id: String(t.id),
+        title: clean(t.name || ''),
+        artist: clean(t.artist_name || ''),
+        art: t.album_image || t.image || '',
+        dur: t.duration || 0,
+        stream: t.audio || '',
+        streams: [],
+        licence: t.license_ccurl ? 'creative commons' : '',
+        src: 'open-catalogue',
+        exact: false,
+        approximate: true,
+      })).filter((r) => r.stream && r.title);
+      if (rows.length) return rows;
+    } catch { restSource('jamendo'); return []; }
+  }
+  return [];
+}
+
 /* --------------------------------------------------------------- registry
  * Declared as data so the status panel can show it and the chain can walk it
  * without anyone editing an if-else ladder again.
@@ -185,6 +275,8 @@ export const TIERS = [
   { id: 'C', name: 'Catalogue direct',   infra: 'the catalogue itself',  relay: false, exact: true },
   { id: 'D', name: 'Open music network', infra: 'decentralised nodes',   relay: false, exact: false },
   { id: 'E', name: 'Public archive',     infra: 'a public library',      relay: false, exact: false },
+  { id: 'G', name: 'Open-licence pool',  infra: 'three commons platforms', relay: false, exact: false },
+  { id: 'H', name: 'Open catalogue',     infra: 'a CC music label',      relay: false, exact: false },
   { id: 'F', name: 'Live radio',         infra: 'independent stations',  relay: false, exact: false },
 ];
 

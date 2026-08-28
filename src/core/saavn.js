@@ -459,6 +459,25 @@ export async function matchTrack({ title, artist }) {
     }
   } catch { /* the archive is allowed to be unavailable too */ }
 
+  /* Tiers G and H: openly-licensed audio, from an aggregator that spans three
+     commons platforms and from the largest of those platforms directly. These
+     will not have the film recording — they return an independent artist's
+     take on the same style — so the bar is lower than for a real catalogue
+     match but the result is always flagged inexact and never claims to be the
+     original. Better than silence, honestly labelled. */
+  try {
+    const { openAudioSearch, openCatalogueSearch } = await import('./sources');
+    for (const finder of [openAudioSearch, openCatalogueSearch]) {
+      for (const query of [`${t} ${artist || ''}`.trim(), t]) {
+        let rows = [];
+        try { rows = await finder(query, { limit: 8 }); } catch { rows = []; }
+        if (!rows.length) continue;
+        const hit = rank(rows, 30) || rows[0];
+        if (hit?.stream) return { ...hit, approximate: true };
+      }
+    }
+  } catch { /* nothing left above radio */ }
+
   return null;
 }
 
