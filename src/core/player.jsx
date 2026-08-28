@@ -167,6 +167,63 @@ class Chain {
 }
 export const chain = new Chain();
 
+/* ------------------------------------------------------------------- HLS
+ * The second catalogue serves HLS playlists rather than plain audio files.
+ * An <audio> element cannot play those anywhere except Safari, so assigning
+ * `src` would fail silently with MediaError 4 — a black hole rather than an
+ * error message.
+ *
+ * This attaches hls.js instead, which is the same engine live TV already
+ * loads from the same CDN, so no new dependency enters the app. Anything that
+ * is NOT a playlist keeps the plain `src` path untouched — that path is
+ * load-bearing and well tested, and this must not disturb it.
+ */
+let hlsLib = null;
+function loadHlsLib() {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  if (hlsLib) return hlsLib;
+  hlsLib = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js';
+    s.async = true;
+    s.onload = () => (window.Hls ? res(window.Hls) : rej(new Error('hls.js did not initialise')));
+    s.onerror = () => { hlsLib = null; rej(new Error('could not load the stream engine')); };
+    document.head.appendChild(s);
+  });
+  return hlsLib;
+}
+
+const isHls = (url) => /\.m3u8(\?|$)/i.test(String(url || ''));
+
+/** Every previous attachment must be torn down or the old one keeps buffering. */
+function detachHls(el) {
+  if (el?._hls) { try { el._hls.destroy(); } catch {} el._hls = null; }
+}
+
+/**
+ * Point the element at a URL, whatever kind it is.
+ * Returns nothing; throws if an HLS stream cannot be attached, so the caller's
+ * existing catch/retry logic works unchanged.
+ */
+async function attach(el, url) {
+  detachHls(el);
+  if (!isHls(url)) { el.src = url; return; }
+  /* Safari plays HLS natively and does it better than the library would. */
+  if (el.canPlayType('application/vnd.apple.mpegurl')) { el.src = url; return; }
+  const Hls = await loadHlsLib();
+  if (!Hls.isSupported()) throw new Error('this browser cannot play that stream');
+  const h = new Hls({ enableWorker: true, lowLatencyMode: false });
+  el._hls = h;
+  await new Promise((res, rej) => {
+    const done = (fn) => { clearTimeout(timer); fn(); };
+    const timer = setTimeout(() => done(() => rej(new Error('stream timed out'))), 20000);
+    h.on(Hls.Events.MANIFEST_PARSED, () => done(res));
+    h.on(Hls.Events.ERROR, (_e, data) => { if (data?.fatal) done(() => rej(new Error(data.details || 'stream error'))); });
+    h.loadSource(url);
+    h.attachMedia(el);
+  });
+}
+
 export function PlayerProvider({ children }) {
   const audio = useRef(null);
   const retriedRef = useRef(null);      // last id we already re-resolved once
@@ -220,7 +277,7 @@ export function PlayerProvider({ children }) {
        track, which is why a song that played perfectly still showed as broken.
        Calling load() on an empty element clears it. */
     if (el.error) {
-      try { el.pause(); el.removeAttribute('src'); el.load(); } catch {}
+      try { detachHls(el); el.pause(); el.removeAttribute('src'); el.load(); } catch {}
     }
 
     setErr(''); setLyrics(null);
@@ -254,7 +311,7 @@ export function PlayerProvider({ children }) {
          Calling load() on the empty element consumes the gesture just as well
          and can never leave an error behind. */
       if (!cached) {
-        try { el.pause(); el.removeAttribute('src'); el.load(); } catch {}
+        try { detachHls(el); el.pause(); el.removeAttribute('src'); el.load(); } catch {}
       }
 
       // Progress that reflects reality: the resolver needs ~8-15 s, so tell the user.
@@ -294,13 +351,13 @@ export function PlayerProvider({ children }) {
            return HTTP 403, which surfaced as MediaError 4 mid-playlist.
            Assigning a new src alone does not reliably abort the old request,
            so this forces it. */
-        try { el.pause(); el.removeAttribute('src'); el.load(); } catch {}
+        try { detachHls(el); el.pause(); el.removeAttribute('src'); el.load(); } catch {}
         // A cached link can already be dead. If it is, the element fires
         // `error` the moment the src is set — before play() rejects — so the
         // handler must know a recovery is possible and stay quiet. Arming
         // this BEFORE assigning src is what stops the "Stream failed" flash.
         if (cached) { recoveringRef.current = true; retriedRef.current = t.id; }
-        el.src = r.audio;
+        await attach(el, r.audio);
         el.playbackRate = rate;
         setStage('Buffering…');
         await el.play();
@@ -356,7 +413,7 @@ export function PlayerProvider({ children }) {
           try {
             const r = await resolveAudio(t.id, { fresh: true, onProgress: setStage });
             el.removeAttribute('crossorigin');
-            el.src = r.audio; el.playbackRate = rate;
+            await attach(el, r.audio); el.playbackRate = rate;
             await el.play();
             setPlaying(true); setStage(''); setLoading(false); setErr('');
             resumeWarming();
@@ -377,7 +434,7 @@ export function PlayerProvider({ children }) {
           const r2 = await resolveAudio(t.id, { fresh: true, onProgress: setStage });
           if (stale()) return;
           el.removeAttribute('crossorigin');
-          el.src = r2.audio;
+          await attach(el, r2.audio);
           el.playbackRate = rate;
           await el.play();
           setTrack({ ...t, art: t.art || r2.art, artist: t.artist || r2.artist, dlUrl: r2.audio });
@@ -388,7 +445,7 @@ export function PlayerProvider({ children }) {
 
         // Everything failed. Say so — do not silently serve ads.
         setStage(''); setLoading(false); setPlaying(false);
-        el.pause(); el.removeAttribute('src'); el.load();
+        detachHls(el); el.pause(); el.removeAttribute('src'); el.load();
         setErr('Could not get an ad-free stream right now. Tap retry.'); resumeWarming();
         return;
       }
@@ -398,8 +455,19 @@ export function PlayerProvider({ children }) {
       let url = t.stream || t.url || t.preview;
       let meta = t;
       if (!url) throw new Error('No playable source');
-      el.src = url; el.playbackRate = rate;
+      /* Tier J hands back an HLS playlist, live radio hands back a plain
+         file. attach() tells them apart so both work through one path. */
+      await attach(el, url); el.playbackRate = rate;
       await el.play();
+      /* Name the tier here too. This path is reached when a row already
+         carries its own stream — which is how the second catalogue answers —
+         and without this the player showed no source line at all for it,
+         quietly presenting a different company's recording as the primary. */
+      setVia(t.src === 'catalogue-two' ? 'second catalogue'
+        : t.src === 'community-uploads' ? 'community uploads'
+        : t.src === 'public-archive' ? 'public archive'
+        : t.src === 'open-network' ? 'open music network'
+        : t.src === 'station' ? 'live radio' : (t.src || ''));
       setPlaying(true);
       if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
@@ -673,9 +741,10 @@ export function PlayerProvider({ children }) {
             .then((r) => {
               const el = audio.current;
               if (!el || track?.id !== t.id) return;
-              el.src = r.audio;
-              el.playbackRate = rate;
-              return el.play();
+              return attach(el, r.audio).then(() => {
+                el.playbackRate = rate;
+                return el.play();
+              });
             })
             .then(() => { setStage(''); setErr(''); setPlaying(true); resumeWarming(); })
             .catch(() => { setStage(''); setErr('Stream failed — tap retry'); resumeWarming(); })

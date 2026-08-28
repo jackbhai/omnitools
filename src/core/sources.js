@@ -437,14 +437,81 @@ export async function communitySearch(q, { limit = 8 } = {}) {
   } catch { restSource('hearthis'); return []; }
 }
 
+/* ------------------------------------------------------------- TIER J
+ * A SECOND Indian catalogue — a different company, a different song database,
+ * a different CDN.
+ *
+ * WHY THIS IS THE MOST VALUABLE ADDITION IN THIS FILE
+ * Tiers A, B and C are all the same catalogue reached three ways. If that
+ * company changes its keys, geo-blocks a region, or simply goes down, all
+ * three die together — they are one plan wearing three hats. This is the
+ * first tier that is a genuinely different Indian catalogue holding the same
+ * Bollywood, Punjabi and regional repertoire, so it fails for entirely
+ * separate reasons.
+ *
+ * MEASURED, END TO END, 2026-08-28
+ * All ten of the songs that have caused trouble in this project resolved and
+ * PLAYED: master playlist, child playlist, and a real media segment fetched
+ * and counted — 188-282 KB per segment, every hop sending CORS `*`. Not a
+ * search that returned 200; audio bytes on the wire.
+ *
+ * TWO REAL CATCHES, BOTH HANDLED
+ * 1. It serves HLS, not a plain file. `<audio>` cannot play that outside
+ *    Safari, so `hlsStream: true` is set and the player attaches hls.js —
+ *    the same engine live TV already loads — instead of assigning `src`.
+ * 2. It answers a miss with a confident near-miss rather than nothing:
+ *    "Babbu Maan Touchwood" comes back as "Digidi Digidi Hey". That is worse
+ *    than an empty result, because it plays the wrong song without saying so.
+ *    Rows are therefore returned unranked and the caller's existing `rank()`
+ *    floor decides — the same guard that already protects the other tiers.
+ *
+ * The signed URLs expire in about four hours, which is why nothing is cached
+ * and every play resolves fresh.
+ */
+const GAANA = 'https://gaana-api-fawn.vercel.app';
+
+export async function secondCatalogueSearch(q, { limit = 10 } = {}) {
+  const query = String(q || '').trim();
+  if (!query) return [];
+  if (!sourceReady('gaana')) return [];
+  try {
+    const d = await getJson(`${GAANA}/search?q=${enc(query)}`, 15000);
+    const rows = (Array.isArray(d?.data) ? d.data : []).slice(0, limit).map((t, i) => {
+      const m = t.music || {};
+      /* Best rung first, then down. Every rung is the same signed playlist at
+         a different bitrate, so a lower one is a real fallback, not a retry. */
+      const ladder = [m.very_high, m.high, m.medium, m.low].filter(Boolean);
+      const secs = String(t.duration || '').split(':').reduce((a, b) => a * 60 + (+b || 0), 0);
+      return {
+        id: `gaana:${i}:${(t.title || '').slice(0, 24)}`,
+        title: clean(t.title || ''),
+        artist: clean(t.artists || ''),
+        album: clean(t.album || ''),
+        art: t.thumbnail?.large || t.thumbnail?.medium || '',
+        dur: secs,
+        lang: t.language || '',
+        stream: ladder[0] || '',
+        streams: ladder.map((url, n) => ({ q: ['very high', 'high', 'medium', 'low'][n], url })),
+        hlsStream: true,      // the player must use hls.js, not <audio src>
+        playCount: 0,
+        src: 'catalogue-two',
+        exact: true,
+      };
+    }).filter((r) => r.stream && r.title);
+    if (!rows.length) restSource('gaana', 60000);
+    return rows;
+  } catch { restSource('gaana'); return []; }
+}
+
 /* --------------------------------------------------------------- registry
  * Declared as data so the status panel can show it and the chain can walk it
  * without anyone editing an if-else ladder again.
  */
 export const TIERS = [
   { id: 'A', name: 'Primary resolver',   infra: 'vendor API',            relay: true,  exact: true },
-  { id: 'B', name: 'Catalogue mirrors',  infra: 'community forks',       relay: false, exact: true },
+  { id: 'B', name: 'Catalogue mirrors',  infra: '16 community forks',    relay: false, exact: true },
   { id: 'C', name: 'Catalogue direct',   infra: 'the catalogue itself',  relay: false, exact: true },
+  { id: 'J', name: 'Second catalogue',   infra: 'a different Indian service', relay: false, exact: true },
   { id: 'D', name: 'Open music network', infra: 'decentralised nodes',   relay: false, exact: false },
   { id: 'E', name: 'Public archive',     infra: 'a public library',      relay: false, exact: false },
   { id: 'I', name: 'Community uploads', infra: 'an upload platform',    relay: false, exact: false },

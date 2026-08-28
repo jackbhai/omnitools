@@ -69,6 +69,42 @@ def fetch(url, ms=20, headers=None, cap=4_000_000):
                 'error': str(e)[:70]}
 
 
+def _songs_in(d, depth=0):
+    """Find the song list, whichever envelope this particular fork wraps it in.
+
+    The sixteen mirrors disagree: some return {success, data:[...]}, some
+    {status, message, data:{results:[...]}}, some a bare array. Rather than
+    encode sixteen shapes, walk until a list of dicts that look like songs
+    turns up.
+    """
+    if depth > 6:
+        return None
+    if isinstance(d, list) and d and isinstance(d[0], dict):
+        if set(d[0]) & {'downloadUrl', 'download_url', 'more_info', 'name', 'title'}:
+            return d
+    if isinstance(d, dict):
+        for v in d.values():
+            got = _songs_in(v, depth + 1)
+            if got:
+                return got
+    return None
+
+
+def _audio_link(row):
+    """Highest-quality download address on a song row, under either field name.
+
+    The forks disagree here too — half call it `link`, half call it `url`.
+    """
+    dl = row.get('downloadUrl') or row.get('download_url')
+    if isinstance(dl, list) and dl:
+        last = dl[-1]
+        if isinstance(last, dict):
+            return last.get('link') or last.get('url')
+        if isinstance(last, str):
+            return last
+    return None
+
+
 def rows_in(body):
     """How many usable rows came back, whatever shape the source uses."""
     try:
@@ -109,9 +145,16 @@ def discovered():
     """Pull endpoints out of the source so this file cannot go stale."""
     out = []
     saavn = read('core/saavn.js')
-    for base, path in re.findall(r"base: '([^']+)', path: '([^']+)'", saavn):
+    # 'mirror-audio', not 'rows'. A mirror shipped here for months answered
+    # every search with a perfect row whose every download link was 404 — ten
+    # songs, five quality rungs each, fifty dead addresses, and a rows-based
+    # check called it healthy the whole time. So the check resolves a song and
+    # then fetches the audio it was handed.
+    for base, path in re.findall(r"base: '([^']+)',\s+path: '([^']+)'", saavn):
         out.append(('music', f'mirror {base.split("//")[1][:26]}',
-                    f'{base}{path}pasoori&limit=2', 'rows'))
+                    f'{base}{path}pasoori&limit=2', 'mirror-audio'))
+    for m in re.findall(r"const GAANA = '([^']+)'", read('core/sources.js')):
+        out.append(('music', 'second catalogue', f'{m}/search?q=chaleya', 'hls'))
     for node in re.findall(r"'(https://[^']*audius[^']*)'", saavn):
         out.append(('music', f'open network {node.split("//")[1][:24]}',
                     f'{node}/v1/tracks/search?query=lofi&app_name=OmniTools&limit=2', 'rows'))
@@ -197,6 +240,50 @@ def judge(kind, r):
     if kind == 'extinf':
         n = body.decode('utf-8', 'ignore').count('#EXTINF')
         return n > 10, f'{n} channels'
+    if kind == 'mirror-audio':
+        # Search first, then prove the link it returned actually serves bytes.
+        try:
+            d = json.loads(body)
+        except Exception:                                    # noqa: BLE001
+            return False, 'not json'
+        rows = _songs_in(d)
+        if not rows:
+            return False, 'no songs'
+        link = _audio_link(rows[0])
+        if not link:
+            return False, 'no download link'
+        a = fetch(link, 20, {'Range': 'bytes=0-2000'}, 4000)
+        if a['status'] not in (200, 206):
+            return False, f'search ok, AUDIO {a["status"] or a["error"]}'
+        return len(a['body']) > 500, f'audio {a["status"]} {a["type"][:18]}'
+    if kind == 'hls':
+        # An HLS source is only healthy if the master playlist parses AND a
+        # real media segment comes back — the master alone proves nothing.
+        try:
+            rows = (json.loads(body) or {}).get('data') or []
+        except Exception:                                    # noqa: BLE001
+            return False, 'not json'
+        if not rows:
+            return False, 'no songs'
+        mus = rows[0].get('music') or {}
+        master = mus.get('very_high') or mus.get('high') or ''
+        if not master:
+            return False, 'no stream link'
+        m = fetch(master, 20, None, 200_000)
+        if m['status'] != 200:
+            return False, f'master {m["status"] or m["error"]}'
+        lines = [l.strip() for l in m['body'].decode('utf-8', 'ignore').splitlines()
+                 if l.strip() and not l.startswith('#')]
+        if not lines:
+            return False, 'empty master'
+        child = master.split('?')[0].rsplit('/', 1)[0] + '/' + lines[0]
+        c = fetch(child, 20, None, 200_000)
+        segs = [l.strip() for l in c['body'].decode('utf-8', 'ignore').splitlines()
+                if l.strip() and not l.startswith('#')]
+        if not segs:
+            return False, f'child {c["status"]}, no segments'
+        s = fetch(child.rsplit('/', 1)[0] + '/' + segs[0], 20, None, 400_000)
+        return len(s['body']) > 50_000, f'segment {len(s["body"]) // 1024}KB'
     if kind == 'surname':
         try:
             d = json.loads(body)
