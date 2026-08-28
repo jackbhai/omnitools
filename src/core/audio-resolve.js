@@ -355,6 +355,14 @@ export function resolveAudio(id, { onProgress, fresh = false } = {}) {
         artist: alt.artist || meta.artist || '',
         art: alt.art || meta.art || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
         dur: alt.dur || meta.dur || 0,
+        /* The catalogue knows the album, the year and the language. These were
+           being thrown away here, so the player had nothing to show and the
+           track-detail chips rendered a duration and nothing else. Carried
+           through only when the source actually supplied them — a missing
+           album must stay missing, never become an empty chip. */
+        album: alt.album || '',
+        year: alt.year || '',
+        lang: alt.lang || '',
         expires: Date.now() + TTL,
         via: alt.approximate ? 'open network (close match)' : 'second catalogue',
         alt: true,

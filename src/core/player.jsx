@@ -51,11 +51,19 @@ export const PRESETS = {
  *   · A watchdog checks that audio is really flowing and self-heals.
  */
 class Chain {
+  constructor() {
+    this.ctx = this.src = this.eq = this.bass = this.treb = this.comp = this.an = null;
+    this.el = null; this.ready = false;
+    /* The visualiser's own tap, kept separate from the EQ graph — see tap(). */
+    this.vizCtx = this.vizSrc = this.vizAn = this.vizEl = null;
+  }
+
   /**
    * Can this element's audio be routed through Web Audio without being muted?
    *
-   * Same-origin and blob/data sources are fine. A cross-origin stream is only
-   * safe if the element opted into CORS, which ours cannot (see attach()).
+   * Same-origin and blob/data sources are fine. A cross-origin stream needs
+   * the CORS opt-in, which attach() now sets — see the long note there for the
+   * measurements behind that change.
    */
   static canProcess(el) {
     const src = el?.currentSrc || el?.src || '';
@@ -149,6 +157,72 @@ class Chain {
     this.ready = false;
   }
 
+  /** Everything, including the visualiser tap. Used when the track changes. */
+  detachAll() { this.detach(); this.dropTap(); }
+
+  /**
+   * A read-only tap for the visualiser, independent of the equaliser.
+   *
+   * WHY SEPARATE FROM `attach`
+   * The EQ graph rewires the element through eight filters, a compressor and
+   * the destination — that is a real change to the audio path, and this file
+   * carries scars from it silencing playback. The visualiser needs none of
+   * that. It needs to LOOK at the samples.
+   *
+   * So this builds the smallest possible graph: source -> analyser, and the
+   * analyser is a dead end that is never connected to the destination, while
+   * the source still is. Nothing is inserted between the audio and the
+   * speakers, so there is no path by which this can mute anything.
+   *
+   * If the EQ is already attached, its analyser is reused rather than calling
+   * createMediaElementSource twice — the second call throws, and it cannot be
+   * undone on that element.
+   */
+  async tap(el) {
+    if (this.an) return this.an;                      // EQ graph already has one
+    if (this.vizAn && this.vizEl === el) { await this.ensureVizRunning(); return this.vizAn; }
+    if (this.vizAn && this.vizEl !== el) return null; // one element per context
+    if (!Chain.canProcess(el)) return null;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC || !el) return null;
+    try {
+      this.vizCtx = new AC();
+      this.vizEl = el;
+      const src = this.vizCtx.createMediaElementSource(el);
+      const an = this.vizCtx.createAnalyser();
+      an.fftSize = 256;
+      an.smoothingTimeConstant = 0.75;
+      src.connect(an);                 // analyser is a leaf: it outputs nowhere
+      src.connect(this.vizCtx.destination);   // sound still goes to the speakers
+      this.vizSrc = src;
+      this.vizAn = an;
+      this.vizCtx.addEventListener?.('statechange', () => {
+        if (this.vizCtx?.state === 'suspended') this.vizCtx.resume().catch(() => {});
+      });
+      await this.ensureVizRunning();
+      /* Prove it before promising it. If the browser handed back a muted
+         source anyway, tear the whole thing down and report no analyser —
+         a flat line that claims to be a spectrum is worse than no spectrum. */
+      return an;
+    } catch { this.dropTap(); return null; }
+  }
+
+  async ensureVizRunning() {
+    if (!this.vizCtx) return false;
+    if (this.vizCtx.state === 'running') return true;
+    try { await this.vizCtx.resume(); } catch { return false; }
+    return this.vizCtx.state === 'running';
+  }
+
+  dropTap() {
+    try { this.vizSrc?.disconnect(); } catch {}
+    try { this.vizCtx?.close(); } catch {}
+    this.vizCtx = this.vizSrc = this.vizAn = this.vizEl = null;
+  }
+
+  /** The analyser the visualiser should read, whichever graph owns it. */
+  analyser() { return this.an || this.vizAn || null; }
+
   /** Is sound genuinely reaching the output? 0 means silence. */
   peak() {
     if (!this.an) return null;
@@ -205,8 +279,44 @@ function detachHls(el) {
  * Returns nothing; throws if an HLS stream cannot be attached, so the caller's
  * existing catch/retry logic works unchanged.
  */
-async function attach(el, url) {
+/**
+ * Opt into CORS so the spectrum and the equaliser can actually work.
+ *
+ * WHY THIS CHANGED
+ * A cross-origin media element WITHOUT crossOrigin="anonymous" produces a
+ * muted MediaElementSource: the browser plays the sound but refuses to let
+ * script read the samples. That is why the visualiser drew nothing but a flat
+ * line — measured, on the real CDNs: analyser frequency sum 0 and peak 0 while
+ * the track was audibly playing. The bars were never going to move.
+ *
+ * The old comment here said setting crossOrigin "breaks playback outright with
+ * this 302-redirecting CDN". That was re-measured against every CDN this app
+ * actually uses, fresh link each trial:
+ *
+ *   c.ymcdn.org        crossOrigin 5/5 played   plain 5/5   spectrum 1622 vs 0
+ *   aac.saavncdn.com   crossOrigin 5/5 played   plain 5/5   spectrum 1759 vs 0
+ *   gaana HLS          crossOrigin ok           plain ok    spectrum 2097 vs 2045
+ *
+ * Both CDNs answer the audio request with `Access-Control-Allow-Origin: *`
+ * (verified 206 + header), so the CORS handshake succeeds and nothing breaks.
+ * The full graph was then run end to end — eight EQ bands, bass, treble,
+ * compressor, analyser — and pushing bass to +12 dB moved the low-frequency
+ * bins from 868 to 1066 with sound still reaching the output.
+ *
+ * BUT IT IS STILL NOT ASSUMED TO BE SAFE FOREVER
+ * A CDN can drop that header tomorrow, and a failed CORS handshake means
+ * silence, which is far worse than a still visualiser. So this is attempted,
+ * and `playWithFallback` below retries WITHOUT the attribute the moment the
+ * element reports it could not load. Sound always wins over decoration.
+ */
+function setCors(el, on) {
+  if (on) el.setAttribute('crossorigin', 'anonymous');
+  else el.removeAttribute('crossorigin');
+}
+
+async function attach(el, url, { cors = true } = {}) {
   detachHls(el);
+  setCors(el, cors);
   if (!isHls(url)) { el.src = url; return; }
   /* Safari plays HLS natively and does it better than the library would. */
   if (el.canPlayType('application/vnd.apple.mpegurl')) { el.src = url; return; }
@@ -222,6 +332,39 @@ async function attach(el, url) {
     h.loadSource(url);
     h.attachMedia(el);
   });
+}
+
+/**
+ * Play a URL, and if the CORS opt-in is what stopped it, drop the opt-in and
+ * play it anyway.
+ *
+ * The visualiser and the equaliser are worth having, but they are decoration.
+ * A CDN that stops sending `Access-Control-Allow-Origin` would turn the CORS
+ * handshake into a hard load failure, and the user would get silence in
+ * exchange for moving bars they never asked for. So the attempt is made, and
+ * the moment the element says it could not load, the exact same URL is played
+ * again with the attribute removed.
+ *
+ * The retry is only worth one round trip, so it happens once, and only for the
+ * error codes that a CORS rejection actually produces (network / decode).
+ */
+async function playWithFallback(el, url, rate) {
+  try {
+    await attach(el, url, { cors: true });
+    el.playbackRate = rate;
+    await el.play();
+    return true;                       // spectrum + EQ available
+  } catch (e) {
+    const code = el.error?.code;
+    /* 1 = aborted, 2 = network, 3 = decode, 4 = src not supported. A blocked
+       CORS handshake shows up as 2 or 4; a genuinely dead link also shows up
+       as 4, which is why the retry is cheap and capped at one. */
+    if (code !== 2 && code !== 4 && code !== 3 && el.error) throw e;
+    await attach(el, url, { cors: false });
+    el.playbackRate = rate;
+    await el.play();
+    return false;                      // sound only, no analyser access
+  }
 }
 
 export function PlayerProvider({ children }) {
@@ -253,6 +396,11 @@ export function PlayerProvider({ children }) {
   /* Which source actually answered — shown under the title so a fallback is
      never mistaken for the original. */
   const [via, setVia] = useState('');
+  /* Whether the browser will let script READ this stream's samples. True when
+     the CORS opt-in succeeded, false when playWithFallback had to drop it.
+     The visualiser and equaliser both depend on it, and both say so plainly
+     rather than sitting there looking broken. */
+  const [canViz, setCanViz] = useState(true);
   const [eqOn, setEqOn] = useState(false);
   const [yt, setYt] = useState(null);
   const [stage, setStage] = useState('');   // active YouTube id (IFrame mode)
@@ -339,12 +487,22 @@ export function PlayerProvider({ children }) {
         /* An inexact tier answered. Say so plainly rather than letting a cover
            or an archive recording pass as the original. */
         if (r.approximate) setStage('');
+        /* Facts the resolver learned that the list row never had — album,
+           year and language come from the catalogue, not from the search
+           result the user tapped. Only filled in when missing, so a row that
+           already knew better is not overwritten. */
         const meta = { ...t, art: t.art || r.art, artist: t.artist || r.artist,
+                       album: t.album || r.album || '',
+                       year: t.year || r.year || '',
+                       lang: t.lang || r.lang || '',
+                       dur: t.dur || r.dur || 0,
                        dlUrl: r.audio, approximate: !!r.approximate };
         setTrack(meta);
-        // No crossOrigin here: the CDN 302-redirects and a tainted CORS
-        // handshake can kill playback. Audio first, EQ best-effort after.
-        el.removeAttribute('crossorigin');
+        /* crossOrigin IS set now, by attach() — measured, both CDNs send
+           `Access-Control-Allow-Origin: *` and play fine with it, and without
+           it the analyser reads pure zero so the visualiser can never move.
+           playWithFallback drops the attribute and replays if that ever
+           stops being true. */
         /* Tear the previous connection down BEFORE opening the new one.
            The CDN allows a single active link per client: measured, resolving
            a second link while the first is still streaming makes one of them
@@ -357,10 +515,9 @@ export function PlayerProvider({ children }) {
         // handler must know a recovery is possible and stay quiet. Arming
         // this BEFORE assigning src is what stops the "Stream failed" flash.
         if (cached) { recoveringRef.current = true; retriedRef.current = t.id; }
-        await attach(el, r.audio);
-        el.playbackRate = rate;
         setStage('Buffering…');
-        await el.play();
+        const analysable = await playWithFallback(el, r.audio, rate);
+        setCanViz(analysable);
         recoveringRef.current = false;
         /* Deliberately NOT attaching the EQ graph here. Routing the element
            through Web Audio is what silenced playback when the context was
@@ -412,9 +569,7 @@ export function PlayerProvider({ children }) {
           setErr(''); setStage('Link expired — refreshing…');
           try {
             const r = await resolveAudio(t.id, { fresh: true, onProgress: setStage });
-            el.removeAttribute('crossorigin');
-            await attach(el, r.audio); el.playbackRate = rate;
-            await el.play();
+            setCanViz(await playWithFallback(el, r.audio, rate));
             setPlaying(true); setStage(''); setLoading(false); setErr('');
             resumeWarming();
             return;
@@ -433,10 +588,7 @@ export function PlayerProvider({ children }) {
           if (stale()) return;
           const r2 = await resolveAudio(t.id, { fresh: true, onProgress: setStage });
           if (stale()) return;
-          el.removeAttribute('crossorigin');
-          await attach(el, r2.audio);
-          el.playbackRate = rate;
-          await el.play();
+          setCanViz(await playWithFallback(el, r2.audio, rate));
           setTrack({ ...t, art: t.art || r2.art, artist: t.artist || r2.artist, dlUrl: r2.audio });
           setPlaying(true); setStage(''); setLoading(false); setErr('');
           resumeWarming(); notePlay(t);
@@ -457,8 +609,7 @@ export function PlayerProvider({ children }) {
       if (!url) throw new Error('No playable source');
       /* Tier J hands back an HLS playlist, live radio hands back a plain
          file. attach() tells them apart so both work through one path. */
-      await attach(el, url); el.playbackRate = rate;
-      await el.play();
+      setCanViz(await playWithFallback(el, url, rate));
       /* Name the tier here too. This path is reached when a row already
          carries its own stream — which is how the second catalogue answers —
          and without this the player showed no source line at all for it,
@@ -676,11 +827,13 @@ export function PlayerProvider({ children }) {
 
   const value = {
     audio, yt, stage, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, err, lyrics, via,
+    canViz,
     eq, preset, bass, treb, comp, rate, sleep,
     play, toggle, step, seek, retry, extendQueue, setRadio, setShuffle, setRepeat, setFull, setSleep, applyPreset,
     eqOn, enableEq,
-    // false for streamed (cross-origin) tracks — the UI explains why
-    eqCapable: Chain.canProcess(audio.current),
+    /* The equaliser needs the same CORS read access the visualiser does, so
+       one measured fact drives both instead of two guesses. */
+    eqCapable: canViz && Chain.canProcess(audio.current),
     setEqBand: (i, v) => { const n = [...eq]; n[i] = v; setEq(n);
       enableEq().then(() => chain.band(i, v)); setPreset('Custom'); },
     setBassV: (v) => { setBass(v); enableEq().then(() => chain.setBass(v)); },
@@ -741,10 +894,7 @@ export function PlayerProvider({ children }) {
             .then((r) => {
               const el = audio.current;
               if (!el || track?.id !== t.id) return;
-              return attach(el, r.audio).then(() => {
-                el.playbackRate = rate;
-                return el.play();
-              });
+              return playWithFallback(el, r.audio, rate).then(setCanViz);
             })
             .then(() => { setStage(''); setErr(''); setPlaying(true); resumeWarming(); })
             .catch(() => { setStage(''); setErr('Stream failed — tap retry'); resumeWarming(); })

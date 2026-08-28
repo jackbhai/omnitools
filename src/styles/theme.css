@@ -343,8 +343,25 @@ button:not(.btn):not(.cat.on){color:var(--fg)}
 .mini-row{display:flex;align-items:center;gap:10px;padding:8px 12px}
 .mini-row img,.mini-ph{width:40px;height:40px;border-radius:9px;object-fit:cover;flex:0 0 auto;background:var(--s3)}
 .mini-ph{display:grid;place-items:center;font-size:18px}
+/* The collapsed thumbnail becomes a small turning record while playing, at
+   the same rate as the full player's disc, and freezes in place when paused
+   rather than snapping back upright. */
+.mini-art,.mini-ph{border-radius:50%;animation:discspin 18s linear infinite;
+  animation-play-state:paused}
+.mini-art.spin,.mini-ph.spin{animation-play-state:running}
+@media (prefers-reduced-motion:reduce){.mini-art,.mini-ph{animation:none}}
 .mini-txt{flex:1;min-width:0;display:flex;flex-direction:column}
 .mini-txt b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* A title too long for the bar scrolls once and settles, instead of being cut
+   off with an ellipsis the user can do nothing about. */
+.mini-ttl{overflow:hidden}
+.mini-ttl>span{display:inline-block;white-space:nowrap;animation:marq 13s linear 2s infinite}
+@keyframes marq{
+  0%,12%{transform:translateX(0)}
+  46%,58%{transform:translateX(min(0px,calc(100% - 46vw)))}
+  92%,100%{transform:translateX(0)}
+}
+@media (prefers-reduced-motion:reduce){.mini-ttl>span{animation:none}}
 .mini-txt span{font-size:11px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mini-btn{background:none;border:0;color:var(--fg);font-size:17px;padding:5px;cursor:pointer;flex:0 0 auto}
 .mini-btn.play{background-color:#00E08A;background-image:var(--grad);color:#00110A;
@@ -362,10 +379,11 @@ button:not(.btn):not(.cat.on){color:var(--fg)}
 .full-tabs::-webkit-scrollbar{display:none}
 .full-body{flex:1;overflow-y:auto;padding:8px 16px}
 .art-wrap{display:grid;place-items:center;padding:10px 0}
+/* Generic square sleeve, still used by non-disc surfaces. The player's disc
+   overrides width/height/radius via .art-disc .art, which is more specific. */
 .art{width:min(72vw,270px);aspect-ratio:1;border-radius:20px;object-fit:cover;
   box-shadow:0 14px 44px rgba(0,255,156,.16)}
 .art.ph{display:grid;place-items:center;font-size:64px;background:var(--s2)}
-.viz{width:100%;height:60px;margin-top:10px}
 .full-name{font-family:var(--font-display);font-size:25px;letter-spacing:.8px;text-align:center;
   margin-top:12px;line-height:1.15}
 .lyrics{padding:8px 0 20px;max-height:100%}
@@ -492,25 +510,135 @@ button:not(.btn):not(.cat.on){color:var(--fg)}
 .steps b{color:var(--fg)}
 
 /* ---------------------------------------------------------------- player art
-   The sleeve turns while a track plays and eases to a stop when it is paused,
-   so "is this actually playing?" is answerable at a glance. `prefers-reduced-
-   motion` switches it off entirely rather than merely slowing it. */
+   A record, not a rounded square.
+
+   THE PAUSE PROBLEM
+   The old version toggled `animation` off when paused. A CSS animation that
+   stops does not hold its current frame — the element snaps back to 0deg, so
+   pausing yanked the artwork upright in one jarring jump. The fix is
+   `animation-play-state:paused`, which freezes the disc exactly where it is,
+   plus a slow ease on resume so it spins up rather than teleporting.
+
+   `prefers-reduced-motion` switches the rotation off entirely rather than
+   merely slowing it. */
+.disc-stage{position:relative;display:grid;place-items:center;
+  width:min(72vw,270px);aspect-ratio:1}
 .art-disc{position:relative;display:grid;place-items:center;
-  width:min(72vw,270px);aspect-ratio:1;border-radius:50%;
-  transition:transform .6s cubic-bezier(.2,.9,.3,1);
-  box-shadow:0 14px 44px #00ff9c29,0 0 0 1px var(--line) inset}
-.art-disc .art{width:100%;height:100%;border-radius:50%;object-fit:cover}
-.art-disc .art.ph{border-radius:50%;background:var(--s2);display:grid;place-items:center;color:var(--fg3)}
-.art-hole{position:absolute;width:17%;aspect-ratio:1;border-radius:50%;
-  background:var(--bg);box-shadow:0 0 0 4px #0e1412,0 0 0 5px var(--line2)}
-.art-disc.spin{animation:discspin 16s linear infinite}
+  width:100%;height:100%;border-radius:50%;
+  background:radial-gradient(circle at 50% 50%,#12100e 0%,#0a0a0a 62%,#050605 100%);
+  box-shadow:0 18px 52px #00ff9c26,0 0 0 1px #ffffff0f inset,0 2px 14px #0009;
+  animation:discspin 18s linear infinite;
+  animation-play-state:paused}
+.art-disc.spin{animation-play-state:running}
+/* Freezes in place instead of snapping back to zero degrees. */
+.art-disc.coast{animation-play-state:paused}
 @keyframes discspin{to{transform:rotate(360deg)}}
-@media (prefers-reduced-motion:reduce){.art-disc.spin{animation:none}}
+
+/* The pressed grooves. Concentric hairlines, faint enough to read as texture
+   rather than as rings drawn on top of the art. */
+.groove{position:absolute;border-radius:50%;pointer-events:none;
+  border:1px solid #ffffff08}
+.groove.g1{inset:1.5%}
+.groove.g2{inset:5%;border-color:#ffffff0a}
+.groove.g3{inset:9%}
+.groove.g4{inset:13.5%;border-color:#ffffff07}
+
+.art-disc .art{width:74%;height:74%;border-radius:50%;object-fit:cover;
+  box-shadow:0 0 0 1px #ffffff14,0 6px 18px #000000a6}
+.art-disc .art.ph{border-radius:50%;background:var(--s2);display:grid;place-items:center;color:var(--fg3)}
+
+/* A fixed highlight that does NOT rotate with the disc, so the sleeve looks
+   like it is turning under a light rather than carrying its own glare. */
+.art-sheen{position:absolute;inset:0;border-radius:50%;pointer-events:none;
+  background:linear-gradient(118deg,#ffffff14 0%,#ffffff00 34%,#ffffff00 66%,#ffffff0a 100%);
+  animation:discspin 18s linear infinite reverse;animation-play-state:inherit}
+.art-disc.spin .art-sheen{animation-play-state:running}
+
+.art-hole{position:absolute;width:13%;aspect-ratio:1;border-radius:50%;
+  background:var(--bg);box-shadow:0 0 0 4px #0e1412,0 0 0 5px var(--line2),0 0 0 6px #ffffff0d}
+
+@media (prefers-reduced-motion:reduce){
+  .art-disc,.art-sheen{animation:none}
+}
+
+/* The ring visualiser: a halo around the sleeve driven by the analyser.
+   --pulse and --glow are written by the animation frame, so the CSS holds the
+   look and JS only supplies two numbers. */
+.disc-stage.ring{transform:scale(var(--pulse,1));transition:transform .08s linear}
+.disc-ring{position:absolute;inset:-9px;border-radius:50%;pointer-events:none;
+  border:1.5px solid #00ff9c4d;
+  box-shadow:0 0 var(--glow,0px) #00ff9c66,inset 0 0 calc(var(--glow,0px) / 2) #00e5ff40}
+
+/* ------------------------------------------------------------- visualiser */
+.vizbox{margin-top:10px}
+.viz{width:100%;height:74px;display:block}
+.viz-note{font-size:10.5px;line-height:1.5;color:var(--fg3);text-align:center;
+  padding:10px 6px;max-width:330px;margin:0 auto}
+.vizpick{display:flex;gap:6px;justify-content:center;margin-top:6px}
+.vizb{background:var(--s2);border:1px solid var(--line);color:var(--fg3);
+  width:30px;height:24px;border-radius:8px;display:grid;place-items:center;cursor:pointer;
+  transition:color .15s,border-color .15s,background .15s}
+.vizb.on{color:var(--green);border-color:#00ff9c4d;background:#00ff9c14}
+.vizb:active{transform:scale(.93)}
+
+/* ---------------------------------------------- track facts, as small chips */
+.chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;
+  padding:4px 9px;border-radius:999px;background:var(--s2);
+  border:1px solid var(--line);color:var(--fg2);max-width:100%;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip.on{color:var(--green);border-color:#00ff9c40;background:#00ff9c12}
 
 /* which source answered — plain text, never a badge pretending to be a brand */
 .srcline{display:flex;align-items:center;justify-content:center;gap:7px;
   margin-top:8px;font-size:11px;color:var(--fg3)}
 .srcline .dot{width:6px;height:6px}
+
+/* --------------------------------------------------------- seek and volume
+   The seek bar draws its own track so buffered-ahead can be shown behind the
+   played portion; the real <input> sits on top, transparent, and keeps all the
+   keyboard and touch behaviour a native range control already has. */
+.seekwrap{position:relative;height:22px;display:flex;align-items:center}
+.seektrack{position:absolute;left:0;right:0;height:4px;border-radius:3px;
+  background:var(--line2);overflow:hidden;pointer-events:none}
+.seektrack .buf{position:absolute;left:0;top:0;height:100%;background:var(--line2);
+  filter:brightness(1.9);transition:width .3s linear}
+.seektrack .played{position:absolute;left:0;top:0;height:100%;
+  background-image:var(--grad);background-color:#00E08A}
+.seek{position:relative;width:100%;margin:0;background:transparent;
+  -webkit-appearance:none;appearance:none;height:22px}
+.seek::-webkit-slider-runnable-track{background:transparent;height:22px}
+.seek::-moz-range-track{background:transparent;height:22px}
+.seek::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+  width:13px;height:13px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 0 3px #00ff9c33,0 2px 6px #000a;cursor:pointer;margin-top:0}
+.seek::-moz-range-thumb{width:13px;height:13px;border:0;border-radius:50%;
+  background:var(--green);box-shadow:0 0 0 3px #00ff9c33;cursor:pointer}
+.seek:disabled::-webkit-slider-thumb{background:var(--fg3);box-shadow:none}
+.times .rem{color:var(--fg3);font-variant-numeric:tabular-nums}
+
+/* ------------------------------------------------------------------- queue */
+.qhead{display:flex;justify-content:space-between;align-items:center;
+  padding:2px 4px 8px;font-size:10.5px;color:var(--fg3);text-transform:uppercase;
+  letter-spacing:.6px}
+.row.qnow{background:#00ff9c14;border-radius:10px}
+.qnum{width:20px}
+/* Three bars that rise and fall — the row that is playing is findable while
+   scrolling a long queue, which a tinted background alone does not achieve. */
+.qbars{width:20px;height:14px;display:flex;align-items:flex-end;gap:2px;flex:0 0 auto}
+.qbars i{flex:1;background:var(--green);border-radius:1px;height:35%;
+  animation:qb .9s ease-in-out infinite}
+.qbars i:nth-child(2){animation-delay:.3s}
+.qbars i:nth-child(3){animation-delay:.6s}
+@keyframes qb{0%,100%{height:30%}50%{height:100%}}
+@media (prefers-reduced-motion:reduce){.qbars i{animation:none;height:60%}}
+
+.volrow{display:flex;align-items:center;gap:9px;margin:2px 0 8px;padding:0 2px}
+.volbtn{background:none;border:0;color:var(--fg3);cursor:pointer;padding:3px;
+  display:grid;place-items:center}
+.volbtn:active{transform:scale(.92)}
+.vol{flex:1;accent-color:var(--green);height:3px}
+.volpct{font-size:10px;color:var(--fg3);width:24px;text-align:right}
 
 /* ------------------------------------------------------------------ live TV
    The player is fixed above the grid so the channel list stays usable while

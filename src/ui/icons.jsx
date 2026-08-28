@@ -127,6 +127,25 @@ export const Bank = (p) => <S {...p}><path d="m3 9.4 9-5.4 9 5.4M4.6 9.4v9M9.4 9
 export const Envelope = Mail;
 export const Box = (p) => <S {...p}><path d="M12 2.8 21 7.4v9.2L12 21.2 3 16.6V7.4z" /><path d="M3 7.4 12 12l9-4.6M12 12v9.2" /></S>;
 
+/* ------------------------------------------------------------ player extras
+   Repeat-one needs its own glyph: reusing the plain refresh arrow for both
+   "repeat all" and "repeat one" left the two states looking identical, so the
+   only way to tell them apart was to remember how many times you had tapped. */
+export const Repeat = (p) => <S {...p}><path d="M17 2.5 20.5 6 17 9.5" /><path d="M20.5 6H7a3.5 3.5 0 0 0-3.5 3.5V11" /><path d="M7 21.5 3.5 18 7 14.5" /><path d="M3.5 18H17a3.5 3.5 0 0 0 3.5-3.5V13" /></S>;
+export const RepeatOne = (p) => <S {...p}><path d="M17 2.5 20.5 6 17 9.5" /><path d="M20.5 6H7a3.5 3.5 0 0 0-3.5 3.5V11" /><path d="M7 21.5 3.5 18 7 14.5" /><path d="M3.5 18H17a3.5 3.5 0 0 0 3.5-3.5V13" /><path d="M11 10.6l1.4-.9V15" strokeWidth="1.9" /></S>;
+export const Shuffle = (p) => <S {...p}><path d="M17 3.5 20.5 7 17 10.5M17 13.5 20.5 17 17 20.5" /><path d="M3.5 7h3.2c1.3 0 2.5.7 3.2 1.8l3.6 6.4c.7 1.1 1.9 1.8 3.2 1.8h3.8" /><path d="M3.5 17h3.2c1.3 0 2.5-.7 3.2-1.8l.7-1.2M20.5 7h-3.8c-1.3 0-2.5.7-3.2 1.8l-.7 1.2" /></S>;
+export const Volume = (p) => <S {...p}><path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" /><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.5a7.8 7.8 0 0 1 0 11" /></S>;
+export const VolumeOff = (p) => <S {...p}><path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z" /><path d="M16 9.5l5 5M21 9.5l-5 5" /></S>;
+export const Wave = (p) => <S {...p}><path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2M21.5 12h.5" /></S>;
+export const Bolt = (p) => <S {...p}><path d="M13.2 2.5 4.5 13.4h6L9.8 21.5l9-11.2h-6.2z" /></S>;
+export const Moon = (p) => <S {...p}><path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.7 8.7 0 1 0 11.1 11.1z" /></S>;
+export const Cast = (p) => <S {...p}><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h13A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14" /><path d="M3 20a1 1 0 0 0 0-2M3 16.5a4.5 4.5 0 0 1 4.5 4.5M3 12.5A8.5 8.5 0 0 1 11.5 21" /></S>;
+export const Expand = (p) => <S {...p}><path d="M4 9V4.5h5M20 9V4.5h-5M4 15v4.5h5M20 15v4.5h-5" /></S>;
+export const Plus = (p) => <S {...p}><path d="M12 5v14M5 12h14" /></S>;
+export const Trash = (p) => <S {...p}><path d="M4 6.5h16M9.5 6.5V4.2h5v2.3M6.5 6.5l.9 13a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5l.9-13" /><path d="M10.5 10.5v6.5M13.5 10.5v6.5" /></S>;
+export const Queue = (p) => <S {...p}><path d="M3 6h11M3 11h11M3 16h7" /><path d="M17.5 20V11.5l4-1.2V19" /><circle cx="16" cy="20" r="1.6" /><circle cx="20" cy="18.8" r="1.6" /></S>;
+export const Mic = (p) => <S {...p}><rect x="9" y="2.5" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5" /></S>;
+
 /** Registry so tools can be declared with a plain string name. */
 export const ICONS = {
   sun: Sun, cloud: Cloud, drop: Drop, wind: Wind,
@@ -146,6 +165,9 @@ export const ICONS = {
   image: Image, save: Save, mail: Mail, pen: Pen, grid: Grid, star: Star, staron: StarOn,
   wheat: Wheat, mosque: Mosque, info: Info, check: Check, x: X, chevron: Chevron,
   back: Back, refresh: Refresh, filter: Filter, bank: Bank, box: Box,
+  repeat: Repeat, repeatone: RepeatOne, shuffle: Shuffle,
+  volume: Volume, volumeoff: VolumeOff, wave: Wave, bolt: Bolt, moon: Moon,
+  cast: Cast, expand: Expand, plus: Plus, trash: Trash, queue: Queue, mic: Mic,
 };
 
 /** <Icon n="bus" size={22} /> */
