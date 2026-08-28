@@ -279,6 +279,9 @@ export function PlayerProvider({ children }) {
         if (clock) clearInterval(clock);
         if (stale()) return;          // the user moved on; leave their track alone
         setVia(r.via || '');
+        /* An inexact tier answered. Say so plainly rather than letting a cover
+           or an archive recording pass as the original. */
+        if (r.approximate) setStage('');
         const meta = { ...t, art: t.art || r.art, artist: t.artist || r.artist,
                        dlUrl: r.audio, approximate: !!r.approximate };
         setTrack(meta);
