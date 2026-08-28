@@ -490,3 +490,24 @@ button:not(.btn):not(.cat.on){color:var(--fg)}
 .steps{margin:6px 0 0;padding-left:20px;font-size:12.5px;line-height:1.85;color:var(--fg2)}
 .steps li{margin-bottom:3px}
 .steps b{color:var(--fg)}
+
+/* ---------------------------------------------------------------- player art
+   The sleeve turns while a track plays and eases to a stop when it is paused,
+   so "is this actually playing?" is answerable at a glance. `prefers-reduced-
+   motion` switches it off entirely rather than merely slowing it. */
+.art-disc{position:relative;display:grid;place-items:center;
+  width:min(72vw,270px);aspect-ratio:1;border-radius:50%;
+  transition:transform .6s cubic-bezier(.2,.9,.3,1);
+  box-shadow:0 14px 44px #00ff9c29,0 0 0 1px var(--line) inset}
+.art-disc .art{width:100%;height:100%;border-radius:50%;object-fit:cover}
+.art-disc .art.ph{border-radius:50%;background:var(--s2);display:grid;place-items:center;color:var(--fg3)}
+.art-hole{position:absolute;width:17%;aspect-ratio:1;border-radius:50%;
+  background:var(--bg);box-shadow:0 0 0 4px #0e1412,0 0 0 5px var(--line2)}
+.art-disc.spin{animation:discspin 16s linear infinite}
+@keyframes discspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.art-disc.spin{animation:none}}
+
+/* which source answered — plain text, never a badge pretending to be a brand */
+.srcline{display:flex;align-items:center;justify-content:center;gap:7px;
+  margin-top:8px;font-size:11px;color:var(--fg3)}
+.srcline .dot{width:6px;height:6px}

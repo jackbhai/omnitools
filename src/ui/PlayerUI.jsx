@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePlayer, PRESETS, chain } from '../core/player';
+import { isFav, toggleFav } from '../core/library';
 import { Icon } from './icons';
 
 const mmss = (s) => (!s || !isFinite(s)) ? '0:00'
@@ -47,8 +48,27 @@ export function MiniPlayer() {
 export function FullPlayer() {
   const p = usePlayer();
   const [tab, setTab] = useState('art');       // art | lyrics | eq | queue
+  const [sleepOpen, setSleepOpen] = useState(false);
+  const [shared, setShared] = useState(false);
+  const [fav, setFav] = useState(false);
   const cv = useRef(null);
   const lyrRef = useRef(null);
+
+  const t0 = p?.track;
+  useEffect(() => { setFav(isFav(t0?.id)); }, [t0?.id]);   // eslint-disable-line
+
+  /* Share uses the OS sheet where there is one and falls back to the
+     clipboard, so it works on a phone and on a desktop without branching in
+     the markup. */
+  const share = async () => {
+    const q = `${t0?.title || ''} ${t0?.artist || ''}`.trim();
+    const url = `${location.origin}${location.pathname}#music`;
+    try {
+      if (navigator.share) { await navigator.share({ title: q, text: q, url }); return; }
+      await navigator.clipboard.writeText(`${q} — ${url}`);
+      setShared(true); setTimeout(() => setShared(false), 1500);
+    } catch { /* the user dismissed the sheet */ }
+  };
 
   /* visualiser */
   useEffect(() => {
@@ -96,7 +116,9 @@ export function FullPlayer() {
       <div className="full-top">
         <button className="iconbtn" onClick={() => p.setFull(false)}>⌄</button>
         <div className="full-ttl"><b>Now playing</b><span>{t.src || 'OmniTools'}</span></div>
-        <button className="iconbtn" onClick={() => p.setSleep(p.sleep ? 0 : 30)}>
+        <button className="iconbtn" aria-label="Sleep timer"
+          onClick={() => setSleepOpen((v) => !v)}
+          style={{ color: p.sleep ? 'var(--green)' : '' }}>
           <Icon n={p.sleep ? 'timer' : 'clock'} size={17} /></button>
       </div>
 
@@ -115,12 +137,28 @@ export function FullPlayer() {
             </div>
           ) : (
             <div className="art-wrap">
-              {t.art ? <img src={t.art} alt="" className="art" onError={(e) => { e.target.style.display = 'none'; }} />
-                : <div className="art ph"><Icon n="music" size={17} /></div>}
+              {/* The sleeve turns while the track plays and eases to a stop
+                  when it is paused, so "is this actually playing?" is
+                  answerable at a glance without reading the button. */}
+              <div className={`art-disc ${p.playing ? 'spin' : ''}`}>
+                {t.art
+                  ? <img src={t.art} alt="" className="art" onError={(e) => { e.target.style.display = 'none'; }} />
+                  : <div className="art ph"><Icon n="music" size={40} /></div>}
+                <span className="art-hole" />
+              </div>
             </div>)}
           <canvas ref={cv} className="viz" style={{ display: p.playing ? 'block' : 'none' }} />
           <h2 className="full-name">{t.title || t.name}</h2>
           <p className="dim" style={{ textAlign: 'center' }}>{t.artist || t.country || ''}</p>
+          {/* Which tier answered. A close match from a fallback network must
+              never be presented as the original recording. */}
+          {(p.via || t.approximate) && (
+            <div className="srcline">
+              <span className={`dot ${t.approximate ? 'warn' : ''}`} />
+              <span>{t.approximate
+                ? 'Close match — the original was unavailable'
+                : `via ${p.via}`}</span>
+            </div>)}
           {p.err && <div className="err" style={{ marginTop: 12 }}><p>{p.err}</p></div>}
         </>)}
 
@@ -201,11 +239,24 @@ export function FullPlayer() {
             <Icon n="refresh" size={19} /></button>
         </div>
         <div className="btnrow" style={{ justifyContent: 'center' }}>
-          <button className="btn ghost sm" onClick={() => p.seek(Math.max(0, p.pos - 10))}>−10s</button>
+          <button className="btn ghost sm" onClick={() => p.seek(Math.max(0, p.pos - 10))}>&minus;10s</button>
           <button className="btn ghost sm" onClick={() => p.seek(p.pos + 10)}>+10s</button>
-          {p.sleep > 0 && <span className="tag w">sleep {p.sleep}m</span>}
-          {t.dlUrl && <a className="btn sm" href={t.dlUrl} download target="_blank" rel="noreferrer"><Icon n="download" size={16} /></a>}
+          <button className={`btn ghost sm ${fav ? 'on' : ''}`} aria-label="Favourite"
+            onClick={() => { toggleFav(t); setFav((v) => !v); }}
+            style={{ color: fav ? 'var(--green)' : '' }}>
+            <Icon n={fav ? 'staron' : 'star'} size={15} /></button>
+          <button className="btn ghost sm" aria-label="Share" onClick={share}>
+            <Icon n={shared ? 'check' : 'link'} size={15} /></button>
+          {t.dlUrl && <a className="btn sm" href={t.dlUrl} download target="_blank" rel="noreferrer"
+            aria-label="Download"><Icon n="download" size={16} /></a>}
         </div>
+        {sleepOpen && (
+          <div className="btnrow" style={{ justifyContent: 'center' }}>
+            {[0, 15, 30, 45, 60].map((m) => (
+              <button key={m} className={`cat ${p.sleep === m ? 'on' : ''}`}
+                onClick={() => { p.setSleep(m); setSleepOpen(false); }}>
+                {m === 0 ? 'Off' : `${m}m`}</button>))}
+          </div>)}
       </div>
     </div>);
 }

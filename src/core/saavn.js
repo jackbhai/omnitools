@@ -185,6 +185,10 @@ export function decryptUrl(b64) {
 /**
  * Community mirrors of the same catalogue.
  *
+ * Fourteen candidate forks were probed on 2026-08-28; these four answered with
+ * CORS and real download links. The other ten returned 404 or 451 and are not
+ * listed, so nobody re-tests them next month.
+ *
  * These matter more than they look: each sends CORS, so the browser calls them
  * with NO relay and NO proxy in the path, and each returns download links that
  * are already decrypted. A relay outage, the Worker being blocked, or the
@@ -197,6 +201,7 @@ const MIRRORS = [
   { id: 'm1', base: 'https://jiosaavn-api-codyandersan.vercel.app', path: '/search/songs?query=', linkKey: 'link' },
   { id: 'm2', base: 'https://jiosaavn-api-beta.vercel.app',         path: '/search/songs?query=', linkKey: 'link' },
   { id: 'm3', base: 'https://saavn-api-eight.vercel.app',           path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm4', base: 'https://saavn-api-sable.vercel.app',           path: '/api/search/songs?query=', linkKey: 'url' },
 ];
 
 /* Public CORS relays, used only when this app's own is unreachable. A rotation
@@ -429,6 +434,30 @@ export async function matchTrack({ title, artist }) {
     const hit = rank(rows, 50);
     if (hit) return hit;
   }
+
+  /* Tier E: a public library's audio collection. Nobody can revoke it, but
+     only about one item in four yields a fetchable file, so each candidate is
+     probed before it is offered rather than handed over on faith. */
+  try {
+    const { archiveSearch, archiveStream, reachable } = await import('./sources');
+    const docs = await archiveSearch(`${t} ${artist || ''}`.trim(), { limit: 5 });
+    for (const doc of docs.slice(0, 3)) {
+      const url = await archiveStream(doc.ident);
+      if (!url) continue;
+      if (!(await reachable(url))) continue;
+      return {
+        id: doc.ident,
+        title: doc.title || t,
+        artist: doc.artist || artist || '',
+        art: '',
+        dur: 0,
+        stream: url,
+        streams: [],
+        src: 'public-archive',
+        approximate: true,
+      };
+    }
+  } catch { /* the archive is allowed to be unavailable too */ }
 
   return null;
 }

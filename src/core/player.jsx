@@ -193,6 +193,9 @@ export function PlayerProvider({ children }) {
   const [comp, setComp] = useState(false);
   const [rate, setRate] = useState(1);
   const [sleep, setSleep] = useState(0);
+  /* Which source actually answered — shown under the title so a fallback is
+     never mistaken for the original. */
+  const [via, setVia] = useState('');
   const [eqOn, setEqOn] = useState(false);
   const [yt, setYt] = useState(null);
   const [stage, setStage] = useState('');   // active YouTube id (IFrame mode)
@@ -275,7 +278,9 @@ export function PlayerProvider({ children }) {
         const r = await resolveAudio(t.id, { onProgress: setStage });
         if (clock) clearInterval(clock);
         if (stale()) return;          // the user moved on; leave their track alone
-        const meta = { ...t, art: t.art || r.art, artist: t.artist || r.artist, dlUrl: r.audio };
+        setVia(r.via || '');
+        const meta = { ...t, art: t.art || r.art, artist: t.artist || r.artist,
+                       dlUrl: r.audio, approximate: !!r.approximate };
         setTrack(meta);
         // No crossOrigin here: the CDN 302-redirects and a tainted CORS
         // handshake can kill playback. Audio first, EQ best-effort after.
@@ -599,7 +604,7 @@ export function PlayerProvider({ children }) {
   }, [enableEq]);
 
   const value = {
-    audio, yt, stage, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, err, lyrics,
+    audio, yt, stage, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, err, lyrics, via,
     eq, preset, bass, treb, comp, rate, sleep,
     play, toggle, step, seek, retry, extendQueue, setRadio, setShuffle, setRepeat, setFull, setSleep, applyPreset,
     eqOn, enableEq,
