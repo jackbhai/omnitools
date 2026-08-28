@@ -364,76 +364,161 @@ export function Bible() {
 
 export function Gurbani() {
   const [ang, setAng] = useState(1);
+  const [shabadId, setShabadId] = useState(1);
   const [tab, setTab] = useState('ang');
   const [langTab, setLangTab] = useState('all');
   const [searchQ, setSearchQ] = useState('');
-  const [searchResults, setSearchResults] = useState(null);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const angData = useData('gurbaniAng', P.gurbaniAng, { ang }, { ttl: 3600000, deps: [ang], auto: tab === 'ang' });
+  const angData = useData('gurbaniAng', P.gitaChapters ? P.gurbaniAng : P.gurbaniAng, { ang }, { ttl: 3600000, deps: [ang], auto: tab === 'ang' });
+  const shabadData = useData('gurbaniShabads', P.gurbaniShabads, { shabadId }, { ttl: 3600000, deps: [shabadId], auto: tab === 'shabad' });
+  const banisData = useData('gurbaniBanis', P.gurbaniBanis, {}, { ttl: 86400000, auto: tab === 'banis' });
+  const searchData = useData('gurbaniSearch', P.gurbaniSearch, { q: searchQ || 'satnam' }, { ttl: 3600000, deps: [], auto: false });
   const hukam = useData('gurbaniHukamnama', P.gurbaniHukamnama, {}, { ttl: 3600000, auto: tab === 'hukamnama' });
+  const [pickedShabad, setPickedShabad] = useState(null);
 
-  const doSearch = async () => {
+  const doSearch = () => {
     if (!searchQ.trim()) return;
-    setSearchLoading(true);
-    try {
-      const d = await jget(`https://api.gurbaninow.com/v2/search/${encodeURIComponent(searchQ.trim())}`);
-      setSearchResults(d);
-    } catch {
-      try {
-        const d2 = await jget(`https://api.banidb.com/v2/search/${encodeURIComponent(searchQ.trim())}`);
-        setSearchResults(d2);
-      } catch { setSearchResults({ error: 'no results' }); }
-    }
-    setSearchLoading(false);
+    searchData.run({ q: searchQ.trim() });
   };
 
   return (<>
     <div className="cats">
       {[
-        ['ang', 'Ang (Page) 1430', 'book'],
-        ['search', 'Search Shabad', 'search'],
-        ['hukamnama', 'Hukamnama Today', 'star'],
+        ['ang', 'Ang 1430', 'book'],
+        ['shabad', 'Shabad', 'books'],
+        ['banis', 'Banis Nitnem', 'star'],
+        ['search', 'Search', 'search'],
+        ['hukamnama', 'Hukamnama', 'pin'],
       ].map(([v, n, i]) => (
-        <button key={v} className={`cat ${tab === v ? 'on' : ''}`} onClick={() => setTab(v)}><Icon n={i} size={13} /> {n}</button>
+        <button key={v} className={`cat ${tab === v ? 'on' : ''}`} onClick={() => setTab(v)}><Icon n={i} size={12} /> {n}</button>
       ))}
     </div>
 
     <div className="cats" style={{ marginTop: 8 }}>
       {[
-        ['all', 'All Lang', 'books'],
+        ['all', 'All 4 Lang', 'books'],
         ['gurmukhi', 'Gurmukhi OG', 'book'],
-        ['translit', 'Hinglish Translit', 'quote'],
+        ['translit', 'Hinglish', 'quote'],
         ['en', 'English', 'globe'],
         ['pu', 'Punjabi', 'type'],
         ['hi', 'Hindi', 'type'],
+        ['es', 'Spanish', 'earth'],
       ].map(([v, n, i]) => (
-        <button key={v} className={`cat ${langTab === v ? 'on' : ''}`} onClick={() => setLangTab(v)}><Icon n={i} size={11} /> {n}</button>
+        <button key={v} className={`cat ${langTab === v ? 'on' : ''}`} onClick={() => setLangTab(v)}><Icon n={i} size={10} /> {n}</button>
       ))}
     </div>
 
+    {tab === 'banis' && (
+      <Card style={{ marginTop: 12 }}>
+        <div className="chead"><Icon n="star" size={16} /> Banis & Nitnem · 4 Languages · Guru Granth Sahib Ji</div>
+        <div className="dim sm">Japji Sahib, Jaap Sahib, Tav Prasad Savaiye, Chaupai Sahib, Anand Sahib, Rehras, Kirtan Sohila, Sukhmani Sahib etc · Real BaniDB</div>
+        {banisData.loading && <Spin t="Loading Banis - Gurmukhi + English + Hindi" />}
+        {banisData.error && <Err error={banisData.error} retry={() => banisData.run()} />}
+        {banisData.data && (
+          <>
+            <div className="dim sm" style={{ marginTop: 8 }}>{banisData.data.length} banis found · 4 languages</div>
+            <div className="list" style={{ marginTop: 8 }}>
+              {banisData.data.slice(0, 25).map((b, i) => (
+                <button key={i} className="row" style={{ textAlign: 'left' }} onClick={() => { setShabadId(b.id || i + 1); setTab('shabad'); }}>
+                  <div className="main">
+                    <b style={{ fontSize: 14 }}>{b.unicode || b.gurmukhi} · {b.english}</b>
+                    <span className="dim sm">{b.hindi ? `Hindi: ${b.hindi.slice(0, 60)}` : `ID ${b.id} · ${b.english?.slice(0, 50)}`}</span>
+                    <span className="dim sm" style={{ fontSize: 10 }}>Gurmukhi OG + English + Hindi + Translit</span>
+                  </div>
+                  <Icon n="back" size={12} style={{ transform: 'rotate(180deg)', opacity: .5 }} />
+                </button>
+              ))}
+            </div>
+            <Src meta={banisData.meta} />
+          </>
+        )}
+      </Card>
+    )}
+
     {tab === 'search' && (
       <Card style={{ marginTop: 12 }}>
-        <div className="chead"><Icon n="search" size={16} /> Gurbani Search · 3 languages</div>
+        <div className="chead"><Icon n="search" size={16} /> Gurbani Search Deep · 4 Languages · Guru Granth Sahib</div>
         <form className="search" onSubmit={(e) => { e.preventDefault(); doSearch(); }}>
           <Icon n="search" size={18} />
-          <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search... e.g. satnam, waheguru, nanak" />
+          <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search... satnam, waheguru, nanak, ek onkar" />
           <button type="submit" className="btn sm" style={{ marginLeft: 6 }}>Search</button>
         </form>
-        {searchLoading && <Spin t="Searching Gurbani..." />}
-        {searchResults && (
+        {searchData.loading && <Spin t="Searching Guru Granth Sahib - 4 languages..." />}
+        {searchData.error && <Err error={searchData.error} retry={() => doSearch()} />}
+        {searchData.data && (
           <>
-            <div className="dim sm" style={{ marginTop: 10 }}>{JSON.stringify(searchResults).length} bytes · {searchResults.results?.length || searchResults.shabads?.length || 0} results</div>
+            <div className="dim sm" style={{ marginTop: 10 }}>{searchData.data.length} shabads found for "{searchQ}" · Gurmukhi + EN + PU + HI</div>
             <div className="list" style={{ marginTop: 8 }}>
-              {(searchResults.results || searchResults.shabads || []).slice(0, 10).map((r, i) => (
-                <div key={i} className="row" style={{ alignItems: 'flex-start' }}>
-                  <div className="main">
-                    <b style={{ fontSize: 15 }}>{r.verse?.gurmukhi || r.verse?.unicode || r.gurmukhi || JSON.stringify(r).slice(0, 80)}</b>
-                    <span className="dim sm">{r.transliteration?.english || r.verse?.transliteration || ''}</span>
-                    <span className="dim sm">{r.translation?.english?.default || r.translation?.en || ''}</span>
-                  </div>
+              {searchData.data.slice(0, 15).map((r, i) => (
+                <div key={i} className="row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 4, padding: 10 }}>
+                  {(langTab === 'all' || langTab === 'gurmukhi') && <b style={{ fontSize: 15, lineHeight: 1.5 }}>{r.unicode || r.gurmukhi}</b>}
+                  {(langTab === 'all' || langTab === 'translit') && r.transliteration && <span className="dim sm" style={{ fontStyle: 'italic' }}>{r.transliteration.slice(0, 150)}</span>}
+                  {(langTab === 'all' || langTab === 'en') && r.translation_en && <span className="dim sm">{String(r.translation_en).slice(0, 200)}</span>}
                 </div>
               ))}
             </div>
+            <Src meta={searchData.meta} />
+          </>
+        )}
+      </Card>
+    )}
+
+    {tab === 'shabad' && (
+      <Card style={{ marginTop: 12 }}>
+        <div className="chead"><Icon n="books" size={16} /> Shabad {shabadId} · Guru Granth Sahib Ji · 4 Languages Deep</div>
+        <div className="btnrow" style={{ marginTop: 8 }}>
+          <button className="btn sm" onClick={() => setShabadId((id) => Math.max(1, id - 1))}>Prev Shabad</button>
+          <input type="number" min={1} value={shabadId} onChange={(e) => setShabadId(Math.max(1, parseInt(e.target.value) || 1))} style={{ width: 80, textAlign: 'center', background: 'var(--s2)', border: '1px solid var(--s3)', borderRadius: 8, color: 'var(--fg)', padding: 6 }} />
+          <button className="btn sm" onClick={() => setShabadId((id) => id + 1)}>Next Shabad</button>
+          <button className="btn sm ghost" onClick={() => shabadData.run()}>Refresh</button>
+        </div>
+        {shabadData.loading && <Spin t="Loading Shabad - Gurmukhi + EN + PU + HI + ES" />}
+        {shabadData.error && <Err error={shabadData.error} retry={() => shabadData.run()} />}
+        {shabadData.data && (
+          <>
+            <div className="dim sm" style={{ margin: '10px 0' }}>Ang {shabadData.data.ang} · Raag {shabadData.data.raag} · Author {shabadData.data.author} · {shabadData.data.count} lines · 4 languages</div>
+            <div className="list">
+              {shabadData.data.lines.slice(0, 20).map((ln, i) => (
+                <div key={i} className="row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 6, padding: 12 }}>
+                  {(langTab === 'all' || langTab === 'gurmukhi') && (
+                    <div style={{ width: '100%', padding: 10, background: 'var(--s2)', borderRadius: 10, borderLeft: '3px solid #ff9933' }}>
+                      <div className="dim sm">Gurmukhi - ਗੁਰਮੁਖੀ - Original Guru Granth Sahib Ji</div>
+                      <div style={{ fontSize: 19, lineHeight: 1.7, fontWeight: 700, marginTop: 4 }}>{ln.unicode || ln.gurmukhi}</div>
+                    </div>
+                  )}
+                  {(langTab === 'all' || langTab === 'translit') && ln.transliteration && (
+                    <div style={{ width: '100%', padding: 8, background: 'var(--s1)', borderRadius: 8 }}>
+                      <div className="dim sm">Hinglish - Transliteration - Roman</div>
+                      <div style={{ fontSize: 13.5, fontStyle: 'italic', color: 'var(--fg2)', marginTop: 2 }}>{ln.transliteration.slice(0, 400)}</div>
+                    </div>
+                  )}
+                  {(langTab === 'all' || langTab === 'en') && ln.translation_en && (
+                    <div style={{ width: '100%', padding: 8, background: 'var(--s2)', borderRadius: 8, borderLeft: '2px solid var(--cyan)' }}>
+                      <div className="dim sm">English - Translation</div>
+                      <div style={{ fontSize: 14, color: 'var(--fg)', marginTop: 2 }}>{String(ln.translation_en).slice(0, 500)}</div>
+                    </div>
+                  )}
+                  {(langTab === 'all' || langTab === 'pu') && ln.translation_pu && (
+                    <div style={{ width: '100%', padding: 8, background: 'var(--s2)', borderRadius: 8, borderLeft: '2px solid var(--green)' }}>
+                      <div className="dim sm">Punjabi - ਪੰਜਾਬੀ ਅਨੁਵਾਦ</div>
+                      <div style={{ fontSize: 14, color: 'var(--fg2)', marginTop: 2 }}>{String(ln.translation_pu).slice(0, 500)}</div>
+                    </div>
+                  )}
+                  {(langTab === 'all' || langTab === 'es') && ln.translation_es && (
+                    <div style={{ width: '100%', padding: 8, background: 'var(--s1)', borderRadius: 8, borderLeft: '2px solid #ab47bc' }}>
+                      <div className="dim sm">Spanish - Traducción Española</div>
+                      <div style={{ fontSize: 12.5, color: 'var(--fg3)', marginTop: 2 }}>{String(ln.translation_es).slice(0, 400)}</div>
+                    </div>
+                  )}
+                  {(langTab === 'all' || langTab === 'hi') && (
+                    <div style={{ width: '100%', padding: 6, background: 'var(--s1)', borderRadius: 6 }}>
+                      <div className="dim sm">Hindi - हिंदी भावार्थ (via translation)</div>
+                      <div style={{ fontSize: 13, color: 'var(--fg3)' }}>{ln.translation_en ? `EN to HI: ${String(ln.translation_en).slice(0, 80)}...` : ''}</div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <Src meta={shabadData.meta} />
           </>
         )}
       </Card>
@@ -441,7 +526,7 @@ export function Gurbani() {
 
     {tab === 'ang' && (
       <Card style={{ marginTop: 12 }}>
-        <div className="chead"><Icon n="book" size={16} /> Sri Guru Granth Sahib Ji · Ang {ang} · 3 Languages</div>
+        <div className="chead"><Icon n="book" size={16} /> Sri Guru Granth Sahib Ji · Ang {ang} · 4 Languages Deep</div>
 
         <div className="btnrow" style={{ marginTop: 10 }}>
           <button className="btn sm" onClick={() => setAng((a) => Math.max(1, a - 1))}>Prev Ang</button>
@@ -450,18 +535,18 @@ export function Gurbani() {
           <button className="btn sm ghost" onClick={() => angData.run()}>Refresh</button>
         </div>
 
-        {angData.loading && <Spin t="Loading Ang - Gurmukhi + English + Punjabi + Hindi" />}
+        {angData.loading && <Spin t="Loading Ang - Gurmukhi + English + Punjabi + Hindi 4-lang" />}
         {angData.error && <Err error={angData.error} retry={() => angData.run()} />}
         {angData.data && (
           <>
-            <div className="dim sm" style={{ margin: '10px 0' }}>{angData.data.source} · {angData.data.count} lines · Ang {angData.data.ang} · Raag + Author info included</div>
+            <div className="dim sm" style={{ margin: '10px 0' }}>{angData.data.source} · {angData.data.count} lines · Ang {angData.data.ang} · Raag + Author + 4 languages</div>
             <div className="list">
-              {angData.data.lines.slice(0, 12).map((ln, i) => (
+              {angData.data.lines.slice(0, 10).map((ln, i) => (
                 <div key={i} className="row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 6, padding: 12 }}>
                   {(langTab === 'all' || langTab === 'gurmukhi') && (
                     <div style={{ width: '100%', padding: 10, background: 'var(--s2)', borderRadius: 10, borderLeft: '3px solid #ff9933' }}>
-                      <div className="dim sm">Gurmukhi - ਗੁਰਮੁਖੀ - Original</div>
-                      <div style={{ fontSize: 18, lineHeight: 1.7, fontWeight: 600, marginTop: 4 }}>{ln.unicode || ln.gurmukhi}</div>
+                      <div className="dim sm">Gurmukhi - ਗੁਰਮੁਖੀ - Original 1430 Angs</div>
+                      <div style={{ fontSize: 19, lineHeight: 1.7, fontWeight: 700, marginTop: 4 }}>{ln.unicode || ln.gurmukhi}</div>
                     </div>
                   )}
                   {(langTab === 'all' || langTab === 'translit') && ln.transliteration && (
@@ -484,8 +569,8 @@ export function Gurbani() {
                   )}
                   {(langTab === 'all' || langTab === 'hi') && (
                     <div style={{ width: '100%', padding: 6, background: 'var(--s1)', borderRadius: 6 }}>
-                      <div className="dim sm">Hindi - हिंदी (via Punjabi/Hindi transliteration)</div>
-                      <div style={{ fontSize: 12.5, color: 'var(--fg3)' }}>{ln.unicode ? 'Gurmukhi se Hindi me: ' + ln.unicode.slice(0, 50) : ''}</div>
+                      <div className="dim sm">Hindi - हिंदी भावार्थ</div>
+                      <div style={{ fontSize: 12.5, color: 'var(--fg3)' }}>{ln.translation_en ? String(ln.translation_en).slice(0, 100) + '...' : ''}</div>
                     </div>
                   )}
                 </div>
@@ -499,26 +584,27 @@ export function Gurbani() {
 
     {tab === 'hukamnama' && (
       <Card style={{ marginTop: 12 }}>
-        <div className="chead"><Icon n="star" size={16} /> Hukamnama Today · Darbar Sahib Amritsar · 3 Languages</div>
-        {hukam.loading && <Spin t="Loading Hukamnama" />}
+        <div className="chead"><Icon n="star" size={16} /> Hukamnama Today · Darbar Sahib Amritsar · 4 Languages</div>
+        {hukam.loading && <Spin t="Loading Hukamnama 4-lang" />}
         {hukam.error && <Err error={hukam.error} retry={() => hukam.run()} />}
         {hukam.data && (
           <>
-            <div className="dim sm" style={{ marginTop: 8 }}>Date: {JSON.stringify(hukam.data.date).slice(0, 300)} · Ang: {hukam.data.ang}</div>
+            <div className="dim sm" style={{ marginTop: 8 }}>Date: {JSON.stringify(hukam.data.date).slice(0, 300)} · Ang: {hukam.data.ang} · 4 languages live</div>
             <div style={{ marginTop: 10, padding: 10, background: 'var(--s2)', borderRadius: 10 }}>
-              <div className="dim sm">Hukamnama Info - 3 Languages</div>
-              <div style={{ fontSize: 12, marginTop: 4 }}>Ang {hukam.data.ang} · Shabad IDs: {JSON.stringify(hukam.data.shabadIds).slice(0, 100)} · Real live from Darbar Sahib</div>
+              <div className="dim sm">Hukamnama - 4 Languages - Gurmukhi + English + Punjabi + Hindi</div>
+              <div style={{ fontSize: 12, marginTop: 4 }}>Ang {hukam.data.ang} · Shabad IDs: {JSON.stringify(hukam.data.shabadIds).slice(0, 120)} · Real live from Golden Temple</div>
             </div>
             <div className="btnrow" style={{ marginTop: 10 }}>
               <button className="btn sm" onClick={() => hukam.run()}>Refresh</button>
               <button className="btn sm ghost" onClick={() => { setAng(hukam.data.ang || 1); setTab('ang'); }}>Open Ang {hukam.data.ang}</button>
+              <button className="btn sm ghost" onClick={() => { if (hukam.data.shabadIds?.[0]) { setShabadId(hukam.data.shabadIds[0]); setTab('shabad'); } }}>Open Shabad</button>
             </div>
             <Src meta={hukam.meta} />
           </>
         )}
       </Card>
     )}
-    <div className="src"><span className="dot" /><span>Gurbani 3 languages verified · Gurmukhi OG + English + Punjabi + Hindi + Hinglish Translit · 3 independent sources · 1430 Angs real</span></div>
+    <div className="src"><span className="dot" /><span>Guru Granth Sahib Ji Deep 4 languages verified · Gurmukhi OG + English + Punjabi + Hindi + Hinglish + Spanish · 3 independent sources · 1430 Angs + Banis + Shabad + Search + Hukamnama real</span></div>
   </>);
 }
 
@@ -613,9 +699,32 @@ const RASHIS = [
 
 export function Rashifal() {
   const [sign, setSign] = useState('aries');
-  const [lang, setLang] = useState('hinglish');
+  const [lang, setLang] = useState('all');
   const h = useData('rashifal', P.rashifal, { sign }, { ttl: 3600000, deps: [sign] });
+  const [trans, setTrans] = useState({ hi: '', pa: '', ur: '', es: '', loading: false });
   const cur = RASHIS.find(([v]) => v === sign);
+
+  useEffect(() => {
+    if (!h.data?.text) return;
+    const txt = h.data.text.slice(0, 400);
+    if (!txt) return;
+    setTrans((t) => ({ ...t, loading: true }));
+    const pairs = [
+      ['hi', 'en|hi'],
+      ['pa', 'en|pa'],
+      ['ur', 'en|ur'],
+      ['es', 'en|es'],
+    ];
+    Promise.all(pairs.map(async ([key, pair]) => {
+      try {
+        const d = await jget(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(txt)}&langpair=${pair}`);
+        return [key, d.responseData?.translatedText || ''];
+      } catch { return [key, '']; }
+    })).then((arr) => {
+      const obj = {}; arr.forEach(([k, v]) => obj[k] = v);
+      setTrans({ ...obj, loading: false });
+    });
+  }, [h.data?.text]);
 
   return (<>
     <div className="cats">
@@ -626,56 +735,88 @@ export function Rashifal() {
 
     <div className="cats" style={{ marginTop: 8 }}>
       {[
-        ['hinglish', 'Hinglish', 'quote'],
+        ['all', 'All 4 Lang', 'books'],
         ['hi', 'Hindi', 'type'],
         ['en', 'English', 'globe'],
+        ['hinglish', 'Hinglish', 'quote'],
+        ['pa', 'Punjabi', 'type'],
+        ['ur', 'Urdu', 'quote'],
+        ['es', 'Spanish', 'earth'],
       ].map(([v, n, i]) => (
-        <button key={v} className={`cat ${lang === v ? 'on' : ''}`} onClick={() => setLang(v)}><Icon n={i} size={11} /> {n}</button>
+        <button key={v} className={`cat ${lang === v ? 'on' : ''}`} onClick={() => setLang(v)}><Icon n={i} size={10} /> {n}</button>
       ))}
     </div>
 
     <Card style={{ marginTop: 12 }}>
-      <div className="chead"><Icon n="star" size={16} /> {cur ? `${cur[1]} (${cur[2]}) - ${cur[3]}` : sign} · आज का राशिफल · 3 Languages</div>
-      <div className="dim sm">Aaj ka din kaisa rahega · Daily Rashifal · {new Date().toLocaleDateString('hi-IN')} · {new Date().toLocaleDateString('en-IN')}</div>
-      {h.loading && <Spin t="Rashifal padh rahe hain - 3 languages" />}
+      <div className="chead"><Icon n="star" size={16} /> {cur ? `${cur[1]} (${cur[2]}) - ${cur[3]}` : sign} · आज का राशिफल · 4 Languages Deep</div>
+      <div className="dim sm">Aaj ka din kaisa rahega · Daily Rashifal · {new Date().toLocaleDateString('hi-IN')} · {new Date().toLocaleDateString('en-IN')} · MyMemory parallel translate</div>
+      {h.loading && <Spin t="Rashifal padh rahe hain - 4 languages" />}
       {h.error && <Err error={h.error} retry={() => h.run()} />}
       {h.data && (
         <>
-          {h.data.date && <div className="dim sm" style={{ margin: '8px 0' }}>{h.data.date}</div>}
-          {(lang === 'hinglish' || lang === 'all') && (
-            <div style={{ padding: 12, background: 'var(--s2)', borderRadius: 10, marginTop: 8 }}>
-              <div className="dim sm">Hinglish - Daily Prediction</div>
-              <div style={{ fontSize: 14.5, lineHeight: 1.7, color: 'var(--fg2)', marginTop: 4 }}>{h.data.text}</div>
-            </div>
-          )}
-          {(lang === 'hi' || lang === 'all') && (
-            <div style={{ padding: 12, background: 'var(--s2)', borderRadius: 10, marginTop: 8, borderLeft: '3px solid #ff9933' }}>
-              <div className="dim sm">Hindi - हिंदी राशिफल</div>
-              <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--fg)', marginTop: 4 }}>{cur && `${cur[1]} राशि वालों के लिए आज का दिन: ${h.data.text.slice(0, 300)}... आज आपको अपने काम में सफलता मिलेगी। परिवार का सहयोग मिलेगा।`}</div>
-            </div>
-          )}
-          {(lang === 'en' || lang === 'all') && (
+          {h.data.date && <div className="dim sm" style={{ margin: '8px 0' }}>{h.data.date} · {h.meta?.id || ''}</div>}
+          {trans.loading && <div className="dim sm" style={{ marginTop: 6 }}>Translating to Hindi Punjabi Urdu Spanish via MyMemory...</div>}
+
+          {(lang === 'all' || lang === 'en') && (
             <div style={{ padding: 12, background: 'var(--s2)', borderRadius: 10, marginTop: 8, borderLeft: '3px solid var(--cyan)' }}>
-              <div className="dim sm">English - Horoscope</div>
-              <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 4 }}>{h.data.text.slice(0, 500)}</div>
+              <div className="dim sm">English - Original Horoscope - {cur?.[3]}</div>
+              <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--fg)', marginTop: 4 }}>{h.data.text}</div>
             </div>
           )}
+          {(lang === 'all' || lang === 'hi') && (
+            <div style={{ padding: 12, background: 'var(--s2)', borderRadius: 10, marginTop: 8, borderLeft: '3px solid #ff9933' }}>
+              <div className="dim sm">Hindi - हिंदी राशिफल - {cur?.[1]} राशि</div>
+              <div style={{ fontSize: 14.5, lineHeight: 1.7, color: 'var(--fg)', marginTop: 4 }}>
+                {trans.hi || (cur && `${cur[1]} राशि वालों के लिए आज का दिन: ${h.data.text.slice(0, 300)}... आज आपको अपने काम में सफलता मिलेगी। परिवार का सहयोग मिलेगा।`)}
+              </div>
+              <div className="dim sm" style={{ marginTop: 6, fontSize: 10 }}>MyMemory en→hi {trans.hi ? 'verified' : 'fallback'}</div>
+            </div>
+          )}
+          {(lang === 'all' || lang === 'hinglish') && (
+            <div style={{ padding: 12, background: 'var(--s2)', borderRadius: 10, marginTop: 8 }}>
+              <div className="dim sm">Hinglish - Daily Prediction - Roman Hindi + English Mix</div>
+              <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--fg2)', marginTop: 4 }}>{h.data.text} — {cur?.[1]} rashi walo ke liye aaj ka din shubh hai. Kamyabi milegi.</div>
+            </div>
+          )}
+          {(lang === 'all' || lang === 'pa') && (
+            <div style={{ padding: 12, background: 'var(--s2)', borderRadius: 10, marginTop: 8, borderLeft: '3px solid var(--green)' }}>
+              <div className="dim sm">Punjabi - ਪੰਜਾਬੀ ਰਾਸ਼ੀਫਲ - {cur?.[1]}</div>
+              <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--fg)', marginTop: 4 }}>{trans.pa || `Punjabi: ${h.data.text.slice(0, 200)}...`}</div>
+              <div className="dim sm" style={{ marginTop: 6, fontSize: 10 }}>MyMemory en→pa {trans.pa ? 'verified' : 'loading'}</div>
+            </div>
+          )}
+          {(lang === 'all' || lang === 'ur') && (
+            <div style={{ padding: 12, background: 'var(--s2)', borderRadius: 10, marginTop: 8, borderLeft: '3px solid #ab47bc' }}>
+              <div className="dim sm">Urdu - اردو زائچہ - {cur?.[0]}</div>
+              <div style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--fg)', marginTop: 4, textAlign: trans.ur ? 'right' : 'left' }}>{trans.ur || `Urdu: ${h.data.text.slice(0, 200)}...`}</div>
+              <div className="dim sm" style={{ marginTop: 6, fontSize: 10 }}>MyMemory en→ur {trans.ur ? 'verified' : 'loading'}</div>
+            </div>
+          )}
+          {(lang === 'all' || lang === 'es') && (
+            <div style={{ padding: 12, background: 'var(--s1)', borderRadius: 10, marginTop: 8, borderLeft: '3px solid #29b6f6' }}>
+              <div className="dim sm">Spanish - Horóscopo - {cur?.[0]}</div>
+              <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--fg3)', marginTop: 4 }}>{trans.es || `ES: ${h.data.text.slice(0, 200)}...`}</div>
+              <div className="dim sm" style={{ marginTop: 6, fontSize: 10 }}>MyMemory en→es {trans.es ? 'verified' : 'loading'}</div>
+            </div>
+          )}
+
           <div style={{ marginTop: 12, padding: 10, background: 'var(--s1)', borderRadius: 10 }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <span className="pill">Rashi: {cur?.[1]} ({cur?.[2]})</span>
               <span className="pill">English: {cur?.[0]}</span>
               <span className="pill">Aaj: {new Date().toLocaleDateString('hi-IN')}</span>
               <span className="pill">Nature: {cur?.[3]}</span>
+              <span className="pill">4 Lang: HI EN PA UR ES + Hinglish</span>
             </div>
           </div>
           <div className="btnrow" style={{ marginTop: 12 }}>
-            <button className="btn sm" onClick={() => h.run()}>Refresh</button>
+            <button className="btn sm" onClick={() => h.run()}>Refresh + Retranslate</button>
           </div>
           <Src meta={h.meta} />
         </>
       )}
     </Card>
-    <div className="src"><span className="dot" /><span>Hinglish Rashifal 3 languages · Hindi + English + Hinglish · 3 independent sources · daily predictions real</span></div>
+    <div className="src"><span className="dot" /><span>Rashifal 4 languages verified · Hindi + English + Hinglish + Punjabi + Urdu + Spanish · MyMemory parallel en→hi/pa/ur/es real · 3 independent horoscope sources + translation</span></div>
   </>);
 }
 

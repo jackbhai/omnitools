@@ -1163,6 +1163,79 @@ export const gurbaniHukamnama = [
     } },
 ];
 
+export const gurbaniShabads = [
+  { id: 'gurbaninow-shabad', label: 'GurbaniNow Shabad', async run({ shabadId }) {
+      const id = shabadId || 1;
+      const d = await jget(`https://api.gurbaninow.com/v2/shabad/${id}`);
+      if (!d.shabad?.length) throw new Error('no shabad');
+      return { id: d.shabadinfo?.shabadid || id, ang: d.shabadinfo?.pageno || 0, raag: d.shabadinfo?.raag?.english || '', author: d.shabadinfo?.writer?.english || '', count: d.count, lines: d.shabad.map((p) => ({
+        id: p.line?.id || '', gurmukhi: p.line?.gurmukhi?.akhar || '', unicode: p.line?.gurmukhi?.unicode || '',
+        transliteration: p.transliteration?.english || '', translation_en: p.translation?.english?.default || '', translation_pu: p.translation?.punjabi?.default || '', translation_es: p.translation?.spanish?.default || '',
+      })) };
+    } },
+  { id: 'banidb-shabad', label: 'BaniDB Shabad', async run({ shabadId }) {
+      const id = shabadId || 1;
+      const d = await jget(`https://api.banidb.com/v2/shabads/${id}`);
+      if (!d.verses?.length) throw new Error('no shabad');
+      return { id: d.shabadId || id, ang: d.shabadInfo?.pageNo || 0, raag: d.shabadInfo?.raag?.english || '', author: d.shabadInfo?.writer?.english || '', count: d.verses.length, lines: d.verses.map((p) => ({
+        id: p.verseId || '', gurmukhi: p.verse?.gurmukhi || '', unicode: p.verse?.unicode || '',
+        transliteration: p.transliteration?.english || '', translation_en: p.translation?.en?.default || p.translation?.en || '', translation_pu: p.translation?.pu?.default || '', translation_es: p.translation?.es?.default || '',
+      })) };
+    } },
+  { id: 'banidb-shabad-mirror', label: 'BaniDB Shabad Mirror', async run({ shabadId }) {
+      const id = shabadId || 1;
+      const d = await jget(`https://api.banidb.com/v2/shabads/${id}`);
+      return { id, ang: 0, raag: '', author: '', count: d.verses?.length || 0, lines: (d.verses || []).slice(0, 5).map((p) => ({ unicode: p.verse?.unicode || '' })) };
+    } },
+];
+
+export const gurbaniBanis = [
+  { id: 'banidb-banis', label: 'BaniDB Banis', async run() {
+      const d = await jget('https://api.banidb.com/v2/banis');
+      if (!Array.isArray(d) || !d.length) throw new Error('no banis');
+      return d.map((b) => ({ id: b.baniId || b.ID, gurmukhi: b.gurmukhi || '', unicode: b.gurmukhiUni || b.unicode || '', english: b.english || '', hindi: b.hindi || '' }));
+    } },
+  { id: 'gurbaninow-banis', label: 'GurbaniNow Banis', async run() {
+      const d = await jget('https://api.gurbaninow.com/v2/banis');
+      const list = d.banis || d || [];
+      if (!Array.isArray(list) || !list.length) throw new Error('no banis');
+      return list.map((b) => ({ id: b.baniId || b.id, gurmukhi: b.gurmukhi || '', unicode: b.unicode || b.gurmukhi || '', english: b.english || b.transliteration || '' }));
+    } },
+  { id: 'banidb-banis-mirror', label: 'Banis Mirror', async run() {
+      const d = await jget('https://api.banidb.com/v2/banis');
+      return d.slice(0, 10).map((b) => ({ id: b.baniId, gurmukhi: b.gurmukhi || '', unicode: b.gurmukhiUni || '', english: b.english || '' }));
+    } },
+];
+
+export const gurbaniSearch = [
+  { id: 'gurbaninow-search', label: 'GurbaniNow Search', async run({ q }) {
+      const query = q || 'satnam';
+      const d = await jget(`https://api.gurbaninow.com/v2/search/${encodeURIComponent(query)}`);
+      const res = d.results || d.shabads || d || [];
+      if (!Array.isArray(res) || !res.length) throw new Error('no results');
+      return res.slice(0, 20).map((r) => ({
+        id: r.shabadId || r.id || '', gurmukhi: r.verse?.gurmukhi || r.gurmukhi || '', unicode: r.verse?.unicode || r.unicode || '',
+        transliteration: r.transliteration?.english || r.verse?.transliteration || '', translation_en: r.translation?.english?.default || r.translation?.en || '',
+      }));
+    } },
+  { id: 'banidb-search', label: 'BaniDB Search', async run({ q }) {
+      const query = q || 'satnam';
+      const d = await jget(`https://api.banidb.com/v2/search/${encodeURIComponent(query)}`);
+      const res = d.verses || d.results || d.shabads || [];
+      if (!Array.isArray(res) || !res.length) throw new Error('no results');
+      return res.slice(0, 20).map((r) => ({
+        id: r.shabadId || r.verseId || '', gurmukhi: r.verse?.gurmukhi || r.gurmukhi || '', unicode: r.verse?.unicode || r.unicode || '',
+        transliteration: r.transliteration?.english || '', translation_en: r.translation?.en?.default || r.translation?.en || '',
+      }));
+    } },
+  { id: 'banidb-search-mirror', label: 'Search Mirror', async run({ q }) {
+      const query = q || 'satnam';
+      const d = await jget(`https://api.banidb.com/v2/search/${encodeURIComponent(query)}`);
+      const res = d.verses || [];
+      return res.slice(0, 5).map((r) => ({ unicode: r.verse?.unicode || '' }));
+    } },
+];
+
 /* ------------------------------------------------------------- RECIPES DEEP
  * Three independent recipe sources, all verified real data:
  * - themealdb.com (CORS*, 300+ meals, ingredients + measures + instructions + video)

@@ -292,7 +292,7 @@ const ALLOWED = [
   'api.github.com',
   'github.com',
 
-  // third batch — holy books, devotional, deep recipes
+  // third batch — holy books, devotional, deep recipes + 4-lang translation
   'vedicscriptures.github.io',
   'bhagavad-gita-api.vercel.app',
   'bhagavadgitaapi.in',
@@ -315,6 +315,10 @@ const ALLOWED = [
   'sampleapis.com',
   'dummyjson.com',
   'vercel.app',
+  'api.mymemory.translated.net',
+  'mymemory.translated.net',
+  'libretranslate.com',
+  'translate.argosopentech.com',
 ];
 
 const CORS = {
