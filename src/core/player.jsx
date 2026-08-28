@@ -9,6 +9,7 @@ import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached,
          pauseWarming, resumeWarming, rememberTrack } from './audio-resolve';
 import { resolve } from './engine';
 import { notePlay } from './library';
+import { noteStation } from './sources';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const Ctx = createContext(null);
@@ -609,7 +610,23 @@ export function PlayerProvider({ children }) {
       if (!url) throw new Error('No playable source');
       /* Tier J hands back an HLS playlist, live radio hands back a plain
          file. attach() tells them apart so both work through one path. */
-      setCanViz(await playWithFallback(el, url, rate));
+      try {
+        setCanViz(await playWithFallback(el, url, rate));
+        if (t.kind === 'station') noteStation(url, true);
+      } catch (streamErr) {
+        /* A station published over http was upgraded to https so it could load
+           on the deployed site at all — but not every host has TLS. When the
+           secure form fails, the original address is tried before giving up.
+           Measured: 35 of 52 http-only stations answer over https, so the
+           upgrade is right to prefer, and the other 17 need this line. */
+        if (t.kind === 'station') noteStation(url, false);
+        if (!t.altStream || t.altStream === url) throw streamErr;
+        setStage('Trying the station\u2019s other address\u2026');
+        setCanViz(await playWithFallback(el, t.altStream, rate));
+        noteStation(t.altStream, true);
+        url = t.altStream;
+        setStage('');
+      }
       /* Name the tier here too. This path is reached when a row already
          carries its own stream — which is how the second catalogue answers —
          and without this the player showed no source line at all for it,

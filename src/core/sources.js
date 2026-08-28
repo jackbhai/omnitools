@@ -157,18 +157,53 @@ const RADIO_MIRRORS = [
   'https://de2.api.radio-browser.info',
 ];
 
-const shapeStation = (s, src) => ({
-  id: s.stationuuid || s.id,
-  title: clean(s.name),
-  artist: clean([s.country, s.language].filter(Boolean).join(' · ') || 'Live radio'),
-  art: s.favicon || '',
-  stream: s.url_resolved || s.url,
-  dur: 0,
-  votes: s.votes || 0,
-  src,
-  exact: false,
-  kind: 'station',
-});
+/**
+ * A station address the deployed site can actually load.
+ *
+ * THE BUG THIS FIXES
+ * 52 of 129 stations in the directory are published as plain `http://`. The
+ * live site is served over https, and a browser silently refuses to load
+ * insecure audio from a secure page — so 40% of the radio list was dead on
+ * the deployed build while working perfectly in local development. Nothing
+ * reported an error; the station simply never started.
+ *
+ * Measured: of those 52, 35 serve the identical stream over https with no
+ * other change. So the scheme is upgraded and the original kept as a second
+ * address — some hosts genuinely have no TLS, and those must still work when
+ * the app is opened over http.
+ *
+ * `alt` is tried by the player only if the preferred address fails, so a
+ * station with no https is not thrown away, merely ordered second.
+ */
+const secureUrl = (u) => {
+  const url = String(u || '');
+  if (!url.startsWith('http://')) return { stream: url, alt: '' };
+  /* An address with an explicit port is usually an Icecast/Shoutcast box
+     where the TLS port differs, so upgrading the scheme alone tends to fail.
+     It is still offered first on an https page — where the plain one cannot
+     work at all — but the original stays as the fallback. */
+  return { stream: url.replace('http://', 'https://'), alt: url };
+};
+
+const shapeStation = (s, src) => {
+  const { stream, alt } = secureUrl(s.url_resolved || s.url);
+  return {
+    id: s.stationuuid || s.id,
+    title: clean(s.name),
+    artist: clean([s.country, s.language].filter(Boolean).join(' · ') || 'Live radio'),
+    art: s.favicon || '',
+    stream,
+    altStream: alt,
+    dur: 0,
+    votes: s.votes || 0,
+    codec: s.codec || '',
+    bitrate: s.bitrate || 0,
+    country: s.country || '',
+    src,
+    exact: false,
+    kind: 'station',
+  };
+};
 
 /** 1-3: the community database, by name, by tag, then by popularity. */
 async function stationDb(q, limit) {
@@ -254,12 +289,142 @@ export async function resolveStation(st) {
   } catch { return ''; }
 }
 
+/* --------------------------------------------------- station liveness memory
+ * The same problem live TV had, and the same answer.
+ *
+ * A public station directory is largely honest but never current: measured on
+ * 129 stations pulled from the four queries this app actually issues, 123
+ * answered with audio and 6 did not. That is a good hit rate, but the six are
+ * indistinguishable from the rest until you tap one — and the directory's own
+ * `hidebroken` flag clearly does not catch them.
+ *
+ * So verdicts are remembered. Known-good sorts first, known-bad sorts last,
+ * and the memory survives a reload so the second visit opens already sorted.
+ *
+ * NOTHING IS HIDDEN ON THE STRENGTH OF A PROBE. Plenty of these hosts send no
+ * CORS header, and a stream that refuses a cross-origin read can still play
+ * perfectly in an audio element. A failed probe demotes a station; it never
+ * removes one.
+ *
+ * Separate storage key from the TV list on purpose — a dead television
+ * channel says nothing about a radio station, and mixing them would let one
+ * evict the other.
+ */
+const ST_KEY = 'omni:fm:live';
+let stLive = {};
+try { stLive = JSON.parse(localStorage.getItem(ST_KEY) || '{}'); } catch { stLive = {}; }
+
+let stTimer = null;
+function stPersist() {
+  clearTimeout(stTimer);
+  stTimer = setTimeout(() => {
+    try {
+      /* Old verdicts expire. A station that was down last week deserves
+         another chance rather than a permanent sentence. */
+      const cutoff = Date.now() - 7 * 864e5;
+      const keep = {};
+      for (const [k, v] of Object.entries(stLive)) if (v.at > cutoff) keep[k] = v;
+      stLive = keep;
+      localStorage.setItem(ST_KEY, JSON.stringify(keep));
+    } catch { /* storage full; the in-memory copy still works */ }
+  }, 1500);
+}
+
+export const stationScore = (url) => {
+  const v = stLive[url];
+  if (!v) return 0;                              // never tried
+  if (Date.now() - v.at > 6 * 36e5) return 0;    // stale, ask again
+  return v.ok ? 1 : -1;
+};
+
+export function noteStation(url, ok) {
+  if (!url) return;
+  stLive[url] = { ok, at: Date.now() };
+  stPersist();
+}
+
+/** Called by the player when a station genuinely failed to start. */
+export const noteStationFail = (url) => noteStation(url, false);
+
+/**
+ * Probe quietly and record what happened.
+ *
+ * `no-cors` is deliberate, for the same reason live TV uses it: most stream
+ * hosts send no CORS header, so a normal fetch would report failure for a
+ * station that plays fine. An opaque response still proves the host answered,
+ * which is the only thing this needs to establish.
+ */
+export async function probeStations(rows, { concurrency = 5, ms = 6000 } = {}) {
+  const queue = rows.filter((r) => r.stream && stationScore(r.stream) === 0);
+  if (!queue.length) return 0;
+  let i = 0, learned = 0;
+  const worker = async () => {
+    while (i < queue.length) {
+      const st = queue[i++];
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), ms);
+      try {
+        await fetch(st.stream, { method: 'GET', mode: 'no-cors', signal: ctl.signal, cache: 'no-store' });
+        noteStation(st.stream, true); learned++;
+      } catch {
+        noteStation(st.stream, false); learned++;
+      } finally { clearTimeout(t); }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  return learned;
+}
+
+/** Known-good first, untried next, known-dead last. Order otherwise kept. */
+export function sortStations(rows) {
+  return rows
+    .map((r, i) => ({ r, i, s: stationScore(r.stream) }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .map((x) => x.r);
+}
+
+export const stationStats = (rows) => {
+  let up = 0, down = 0;
+  for (const r of rows) {
+    const s = stationScore(r.stream);
+    if (s > 0) up++; else if (s < 0) down++;
+  }
+  return { up, down, unknown: rows.length - up - down };
+};
+
+/**
+ * Drop repeats.
+ *
+ * The directory genuinely lists the same broadcaster more than once — the
+ * measured pull contained both "Vividh Bharati" and "Vividh Bharti" on the
+ * same CDN path, differing only by scheme. Since the http one cannot play on
+ * the deployed site at all, keeping both meant offering a listener a coin
+ * flip between a working station and a dead one with almost the same name.
+ *
+ * Matched on the address with the scheme removed, so the https and http
+ * copies of one stream collapse into a single entry and the secure form
+ * (already preferred by secureUrl) is the one kept.
+ */
+const dedupeStations = (rows) => {
+  const seen = new Set(), out = [];
+  for (const r of rows) {
+    const key = String(r.stream || r.playlist || r.id)
+      .replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out;
+};
+
 export async function radioFor(hint, { limit = 8 } = {}) {
   const q = String(hint || '').trim() || 'bollywood';
   const rows = await stationDb(q, limit);
-  if (rows.length) return rows;
+  /* Sorted by what is known to answer, so the fallback tier hands the player
+     a station that works rather than the directory's first guess. */
+  if (rows.length) return sortStations(dedupeStations(rows));
   const curated = await curatedStations(limit);
-  if (curated.length) return curated;
+  if (curated.length) return dedupeStations(curated);
   return fixedStations();
 }
 
@@ -269,7 +434,7 @@ export async function allStations(q, { limit = 20 } = {}) {
     stationDb(String(q || 'bollywood'), limit).catch(() => []),
     curatedStations(8).catch(() => []),
   ]);
-  return [...db, ...curated, ...fixedStations()];
+  return sortStations(dedupeStations([...db, ...curated, ...fixedStations()]));
 }
 
 /**

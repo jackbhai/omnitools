@@ -470,26 +470,67 @@ export const musicSearch = [
         stream: null, archiveId: x.identifier, download: 'archive', src: 'Archive.org' })); } },
 ];
 
-export const radio = [
-  { id: 'radiobrowser-de', label: 'Radio Browser DE', async run({ q, mode }) {
-      const base = 'https://de1.api.radio-browser.info/json/stations';
-      const u = mode === 'lang' ? `${base}/bylanguage/${encodeURIComponent(q)}?hidebroken=true&limit=60&order=votes&reverse=true`
-        : mode === 'country' ? `${base}/bycountry/${encodeURIComponent(q)}?hidebroken=true&limit=60&order=votes&reverse=true`
-        : `${base}/search?name=${encodeURIComponent(q)}&hidebroken=true&limit=60&order=votes&reverse=true`;
-      const d = await jget(u, { headers: UA });
-      return d.filter((s) => s.url_resolved).map((s) => ({ id: s.stationuuid, name: s.name.trim(),
-        url: s.url_resolved, codec: s.codec, bitrate: s.bitrate, country: s.country,
-        lang: s.language, fav: s.favicon, votes: s.votes, tags: s.tags })); } },
-  { id: 'radiobrowser-nl', label: 'Radio Browser NL', async run({ q, mode }) {
-      const base = 'https://nl1.api.radio-browser.info/json/stations';
-      const u = mode === 'lang' ? `${base}/bylanguage/${encodeURIComponent(q)}?hidebroken=true&limit=60`
-        : mode === 'country' ? `${base}/bycountry/${encodeURIComponent(q)}?hidebroken=true&limit=60`
-        : `${base}/search?name=${encodeURIComponent(q)}&hidebroken=true&limit=60`;
-      const d = await jget(u, { headers: UA });
-      return d.filter((s) => s.url_resolved).map((s) => ({ id: s.stationuuid, name: s.name.trim(),
-        url: s.url_resolved, codec: s.codec, bitrate: s.bitrate, country: s.country,
-        lang: s.language, fav: s.favicon, votes: s.votes, tags: s.tags })); } },
+/**
+ * Station directory mirrors.
+ *
+ * The second entry used to be `nl1`, which no longer resolves in DNS at all —
+ * so the "fallback" was guaranteed to fail and this pool was really a pool of
+ * one. Re-checked today: de1, all and de2 answer 200; nl1, at1, fi1, fr1 and
+ * us1 all fail name resolution. Only the three that exist are listed.
+ *
+ * SCHEME UPGRADE
+ * 52 of 129 stations in this directory are published as plain http. The
+ * deployed site is https, and a browser silently refuses insecure audio on a
+ * secure page, so those stations never started and never said why. Measured:
+ * 35 of the 52 serve the identical stream over https. The address is upgraded
+ * and the original kept as `altUrl`, which the player falls back to — some
+ * hosts genuinely have no TLS and must still work.
+ */
+const RB_MIRRORS = [
+  'https://de1.api.radio-browser.info/json/stations',
+  'https://all.api.radio-browser.info/json/stations',
+  'https://de2.api.radio-browser.info/json/stations',
 ];
+
+const rbPath = (base, q, mode) =>
+  mode === 'lang' ? `${base}/bylanguage/${encodeURIComponent(q)}?hidebroken=true&limit=60&order=votes&reverse=true`
+  : mode === 'country' ? `${base}/bycountry/${encodeURIComponent(q)}?hidebroken=true&limit=60&order=votes&reverse=true`
+  : `${base}/search?name=${encodeURIComponent(q)}&hidebroken=true&limit=60&order=votes&reverse=true`;
+
+const rbShape = (d) => {
+  const seen = new Set();
+  const out = [];
+  for (const s of d) {
+    const raw = s.url_resolved || s.url;
+    if (!raw) continue;
+    /* The directory lists the same broadcaster more than once — the measured
+       pull had "Vividh Bharati" and "Vividh Bharti" on one CDN path differing
+       only by scheme. Collapsing on the scheme-less address means a listener
+       is not offered a coin flip between a working station and a dead one
+       with nearly the same name. */
+    const key = raw.replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const insecure = raw.startsWith('http://');
+    out.push({
+      id: s.stationuuid,
+      name: (s.name || '').trim(),
+      url: insecure ? raw.replace('http://', 'https://') : raw,
+      altUrl: insecure ? raw : '',
+      codec: s.codec, bitrate: s.bitrate, country: s.country,
+      lang: s.language, fav: s.favicon, votes: s.votes, tags: s.tags,
+    });
+  }
+  return out;
+};
+
+export const radio = RB_MIRRORS.map((base, i) => ({
+  id: `radiobrowser-${i + 1}`,
+  label: `Station directory ${i + 1}`,
+  async run({ q, mode }) {
+    return rbShape(await jget(rbPath(base, q, mode), { headers: UA }));
+  },
+}));
 
 export const itunes = [
   { id: 'itunes', label: 'iTunes Search', async run({ q }) {

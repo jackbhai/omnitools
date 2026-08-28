@@ -32,6 +32,7 @@ import { favourites, isFav, toggleFav, history, topPlayed, playlists,
          createPlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist,
          clearHistory, onLibrary, libraryStats } from '../core/library';
 import { getSettings, setSetting, testProxy, usingBuiltin, BUILTIN_PROXY } from '../core/settings';
+import * as SRC from '../core/sources';
 
 const mmss = (s) => (!s ? '' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
 
@@ -575,16 +576,52 @@ function RadioTab({ player }) {
     finally { setBusy(false); }
   };
 
+  const [probing, setProbing] = useState(false);
+  const [, bumpLive] = useState(0);
+  const probeToken = useRef(0);
+
   const loadStations = useCallback(async (l) => {
     setBusy(true); setErr(''); setStations(null);
-    try {
-      const r = await P.radio[0].run({ q: l, mode: 'lang' });
-      setStations(r);
-    } catch (e) { setErr(e.message || 'Could not load stations'); }
-    finally { setBusy(false); }
+    /* One directory mirror was dead in DNS, so a failure here used to be
+       final. Walk the pool instead of trusting the first entry. */
+    let last = null;
+    for (const provider of P.radio) {
+      try {
+        const r = await provider.run({ q: l, mode: 'lang' });
+        if (r.length) {
+          setStations(SRC.sortStations(r.map((s) => ({ ...s, stream: s.url }))));
+          setBusy(false);
+          return;
+        }
+      } catch (e) { last = e; }
+    }
+    setErr(last?.message || 'Could not load stations');
+    setBusy(false);
   }, []);
 
   useEffect(() => { if (mode === 'live') loadStations(lang); }, [mode, lang, loadStations]);
+
+  /* Probe the visible stations quietly, remember what answered, and re-sort.
+     Same approach live TV uses, and for the same reason: a directory listing
+     is not proof a stream is up, and finding out one tap at a time is a poor
+     way to learn it. Only the slice on screen is probed — there is no reason
+     to hammer sixty hosts the user may never scroll to. */
+  useEffect(() => {
+    if (mode !== 'live' || !stations?.length) return;
+    const my = ++probeToken.current;
+    let alive = true;
+    setProbing(true);
+    SRC.probeStations(stations.slice(0, 24))
+      .then((learned) => {
+        if (!alive || my !== probeToken.current) return;
+        if (learned) {
+          setStations((cur) => (cur ? SRC.sortStations(cur) : cur));
+          bumpLive((n) => n + 1);
+        }
+      })
+      .finally(() => { if (alive && my === probeToken.current) setProbing(false); });
+    return () => { alive = false; };
+  }, [mode, stations?.length, lang]);   // eslint-disable-line
 
   return (<>
     <div className="cats">
@@ -623,13 +660,24 @@ function RadioTab({ player }) {
       </div>
       {busy && <Spin t="Loading stations" />}
       {err && <Err error={err} retry={() => loadStations(lang)} />}
-      {stations?.length > 0 && (
+      {stations?.length > 0 && (() => {
+        const st8 = SRC.stationStats(stations);
+        return (
         <div className="list">
+          {/* Say what is actually known, rather than tagging every row "live"
+              on the directory's word. The old list marked all sixty live
+              including the ones that answer nothing. */}
+          <div className="qhead">
+            <span>{stations.length} stations{st8.up ? ` · ${st8.up} confirmed live` : ''}</span>
+            <span>{probing ? 'checking…' : ''}</span>
+          </div>
           {stations.map((st, i) => {
             const active = player.track && player.track.url === st.url;
+            const score = SRC.stationScore(st.url);
             return (
-              <div className="row" key={i} style={{ cursor: 'pointer' }}
-                onClick={() => player.play({ ...st, title: st.name, stream: st.url, needsResolve: false }, stations)}>
+              <div className="row" key={st.id || i} style={{ cursor: 'pointer' }}
+                onClick={() => player.play({ ...st, title: st.name, stream: st.url,
+                  altStream: st.altUrl || '', kind: 'station', needsResolve: false }, stations)}>
                 {st.fav
                   ? <img src={st.fav} alt="" loading="lazy"
                       style={{ width: 44, height: 44, borderRadius: 9, objectFit: 'cover', flex: '0 0 auto' }}
@@ -638,12 +686,23 @@ function RadioTab({ player }) {
                       display: 'grid', placeItems: 'center' }}><Icon n="radio" size={19} /></div>}
                 <div className="main">
                   <b style={{ fontSize: 13, color: active ? 'var(--green)' : '' }}>{st.name}</b>
-                  <span className="dim sm">{st.country || ''}{st.bitrate ? ` · ${st.bitrate}kbps` : ''}</span>
+                  <span className="dim sm">
+                    {[st.country, st.bitrate ? `${st.bitrate}kbps` : '', st.codec]
+                      .filter(Boolean).join(' · ')}
+                  </span>
                 </div>
-                <span className="tag c">live</span>
+                {/* A confirmed station gets a lit dot; one that failed a probe
+                    is dimmed but NOT removed — plenty of hosts refuse a
+                    cross-origin read and still play perfectly. */}
+                {score > 0
+                  ? <span className="tag c"><span className="dot live" /> live</span>
+                  : score < 0
+                    ? <span className="tag" style={{ opacity: .5 }}>no answer</span>
+                    : <span className="tag" style={{ opacity: .6 }}>untested</span>}
               </div>);
           })}
-        </div>)}
+        </div>);
+      })()}
     </>)}
   </>);
 }
