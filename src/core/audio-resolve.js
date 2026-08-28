@@ -348,6 +348,7 @@ export function resolveAudio(id, { onProgress, fresh = false } = {}) {
         alt = await matchTrack(meta);
       } catch { /* the fallback is allowed to fail too */ }
       if (!alt?.stream) throw primaryErr;
+      if (alt.approximate) onProgress?.('Found a close match on an open network…');
       rec = {
         audio: alt.stream,
         title: alt.title || meta.title,
@@ -355,8 +356,9 @@ export function resolveAudio(id, { onProgress, fresh = false } = {}) {
         art: alt.art || meta.art || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
         dur: alt.dur || meta.dur || 0,
         expires: Date.now() + TTL,
-        via: 'second catalogue',
+        via: alt.approximate ? 'open network (close match)' : 'second catalogue',
         alt: true,
+        approximate: !!alt.approximate,
       };
     }
 

@@ -465,4 +465,23 @@ export async function deepLookup(raw) {
   return { entry, census: cen, ...base, sources };
 }
 
+/** Flag emoji are not used anywhere in this app; countries render as names. */
+export const COUNTRY_NAMES = {
+  IN: 'India', PK: 'Pakistan', BD: 'Bangladesh', NP: 'Nepal', LK: 'Sri Lanka',
+  US: 'United States', GB: 'United Kingdom', CA: 'Canada', AU: 'Australia', NZ: 'New Zealand',
+  IE: 'Ireland', AE: 'UAE', SA: 'Saudi Arabia', QA: 'Qatar', KW: 'Kuwait', OM: 'Oman',
+  BH: 'Bahrain', MY: 'Malaysia', SG: 'Singapore', ID: 'Indonesia', TH: 'Thailand',
+  PH: 'Philippines', CN: 'China', JP: 'Japan', KR: 'South Korea', VN: 'Vietnam',
+  TW: 'Taiwan', HK: 'Hong Kong', DE: 'Germany', FR: 'France', IT: 'Italy', ES: 'Spain',
+  PT: 'Portugal', NL: 'Netherlands', BE: 'Belgium', CH: 'Switzerland', AT: 'Austria',
+  SE: 'Sweden', NO: 'Norway', DK: 'Denmark', FI: 'Finland', PL: 'Poland', CZ: 'Czechia',
+  HU: 'Hungary', RO: 'Romania', GR: 'Greece', RU: 'Russia', UA: 'Ukraine', TR: 'Turkey',
+  IL: 'Israel', IR: 'Iran', IQ: 'Iraq', EG: 'Egypt', MA: 'Morocco', DZ: 'Algeria',
+  TN: 'Tunisia', NG: 'Nigeria', GH: 'Ghana', KE: 'Kenya', TZ: 'Tanzania', UG: 'Uganda',
+  ZA: 'South Africa', ET: 'Ethiopia', BR: 'Brazil', MX: 'Mexico', AR: 'Argentina',
+  CL: 'Chile', CO: 'Colombia', PE: 'Peru', MU: 'Mauritius', FJ: 'Fiji',
+  TT: 'Trinidad & Tobago', GY: 'Guyana', SR: 'Suriname', AF: 'Afghanistan',
+  MM: 'Myanmar', KH: 'Cambodia', BT: 'Bhutan', MV: 'Maldives',
+};
+
 export const countryName = (cc) => COUNTRY_NAMES[cc] || cc;
