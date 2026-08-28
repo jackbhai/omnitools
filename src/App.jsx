@@ -27,6 +27,7 @@ import { LiveTV } from './tools/tv';
 import { Dogs, SunTimes, Riddles, Horoscope, Trivia, Cats, Universities, Food } from './tools/newtools';
 import * as D from './tools/devotional';
 import { Kundli as KundliPro } from './tools/kundli';
+import { Settings } from './tools/settings';
 import { providerStats } from './core/engine';
 import { Icon } from './ui/icons';
 
@@ -136,6 +137,7 @@ const TOOLS = [
   { id:'recipesdeep',n:'Recipes Deep', i:'flask',    c:'Everyday', t:'live', d:'Ingredients video deep',   C:D.RecipesDeep },
   { id:'rashifal',  n:'Rashifal',      i:'star',     c:'India',  t:'live', d:'Hinglish Mesh-Vrishabh etc',  C:D.Rashifal },
   { id:'kundli',    n:'Kundli Pro v3', i:'star',     c:'India',  t:'off',  d:'3-Layer Verified - No Fake Data - Professional', C:KundliPro },
+  { id:'settings',  n:'Settings',      i:'cog',      c:'Everyday', t:'off', d:'PWA App-like + Themes + Live Check - Standard Settings', C:Settings },
 
   // ---------- the resolver ----------
   { id:'manga',     n:'Manga',         i:'book',     c:'Everyday', t:'live', d:'Read chapters + pages',      C:R.Manga },

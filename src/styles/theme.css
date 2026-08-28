@@ -663,3 +663,215 @@ button:not(.btn):not(.cat.on){color:var(--fg)}
 .tv-tile small{font-size:9px}
 /* When a channel is on, the list needs room to clear the fixed player. */
 .tv-screen ~ *{}
+
+/* ============================================================
+   THEME SYSTEM - Standard + Custom Themes Support
+   Themes applied via JS: document.documentElement.style.setProperty
+   This section ensures light themes and custom themes work correctly
+   ============================================================ */
+
+/* Theme transition for smooth switching */
+:root {
+  --theme-transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+html {
+  transition: var(--theme-transition);
+}
+
+/* Topbar and nav should adapt to theme bg */
+.topbar {
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+}
+
+.nav {
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+}
+
+/* Light theme specific adjustments - when data-theme is light */
+[data-theme="light"] .topbar,
+[data-theme="light"] .nav {
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+
+[data-theme="light"] .tile {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+[data-theme="light"] .card {
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+/* Theme-aware scrollbar */
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--line2) 80%, transparent);
+}
+
+/* Ensure gradtext works in light theme too */
+[data-theme="light"] .gradtext {
+  filter: brightness(0.9);
+}
+
+/* Custom theme indicator */
+[data-theme="custom"] {
+  /* Custom themes can be any colors, so no specific overrides */
+}
+
+/* PWA install prompt styling */
+.pwa-install-prompt {
+  position: fixed;
+  bottom: calc(70px + var(--safe-b));
+  left: 16px;
+  right: 16px;
+  max-width: 648px;
+  margin: 0 auto;
+  background: var(--s1);
+  border: 1px solid var(--green);
+  border-radius: 16px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 75;
+  box-shadow: 0 8px 32px rgba(0,255,156,0.15);
+  animation: slideUp 0.3s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Settings page specific */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.theme-card {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.theme-card:hover {
+  border-color: var(--line2);
+  transform: translateY(-1px);
+}
+
+.theme-card.active {
+  border: 2px solid var(--green);
+  box-shadow: 0 0 12px rgba(0,255,156,0.15);
+}
+
+.theme-colors {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.theme-color-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+/* Live check log styling */
+.live-log {
+  background: #000;
+  color: #0f0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  max-height: 250px;
+  overflow: auto;
+  border: 1px solid var(--line2);
+}
+
+.live-log .log-pass { color: #0f0; }
+.live-log .log-fail { color: #f00; }
+.live-log .log-warn { color: #ff0; }
+.live-log .log-info { color: #0ff; }
+
+/* Color picker styling for custom theme maker */
+input[type="color"] {
+  width: 40px;
+  height: 36px;
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--s1);
+  cursor: pointer;
+}
+
+/* Theme preview */
+.theme-preview {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  margin-top: 12px;
+}
+
+/* Ensure settings checkboxes work in all themes */
+.chk {
+  background: var(--s2);
+  border: 1px solid var(--line);
+}
+
+/* Progress bar for live check */
+.progress-bar {
+  height: 6px;
+  background: var(--line2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--grad);
+  transition: width 0.3s ease;
+}
+
+/* PWA status indicators */
+.pwa-status {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.pwa-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--s2);
+  border: 1px solid var(--line);
+  color: var(--fg2);
+}
+
+.pwa-badge.ok {
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(0,255,156,0.1);
+}
+
+.pwa-badge.warn {
+  border-color: var(--warn);
+  color: var(--warn);
+  background: rgba(255,209,102,0.1);
+}
+
+.pwa-badge.bad {
+  border-color: var(--bad);
+  color: var(--bad);
+  background: rgba(255,92,122,0.1);
+}
