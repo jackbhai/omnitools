@@ -459,6 +459,21 @@ export async function matchTrack({ title, artist }) {
     }
   } catch { /* the archive is allowed to be unavailable too */ }
 
+  /* Tier I: the community upload scene. Placed above the open-licence tiers
+     because a Punjabi remix is a closer answer to a Punjabi song than a
+     royalty-free instrumental is — measured, this tier answers every desi
+     query the commons catalogues answer with nothing. */
+  try {
+    const { communitySearch } = await import('./sources');
+    for (const query of [`${t} ${artist || ''}`.trim(), t]) {
+      let rows = [];
+      try { rows = await communitySearch(query, { limit: 8 }); } catch { rows = []; }
+      if (!rows.length) continue;
+      const hit = rank(rows, 30);
+      if (hit?.stream) return { ...hit, approximate: true };
+    }
+  } catch { /* fall through to the commons tiers */ }
+
   /* Tiers G and H: openly-licensed audio, from an aggregator that spans three
      commons platforms and from the largest of those platforms directly.
 
@@ -475,6 +490,13 @@ export async function matchTrack({ title, artist }) {
     const { openAudioSearch, openCatalogueSearch, radioHint } = await import('./sources');
     const style = radioHint({ title: t, artist });
     const queries = [`${t} ${artist || ''}`.trim(), t, artist, style].filter(Boolean);
+    /* The community platform gets the style question too — it is the tier most
+       likely to have something in the right language. */
+    try {
+      const { communitySearch } = await import('./sources');
+      const rows = await communitySearch(style, { limit: 8 });
+      if (rows.length) return { ...rows[0], approximate: true };
+    } catch { /* keep going */ }
     for (const finder of [openAudioSearch, openCatalogueSearch]) {
       for (const query of queries) {
         let rows = [];

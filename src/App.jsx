@@ -23,6 +23,7 @@ import { News } from './tools/news';
 import { Screen } from './tools/screen';
 import { Names } from './tools/names';
 import { Launches, Recipes, WorldData } from './tools/extra';
+import { LiveTV } from './tools/tv';
 import { providerStats } from './core/engine';
 import { Icon } from './ui/icons';
 
@@ -110,6 +111,7 @@ const TOOLS = [
   { id:'dl',        n:'Downloader',    i:'download', c:'Media', t:'live', d:'Video / audio / thumbnail', C:Downloader },
   { id:'news',      n:'News',          i:'news',     c:'Media', t:'live', d:'52 countries · every topic', C:News },
   { id:'movies',    n:'Movies & TV',   i:'film',     c:'Media', t:'live', d:'Cast, seasons, episodes',    C:Screen },
+  { id:'tv',        n:'Live TV',       i:'satellite',c:'Media', t:'live', d:'700+ Indian channels, free',  C:LiveTV },
   { id:'jokes',     n:'Jokes',         i:'smile',    c:'Media', t:'live', d:'Random joke',               C:L.Jokes },
   { id:'quotes',    n:'Quotes',        i:'quote',    c:'Media', t:'live', d:'Inspiration',               C:L.Quotes },
   { id:'recipes',   n:'Recipes',       i:'flask',    c:'Everyday', t:'live', d:'790 recipes, 37 cuisines', C:Recipes },
