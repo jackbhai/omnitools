@@ -291,6 +291,30 @@ const ALLOWED = [
   'jsph.pl',
   'api.github.com',
   'github.com',
+
+  // third batch — holy books, devotional, deep recipes
+  'vedicscriptures.github.io',
+  'bhagavad-gita-api.vercel.app',
+  'bhagavadgitaapi.in',
+  'bhagavadgita.io',
+  'bhagavadgita.theaum.org',
+  'theaum.org',
+  'api.alquran.cloud',
+  'alquran.cloud',
+  'alquran-api.pages.dev',
+  'ummahapi.com',
+  'cdn.jsdelivr.net',
+  'bible-api.com',
+  'bolls.life',
+  'api.gurbaninow.com',
+  'gurbaninow.com',
+  'api.banidb.com',
+  'banidb.com',
+  'www.themealdb.com',
+  'api.sampleapis.com',
+  'sampleapis.com',
+  'dummyjson.com',
+  'vercel.app',
 ];
 
 const CORS = {

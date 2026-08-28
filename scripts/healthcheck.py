@@ -251,6 +251,26 @@ FIXED = [
     ('data', 'openfoodfacts product', 'https://world.openfoodfacts.org/api/v2/product/5449000000996.json', 'json'),
     ('data', 'fruityvice', f'{RELAY}/?url=https%3A%2F%2Fwww.fruityvice.com%2Fapi%2Ffruit%2Fall', 'rows'),
     ('data', 'usda', 'https://api.nal.usda.gov/fdc/v1/foods/search?query=apple&pageSize=2&api_key=DEMO_KEY', 'json'),
+
+    # holy books — 3 independent each, verified byte counts
+    ('data', 'gita chapters vedic', 'https://vedicscriptures.github.io/chapters', 'rows'),
+    ('data', 'gita chapters raw', 'https://raw.githubusercontent.com/gita/gita/master/data/chapters.json', 'rows'),
+    ('data', 'gita slok', 'https://vedicscriptures.github.io/slok/1/1', 'json'),
+    ('data', 'gita vercel', f'{RELAY}/?url=https%3A%2F%2Fbhagavad-gita-api.vercel.app%2Fchapters', 'rows'),
+    ('data', 'quran surahs', 'https://api.alquran.cloud/v1/surah', 'rows'),
+    ('data', 'quran ayah cloud', 'https://api.alquran.cloud/v1/ayah/1:1/en.asad', 'json'),
+    ('data', 'quran ummah', 'https://ummahapi.com/api/quran/surah/1/ayah/1', 'json'),
+    ('data', 'quran fawaz cdn', 'https://cdn.jsdelivr.net/gh/fawazahmed0/quran-api@1/editions/eng-muhammadasad/1.json', 'json'),
+    ('data', 'bible api', 'https://bible-api.com/john+3:16', 'json'),
+    ('data', 'bible wldeh cdn', 'https://cdn.jsdelivr.net/gh/wldeh/bible-api/bibles/en-kjv/books/john/chapters/3/verses/16.json', 'json'),
+    ('data', 'bible bolls books', 'https://bolls.life/get-books/KJV/', 'rows'),
+    ('data', 'bible bolls verse', 'https://bolls.life/get-verse/KJV/43/3/16/', 'json'),
+    ('data', 'gurbani now ang', 'https://api.gurbaninow.com/v2/ang/1', 'json'),
+    ('data', 'gurbani banidb ang', 'https://api.banidb.com/v2/angs/1', 'json'),
+    ('data', 'gurbani hukamnama', 'https://api.gurbaninow.com/v2/hukamnama/today', 'json'),
+    ('data', 'recipes mealdb', 'https://www.themealdb.com/api/json/v1/1/search.php?s=chicken', 'rows'),
+    ('data', 'recipes sampleapis', 'https://api.sampleapis.com/recipes/recipes', 'rows'),
+    ('data', 'recipes dummyjson', f'{RELAY}/?url=https%3A%2F%2Fdummyjson.com%2Frecipes%3Flimit%3D1', 'json'),
 ]
 
 

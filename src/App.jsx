@@ -25,6 +25,7 @@ import { Names } from './tools/names';
 import { Launches, Recipes, WorldData } from './tools/extra';
 import { LiveTV } from './tools/tv';
 import { Dogs, SunTimes, Riddles, Horoscope, Trivia, Cats, Universities, Food } from './tools/newtools';
+import * as D from './tools/devotional';
 import { providerStats } from './core/engine';
 import { Icon } from './ui/icons';
 
@@ -125,6 +126,16 @@ const TOOLS = [
   { id:'food',      n:'Food Scanner',  i:'flask',    c:'Everyday', t:'live', d:'Products & nutrition',       C:Food },
   { id:'uni',       n:'Universities',  i:'cap',      c:'Learn',    t:'live', d:'Find universities worldwide',C:Universities },
 
+  // ---------- Bhakti / Holy books ----------
+  { id:'gita',      n:'Bhagavad Gita', i:'book',     c:'Bhakti', t:'live', d:'18 chapters 700 verses real', C:D.Gita },
+  { id:'quran',     n:'Quran',         i:'book',     c:'Bhakti', t:'live', d:'114 surahs 6236 ayahs real',  C:D.Quran },
+  { id:'bible',     n:'Holy Bible',    i:'books',    c:'Bhakti', t:'live', d:'66 books 31102 verses real',  C:D.Bible },
+  { id:'gurbani',   n:'Gurbani',       i:'books',    c:'Bhakti', t:'live', d:'1430 Angs Hukamnama real',    C:D.Gurbani },
+  { id:'devotional',n:'Aarti & Mantra',i:'star',     c:'Bhakti', t:'off',  d:'Aarti Chalisa Mantra real',   C:D.Devotional },
+  { id:'recipesdeep',n:'Recipes Deep', i:'flask',    c:'Everyday', t:'live', d:'Ingredients video deep',   C:D.RecipesDeep },
+  { id:'rashifal',  n:'Rashifal',      i:'star',     c:'India',  t:'live', d:'Hinglish Mesh-Vrishabh etc',  C:D.Rashifal },
+  { id:'kundli',    n:'Kundli Maker',  i:'star',     c:'India',  t:'off',  d:'Offline real Vedic calc',     C:D.Kundli },
+
   // ---------- the resolver ----------
   { id:'manga',     n:'Manga',         i:'book',     c:'Everyday', t:'live', d:'Read chapters + pages',      C:R.Manga },
   { id:'novels',    n:'Novels',        i:'books',    c:'Everyday', t:'live', d:'Read full chapters',         C:R.Novels },
@@ -174,7 +185,7 @@ const TOOLS = [
   { id:'txtfile',   n:'Text → File',   i:'save',     c:'Convert', t:'off', d:'Save as any type',         C:C.TextToFile },
 ];
 
-const CATS = ['All', 'Travel', 'India', 'Health', 'Everyday', 'Convert', 'Music',
+const CATS = ['All', 'Travel', 'India', 'Bhakti', 'Health', 'Everyday', 'Convert', 'Music',
               'Time', 'Money', 'Learn', 'Media', 'Space', 'Text', 'Dev', 'Generate'];
 
 export default function App() {
