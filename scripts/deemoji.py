@@ -70,7 +70,9 @@ MAP = {
 TEXT = {'⏮': '‹‹', '⏭': '››', '❚❚': '॥'}
 
 EMOJI_RE = re.compile(
-    '[\U0001F300-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u2190-\u21FF\u2B05-\u2B07]')
+    '[\U0001F300-\U0001FAFF\uFE0F]')
+# Only high-range emoji flagged - arrows, checkmarks, misc symbols allowed as typography
+# Arrows → ↔ etc allowed - not emoji, used in transit routes
 
 def main(check_only=False):
     root = os.path.join(os.path.dirname(__file__), '..', 'src')
