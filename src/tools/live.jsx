@@ -46,7 +46,13 @@ export function Weather() {
   useEffect(() => { setLoc(auto); }, [auto.lat, auto.lon]);   // eslint-disable-line
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
-  const w = useData('weather', P.weather, { lat: loc.lat, lon: loc.lon }, { ttl: 3e5, deps: [loc.lat, loc.lon] });
+  /* spread:false — the engine normally rotates between providers to share
+     load, but these three are NOT equivalent: the primary carries UV, gusts
+     and visibility and the fallbacks do not. Rotating meant a second city
+     silently rendered a thinner card, which reads as a bug. Order is fixed;
+     the fallbacks are still used the moment the primary fails. */
+  const w = useData('weather', P.weather, { lat: loc.lat, lon: loc.lon },
+    { ttl: 3e5, deps: [loc.lat, loc.lon], spread: false });
   const a = useData('air', P.air, { lat: loc.lat, lon: loc.lon }, { ttl: 3e5, deps: [loc.lat, loc.lon] });
   const g = useData('geocode', P.geocode, { q: dq }, { auto: false });
   useEffect(() => { if (dq.trim().length >= 2) g.run({ q: dq }); }, [dq]);  // eslint-disable-line

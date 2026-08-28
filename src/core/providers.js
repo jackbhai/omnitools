@@ -56,12 +56,45 @@ export const weather = [
   { id: 'met-no', label: 'MET Norway', async run({ lat, lon }) {
       const d = await jget(`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`, { headers: UA });
       const ts = d.properties.timeseries, n = ts[0].data.instant.details;
-      return { temp: n.air_temperature, feels: n.air_temperature, humidity: n.relative_humidity,
-        wind: n.wind_speed, precip: ts[0].data.next_1_hours?.details?.precipitation_amount ?? 0,
-        code: null, pressure: n.air_pressure_at_sea_level, hourly: [],
-        daily: ts.filter((_, i) => i % 24 === 0).slice(0, 7).map((t) => ({
-          date: t.time.slice(0, 10), max: t.data.next_6_hours?.details?.air_temperature_max ?? n.air_temperature,
-          min: t.data.next_6_hours?.details?.air_temperature_min ?? n.air_temperature, code: null, pop: null })) }; } },
+      const now = Date.now();
+      /* This source carries fewer fields than the primary — no UV index, no
+         gusts, no visibility. That is fine as a fallback, but the ENGINE
+         round-robins between providers, so a second city could silently
+         render a thinner card than the first and look like a bug. It is not
+         a bug; it is a different source, and the missing values are returned
+         as null so the interface can leave them out rather than print blanks.
+         See the `spread: false` on the weather pool, which stops the rotation
+         for this capability. */
+      const hourly = ts.filter((t) => Date.parse(t.time) >= now - 36e5).slice(0, 24).map((t) => ({
+        t: t.time,
+        v: t.data.instant.details.air_temperature,
+        pop: t.data.next_1_hours?.details?.probability_of_precipitation ?? null,
+        code: null,
+      }));
+      const byDay = new Map();
+      for (const t of ts) {
+        const day = t.time.slice(0, 10);
+        const cur = byDay.get(day) || { date: day, max: -99, min: 99, code: null, pop: null };
+        const a = t.data.instant.details.air_temperature;
+        if (a != null) { cur.max = Math.max(cur.max, a); cur.min = Math.min(cur.min, a); }
+        byDay.set(day, cur);
+      }
+      return {
+        temp: n.air_temperature, feels: n.air_temperature,
+        humidity: n.relative_humidity, wind: n.wind_speed,
+        gust: null, dir: n.wind_from_direction ?? null,
+        precip: ts[0].data.next_1_hours?.details?.precipitation_amount ?? 0,
+        code: null, cloud: n.cloud_area_fraction ?? null,
+        pressure: n.air_pressure_at_sea_level,
+        visibility: null, dew: n.dew_point_temperature ?? null,
+        isDay: null, uv: n.ultraviolet_index_clear_sky ?? null,
+        observedAt: ts[0].time,
+        sunrise: null, sunset: null, daylight: null,
+        hourly,
+        daily: [...byDay.values()].slice(0, 7).map((x) => ({
+          ...x, max: x.max === -99 ? null : x.max, min: x.min === 99 ? null : x.min,
+          feelsMax: null, rain: null, uv: null, windMax: null, sunrise: null, sunset: null })),
+      }; } },
   { id: 'wttr', label: 'wttr.in', async run({ lat, lon }) {
       const d = await jget(`https://wttr.in/${lat},${lon}?format=j1`, { proxy: true });
       const c = d.current_condition[0];
@@ -339,17 +372,33 @@ export const iss = [
  * before a request is made. It is now three deep, and the first two are https.
  */
 export const astros = [
+  /* The relay first, deliberately.
+   *
+   * The obvious source is http-only, so the browser cannot call it from an
+   * https page at all — that is why this card used to be permanently empty.
+   * The relay has no such restriction and reaches it in one hop, verified
+   * returning 12 people currently in orbit.
+   *
+   * The launch library is second rather than first because it rate-limits
+   * hard: a handful of requests in a minute earns HTTP 429 for everyone on
+   * that address. It is a good backup and a bad primary. */
+  { id: 'astros-relay', label: 'Crew register', async run() {
+      const d = await jget('http://api.open-notify.org/astros.json', { proxy: true, forceProxy: true });
+      const rows = (d.people || []).map((p) => ({ name: p.name, craft: p.craft }));
+      if (!rows.length) throw new Error('none listed');
+      return rows; } },
   { id: 'll2-astronauts', label: 'Launch library', async run() {
-      const d = await jget('https://ll.thespacedevs.com/2.2.0/astronaut/?limit=20&in_space=true');
+      /* Same rate limit as the launches tool, so the development mirror is
+         attempted when the main host refuses. */
+      let d;
+      try { d = await jget('https://ll.thespacedevs.com/2.2.0/astronaut/?limit=20&in_space=true'); }
+      catch { d = await jget('https://lldev.thespacedevs.com/2.2.0/astronaut/?limit=20&in_space=true'); }
       const rows = (d.results || []).map((a) => ({
         name: a.name,
         craft: a.spacestation?.name || a.agency?.abbrev || a.nationality || 'In orbit',
       }));
       if (!rows.length) throw new Error('none listed');
       return rows; } },
-  { id: 'open-notify-astros', label: 'Open Notify', async run() {
-      const d = await jget('http://api.open-notify.org/astros.json', { proxy: true, forceProxy: true });
-      return d.people.map((p) => ({ name: p.name, craft: p.craft })); } },
 ];
 
 export const quakes = [

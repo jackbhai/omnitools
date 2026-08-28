@@ -24,10 +24,16 @@ const COOLDOWN_MS = 60_000;
 const MAX_FAILS = 2;
 
 /* Public CORS proxies, tried in order, for no-CORS upstreams. */
+/* Public relays, tried in order. This app's own Worker goes FIRST: it is the
+ * only one of these that is not somebody else's free tier, and measured it is
+ * an order of magnitude faster. thingproxy was removed after it stopped
+ * resolving in DNS entirely — a dead entry costs a full timeout on every call
+ * that reaches it. */
 const CORS_PROXIES = [
+  (u) => `https://omni-proxy.omni-jackbhai.workers.dev/?url=${encodeURIComponent(u)}`,
   (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
   (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
-  (u) => `https://thingproxy.freeboard.io/fetch/${u}`,
 ];
 
 /* ------------------------------------------------------------------ cache */

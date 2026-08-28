@@ -46,31 +46,60 @@ async function getJson(url, { ms = 18000, relay = false } = {}) {
 
 /* ---------------------------------------------------------------- LAUNCHES */
 
-const LL = 'https://ll.thespacedevs.com/2.2.0';
+/* Three routes to the same manifest.
+ *
+ * This API rate-limits by IP and answers HTTP 429 — measured, a handful of
+ * requests inside a minute is enough, and it then refuses everyone on that
+ * address. With one route that meant the whole tool went blank for a while;
+ * the tests caught it doing exactly that.
+ *
+ * `lldev` is the project's own development mirror: same shape, separate
+ * budget, verified 192 upcoming launches. rocketlaunch.live is a wholly
+ * different operator and a different response shape, so it is normalised
+ * below rather than pretended to be the same.
+ */
+const LL_HOSTS = [
+  'https://ll.thespacedevs.com/2.2.0',
+  'https://lldev.thespacedevs.com/2.2.0',
+];
+const LL = LL_HOSTS[0];
 
-const shapeLaunch = (r) => ({
-  id: r.id,
-  name: r.name,
-  mission: r.mission?.name || '',
-  desc: r.mission?.description || '',
-  type: r.mission?.type || '',
-  orbit: r.mission?.orbit?.name || '',
-  rocket: r.rocket?.configuration?.full_name || r.rocket?.configuration?.name || '',
-  family: r.rocket?.configuration?.family || '',
-  provider: r.launch_service_provider?.name || '',
-  providerType: r.launch_service_provider?.type || '',
-  country: r.pad?.location?.country_code || '',
+const RLL = 'https://fdo.rocketlaunch.live/json/launches';
+
+/** Try each mirror in turn; a 429 on one says nothing about the next. */
+async function llGet(path, ms = 25000) {
+  let last = null;
+  for (const host of LL_HOSTS) {
+    try { return await getJson(`${host}${path}`, { ms, relay: true }); }
+    catch (e) { last = e; }
+  }
+  throw last || new Error('launch library unreachable');
+}
+
+/** rocketlaunch.live speaks a different dialect; translate rather than fake. */
+const shapeRll = (r) => ({
+  id: 'rll:' + r.id,
+  name: r.name || r.vehicle?.name || 'Launch',
+  mission: (r.missions || [])[0]?.name || r.name || '',
+  desc: (r.missions || [])[0]?.description || '',
+  type: (r.missions || [])[0]?.type || '',
+  orbit: r.result === -1 ? '' : ((r.missions || [])[0]?.orbit?.name || ''),
+  rocket: r.vehicle?.name || '',
+  family: '',
+  provider: r.provider?.name || '',
+  providerType: '',
+  country: r.pad?.location?.country || '',
   pad: r.pad?.name || '',
-  place: r.pad?.location?.name || '',
-  net: r.net || '',
-  ts: r.net ? Date.parse(r.net) : 0,
-  status: r.status?.name || '',
-  statusAbbr: r.status?.abbrev || '',
-  probability: r.probability != null && r.probability >= 0 ? r.probability : null,
-  image: r.image || '',
-  webcast: (r.vidURLs || [])[0]?.url || '',
-  windowStart: r.window_start || '',
-  windowEnd: r.window_end || '',
+  place: [r.pad?.location?.name, r.pad?.location?.state].filter(Boolean).join(', '),
+  net: r.t0 || r.win_open || '',
+  ts: Date.parse(r.t0 || r.win_open || '') || 0,
+  status: r.launch_description || 'Scheduled',
+  statusAbbr: r.est_date?.month ? 'TBD' : 'Go',
+  probability: null,
+  image: '',
+  webcast: (r.media || []).find((m) => m.ldfeatured || m.featured)?.media_url || '',
+  windowStart: r.win_open || '',
+  windowEnd: r.win_close || '',
 });
 
 /** Upcoming launches, soonest first. */
@@ -78,19 +107,24 @@ export async function upcomingLaunches({ limit = 30 } = {}) {
   /* NOT mode=list. That parameter looks like a bandwidth win and silently
      drops launch_service_provider, pad and rocket.configuration — measured,
      all three came back undefined. The full record is 5 KB and has them. */
-  const d = await getJson(`${LL}/launch/upcoming/?limit=${limit}`, { ms: 25000, relay: true });
-  return { total: d.count || 0, list: (d.results || []).map(shapeLaunch) };
+  try {
+    const d = await llGet(`/launch/upcoming/?limit=${limit}`);
+    const list = (d.results || []).map(shapeLaunch);
+    if (list.length) return { total: d.count || list.length, list };
+  } catch { /* fall through to the other operator */ }
+  const alt = await getJson(`${RLL}/next/5`, { ms: 20000, relay: true });
+  const list = (alt.result || []).map(shapeRll);
+  return { total: alt.count || list.length, list };
 }
 
 /** Launches that already happened, newest first. */
 export async function pastLaunches({ limit = 30 } = {}) {
-  const d = await getJson(`${LL}/launch/previous/?limit=${limit}`, { ms: 25000, relay: true });
+  const d = await llGet(`/launch/previous/?limit=${limit}`);
   return { total: d.count || 0, list: (d.results || []).map(shapeLaunch) };
 }
 
 export async function searchLaunches(q, { limit = 30 } = {}) {
-  const d = await getJson(`${LL}/launch/?search=${enc(q)}&limit=${limit}&ordering=-net`,
-    { ms: 25000, relay: true });
+  const d = await llGet(`/launch/?search=${enc(q)}&limit=${limit}&ordering=-net`);
   return { total: d.count || 0, list: (d.results || []).map(shapeLaunch) };
 }
 

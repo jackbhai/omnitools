@@ -229,6 +229,11 @@ const ALLOWED = [
   'open-notify.org',
   'cdn.jsdelivr.net',
   'jsdelivr.net',
+
+  // launch mirrors
+  'lldev.thespacedevs.com',
+  'fdo.rocketlaunch.live',
+  'rocketlaunch.live',
 ];
 
 const CORS = {

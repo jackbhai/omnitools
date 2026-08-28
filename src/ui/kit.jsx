@@ -3,10 +3,10 @@ import { resolve } from '../core/engine';
 import { Icon } from './icons';
 
 /* ---------------------------------------------------------- data hook */
-export function useData(cap, pool, params, { auto = true, ttl, deps = [] } = {}) {
+export function useData(cap, pool, params, { auto = true, ttl, deps = [], spread = true } = {}) {
   const [s, set] = useState({ loading: auto, data: null, error: null, meta: null });
-  const argRef = useRef({ cap, pool, params, ttl });
-  argRef.current = { cap, pool, params, ttl };
+  const argRef = useRef({ cap, pool, params, ttl, spread });
+  argRef.current = { cap, pool, params, ttl, spread };
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
@@ -17,13 +17,13 @@ export function useData(cap, pool, params, { auto = true, ttl, deps = [] } = {})
   const wantRef = useRef('');
 
   const run = useCallback(async (override) => {
-    const { cap: c, pool: pl, params: pr, ttl: t } = argRef.current;
+    const { cap: c, pool: pl, params: pr, ttl: t, spread: sp } = argRef.current;
     const req = override ?? pr;
     const sig = c + ':' + JSON.stringify(req);
     wantRef.current = sig;
     set((p) => ({ ...p, loading: true, error: null }));
     try {
-      const r = await resolve(c, pl, req, { ttl: t });
+      const r = await resolve(c, pl, req, { ttl: t, spread: sp });
       if (wantRef.current === sig) set({ loading: false, data: r.data, error: null, meta: r });
     } catch (e) {
       if (wantRef.current === sig) set({ loading: false, data: null, error: e, meta: null });
