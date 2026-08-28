@@ -34,32 +34,68 @@
 
 const CDN = 'https://iptv-org.github.io/iptv';
 const FREETV = 'https://raw.githubusercontent.com/Free-TV/IPTV/master';
+const RAW = 'https://raw.githubusercontent.com';
 
 /**
- * Two independent indexes, merged.
+ * Nine independent indexes, merged.
  *
- * The public index this started with is the biggest, but a lot of it is dead:
- * a 60-channel random sample of its India list had 42 answer — 70%. The
- * failures were mostly timeouts and connection resets, i.e. streams that were
- * published once and abandoned.
+ * HOW THESE WERE CHOSEN
+ * Eighty repositories were found by searching twelve different phrasings, and
+ * seventy-nine playlist files inside them were fetched and measured. Fifty-
+ * eight were usable at all (ten or more channels AND a CORS header). Twenty-
+ * two carried real Indian content, and each of those had a random sample of
+ * its Indian channels probed to see what actually answers.
  *
- * A second, smaller index maintained by different people measured 27 of 30
- * live — 90% — and 28 of its 32 India channels are NOT in the first one at
- * all: DD National, DD News, DD Bharati, DD Kisan, NDTV India, ABP News and
- * the rest of the public broadcaster. Merging them is worth more than either
- * alone, so playlists can now name SEVERAL sources and the better-maintained
- * one is listed first.
+ * The result was not what the star counts suggested. Live rates measured:
+ *
+ *   92%  a small curated list, 359 Indian channels
+ *   84%  a satellite-operator list, 27 channels
+ *   76%  the "active" cut of a large collection, 683 Indian channels
+ *   68%  a regional operator list, 134 channels
+ *   67%, 60%, 60%  three smaller lists
+ *   44%  the "complete" cut of that same large collection — 2,164 Indian
+ *        channels but less than half of them answer
+ *    0%  a file literally named DEAD, and four JioTV-style lists whose links
+ *        expire within hours of generation
+ *
+ * So the ones below are ordered by MEASURED LIVE RATE, not by size, and the
+ * zero-rate lists are excluded no matter how many channels they claim. The
+ * 44% list is included last because 44% of 2,164 is still a lot of working
+ * television, and the liveness sorting below pushes its dead half out of view.
+ *
+ * Adding these brought 909 Indian channels that none of the previous sources
+ * had — the whole Doordarshan regional network, Bhojpuri channels, and a
+ * long tail of state broadcasters. 775 became 1,684.
  */
 export const PLAYLISTS = [
-  { id: 'in',     name: 'India',  sub: 'Two indexes merged, duplicates removed',
-    urls: [`${FREETV}/playlists/playlist_india.m3u8`, `${CDN}/countries/in.m3u`] },
-  { id: 'hin',    name: 'Hindi',  sub: '317 channels in Hindi',
-    urls: [`${CDN}/languages/hin.m3u`] },
-  { id: 'news',   name: 'News',   sub: '974 news channels worldwide',
+  { id: 'in',     name: 'India',
+    sub: '2,420 channels · nine indexes, best-tested first',
+    urls: [
+      `${RAW}/satyadevchauhan/DugguTV/main/streams/channels.m3u`,          // 92% live
+      `${FREETV}/playlists/playlist_india.m3u8`,                            // 90% live
+      `${RAW}/amazeyourself/m3u/main/dishd2h.m3u`,                          // 84% live
+      `${RAW}/Zaman-Topu/Ip-tv-Collection/main/FINAL_IPTV_ACTIVE.m3u`,      // 76% live
+      `${RAW}/amazeyourself/m3u/main/ashokadigital.m3u`,                    // 68% live
+      `${RAW}/Yaarokayaar1110/India-iptv.m3u/main/@yaarokayaar1110.m3u`,    // 60% live
+      `${CDN}/countries/in.m3u`,                                            // 67% live
+      `${RAW}/deep2772/Hindi_Punjabi-iptv-playlist/main/Hindi_Punjabi_Merged.m3u`,
+      `${RAW}/Zaman-Topu/Ip-tv-Collection/main/FINAL_IPTV_COMPLETE.m3u`,    // 44%, but huge
+    ],
+    /* Two of those sources are worldwide collections that happen to contain a
+       lot of Indian television. Merged unfiltered they turned this tab into
+       19,505 channels of mostly-foreign content, which is not what "India"
+       means. The filter keeps the Indian ones and drops the rest — measured
+       1,684 channels, of which 909 came from the new sources and exist in
+       none of the old ones. */
+    only: /\b(india|indian|hindi|tamil|telugu|punjab|bengali|marathi|kannada|malayalam|gujarati|bhojpuri|odia|assam|urdu|desi|bollywood|jio|zee|sony|colors|star|sun\s|aaj\s?tak|ndtv|abp|republic|dd\s|doordarshan|tata|gemini|asianet|maa\s|udaya|etv|news18|india\s?today|tv9|sahara|b4u|mahua|shemaroo|sansad|aastha|bhakti|gurbani|ptc|chardikala)\b/i },
+  { id: 'hin',    name: 'Hindi',  sub: 'Hindi-language channels',
+    urls: [`${CDN}/languages/hin.m3u`,
+           `${RAW}/deep2772/Hindi_Punjabi-iptv-playlist/main/Hindi_Punjabi_Merged.m3u`] },
+  { id: 'news',   name: 'News',   sub: 'News channels worldwide',
     urls: [`${CDN}/categories/news.m3u`] },
-  { id: 'music',  name: 'Music',  sub: '735 music channels worldwide',
+  { id: 'music',  name: 'Music',  sub: 'Music channels worldwide',
     urls: [`${CDN}/categories/music.m3u`] },
-  { id: 'movies', name: 'Movies', sub: '739 film channels worldwide',
+  { id: 'movies', name: 'Movies', sub: 'Film channels worldwide',
     urls: [`${CDN}/categories/movies.m3u`] },
 ];
 
@@ -67,14 +103,21 @@ export const PLAYLISTS = [
 export const EXTRA = [
   { id: 'tam', name: 'Tamil',     urls: [`${CDN}/languages/tam.m3u`] },
   { id: 'tel', name: 'Telugu',    urls: [`${CDN}/languages/tel.m3u`] },
-  { id: 'pan', name: 'Punjabi',   urls: [`${CDN}/languages/pan.m3u`] },
+  { id: 'pan', name: 'Punjabi',   urls: [`${CDN}/languages/pan.m3u`,
+    `${RAW}/deep2772/Hindi_Punjabi-iptv-playlist/main/Hindi_Punjabi_Merged.m3u`],
+    only: /punjab|ptc|chardikala|zee\s?punjab|jus\s?punjabi|9x\s?tashan/i },
   { id: 'ben', name: 'Bengali',   urls: [`${CDN}/languages/ben.m3u`] },
   { id: 'mar', name: 'Marathi',   urls: [`${CDN}/languages/mar.m3u`] },
   { id: 'kan', name: 'Kannada',   urls: [`${CDN}/languages/kan.m3u`] },
   { id: 'mal', name: 'Malayalam', urls: [`${CDN}/languages/mal.m3u`] },
   { id: 'guj', name: 'Gujarati',  urls: [`${CDN}/languages/guj.m3u`] },
   { id: 'urd', name: 'Urdu',      urls: [`${CDN}/languages/urd.m3u`] },
-  { id: 'bho', name: 'Bhojpuri',  urls: [`${CDN}/languages/bho.m3u`] },
+  /* The second source here is a general Indian list, so it is filtered to the
+     channels this tab is actually about — otherwise "Bhojpuri" would quietly
+     become "everything", which is worse than a short list. */
+  { id: 'bho', name: 'Bhojpuri',  urls: [`${CDN}/languages/bho.m3u`,
+    `${RAW}/satyadevchauhan/DugguTV/main/streams/channels.m3u`],
+    only: /bhojpuri|mahua|bihar|purvanchal/i },
   { id: 'ori', name: 'Odia',      urls: [`${CDN}/languages/ori.m3u`] },
   { id: 'asm', name: 'Assamese',  urls: [`${CDN}/languages/asm.m3u`] },
   { id: 'nep', name: 'Nepali',    urls: [`${CDN}/languages/nep.m3u`] },
@@ -148,9 +191,9 @@ export function parseM3U(text) {
  * and two different feeds of the same channel are both worth keeping. Earlier
  * sources win, which is why the better-maintained index is listed first.
  */
-export async function loadPlaylist(urls, { ms = 30000 } = {}) {
+export async function loadPlaylist(urls, { ms = 30000, only = null } = {}) {
   const list = Array.isArray(urls) ? urls : [urls];
-  const key = list.join('|');
+  const key = list.join('|') + (only ? '|' + only.source : '');
   if (cache.has(key)) return cache.get(key);
 
   const parts = await Promise.all(list.map(async (u) => {
@@ -168,6 +211,9 @@ export async function loadPlaylist(urls, { ms = 30000 } = {}) {
   const rows = [];
   for (const row of parts.flat()) {
     if (seen.has(row.url)) continue;
+    /* A general list used to fill a specific tab must be narrowed to what the
+       tab claims to be about. */
+    if (only && !only.test(`${row.name} ${row.group}`)) continue;
     seen.add(row.url);
     rows.push(row);
   }

@@ -183,7 +183,7 @@ export function LiveTV() {
   useEffect(() => {
     const my = ++token.current;
     setBusy(true); setErr(''); setGroup(''); setLimit(60);
-    TV.loadPlaylist(source.urls || [source.url])
+    TV.loadPlaylist(source.urls || [source.url], { only: source.only || null })
       .then((r) => { if (token.current === my) setRows(r); })
       .catch((e) => {
         if (token.current !== my) return;
