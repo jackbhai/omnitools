@@ -234,6 +234,23 @@ FIXED = [
     ('data', 'riddles nkilm', 'https://riddles-api-nkilm.vercel.app/random', 'json'),
     ('data', 'horoscope free', f'{RELAY}/?url=https%3A%2F%2Ffreehoroscopeapi.com%2Fapi%2Fv1%2Fget-horoscope%2Fdaily%3Fsign%3Daries', 'json'),
     ('data', 'horoscope ohmanda', f'{RELAY}/?url=https%3A%2F%2Fohmanda.com%2Fapi%2Fhoroscope%2Faries%2F', 'json'),
+
+    # second batch — trivia, cats, universities, food (all verified real data)
+    ('data', 'trivia opentdb', 'https://opentdb.com/api.php?amount=1', 'json'),
+    ('data', 'trivia api', 'https://the-trivia-api.com/api/questions?limit=1', 'rows'),
+    ('data', 'trivia cyberwisp', f'{RELAY}/?url=https%3A%2F%2Ftrivia.cyberwisp.com%2Fgetrandomchristmasquestion', 'json'),
+    ('data', 'useless fact', 'https://uselessfacts.jsph.pl/api/v2/facts/random', 'json'),
+    ('data', 'cat fact', 'https://catfact.ninja/fact', 'json'),
+    ('data', 'cat cataas', 'https://cataas.com/cat?json=true', 'json'),
+    ('data', 'cat meow', 'https://meowfacts.herokuapp.com/', 'json'),
+    ('data', 'cat api', 'https://api.thecatapi.com/v1/images/search?limit=1', 'rows'),
+    ('data', 'universities hipolabs', f'{RELAY}/?url=http%3A%2F%2Funiversities.hipolabs.com%2Fsearch%3Fcountry%3DIndia', 'rows'),
+    ('data', 'universities github', 'https://raw.githubusercontent.com/Hipo/university-domains-list/master/world_universities_and_domains.json', 'rows'),
+    ('data', 'collegescorecard', 'https://api.data.gov/ed/collegescorecard/v1/schools?api_key=DEMO_KEY&per_page=2', 'rows'),
+    ('data', 'openfoodfacts search', 'https://world.openfoodfacts.org/cgi/search.pl?search_terms=chocolate&json=true&page_size=2', 'rows'),
+    ('data', 'openfoodfacts product', 'https://world.openfoodfacts.org/api/v2/product/5449000000996.json', 'json'),
+    ('data', 'fruityvice', f'{RELAY}/?url=https%3A%2F%2Fwww.fruityvice.com%2Fapi%2Ffruit%2Fall', 'rows'),
+    ('data', 'usda', 'https://api.nal.usda.gov/fdc/v1/foods/search?query=apple&pageSize=2&api_key=DEMO_KEY', 'json'),
 ]
 
 

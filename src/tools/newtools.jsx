@@ -285,3 +285,226 @@ export function Horoscope() {
     <div className="src"><span className="dot" /><span>Daily horoscope from 3 independent astrology sources</span></div>
   </>);
 }
+
+/* ---------------------------------------------------------------- TRIVIA */
+
+export function Trivia() {
+  const t = useData('trivia', P.trivia, {}, { ttl: 0 });
+  const [show, setShow] = useState(false);
+  const [picked, setPicked] = useState(null);
+  useEffect(() => { setShow(false); setPicked(null); }, [t.data]);
+
+  const isFact = t.data?.fact;
+  const opts = t.data?.options || [];
+  const correct = t.data?.correct || t.data?.answer;
+
+  return (<>
+    <Card>
+      {t.loading && <Spin t="Fetching question" />}
+      {t.error && <Err error={t.error} retry={() => t.run()} />}
+      {t.data && (
+        <>
+          <div className="chead">
+            <Icon n="quote" size={16} /> {t.data.category || 'Trivia'} {t.data.difficulty && <span className="pill" style={{ marginLeft: 8 }}>{t.data.difficulty}</span>}
+          </div>
+          <div style={{ fontSize: 17, lineHeight: 1.5, fontWeight: 600, marginTop: 8 }}>{t.data.question}</div>
+
+          {!isFact && opts.length > 1 && (
+            <div className="list" style={{ marginTop: 14 }}>
+              {opts.map((o, i) => {
+                const isCorrect = show && o === correct;
+                const isWrong = show && picked === o && o !== correct;
+                return (
+                  <button key={i} className="row" style={{
+                    textAlign: 'left',
+                    background: isCorrect ? 'color-mix(in srgb, var(--green) 18%, var(--card))' : isWrong ? 'color-mix(in srgb, var(--red, #ff5555) 12%, var(--card))' : '',
+                    borderColor: isCorrect ? 'var(--green)' : isWrong ? 'var(--red, #ff5555)' : ''
+                  }}
+                    onClick={() => { if (!show) { setPicked(o); setShow(true); } }}>
+                    <div className="main"><b style={{ fontSize: 14 }}>{o}</b></div>
+                    {show && o === correct && <Icon n="check" size={16} style={{ color: 'var(--green)' }} />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {isFact && (
+            <div style={{ marginTop: 14, padding: 12, background: 'var(--s2)', borderRadius: 12 }}>
+              <div className="dim sm" style={{ marginBottom: 4 }}>Did you know?</div>
+              <div style={{ fontSize: 14, lineHeight: 1.5 }}>This is a fascinating fact — no options, just pure knowledge!</div>
+            </div>
+          )}
+
+          {!show && !isFact && opts.length <= 1 && (
+            <div className="btnrow" style={{ marginTop: 14 }}>
+              <button className="btn" style={{ flex: 1 }} onClick={() => setShow(true)}>Reveal answer</button>
+            </div>
+          )}
+
+          {show && (
+            <>
+              <div style={{ marginTop: 14, padding: 12, background: 'var(--s2)', borderRadius: 12 }}>
+                <div className="dim sm" style={{ marginBottom: 4 }}>Answer</div>
+                <div style={{ fontSize: 15, lineHeight: 1.5, fontWeight: 600 }}>{t.data.answer}</div>
+              </div>
+              <div className="btnrow" style={{ marginTop: 12 }}>
+                <button className="btn" style={{ flex: 1 }} onClick={() => t.run()}>Next question</button>
+              </div>
+            </>
+          )}
+
+          {!show && !isFact && opts.length > 1 && picked == null && (
+            <div className="dim sm" style={{ marginTop: 10 }}>Pick an option to see if you are right</div>
+          )}
+
+          {!show && (isFact || opts.length <= 1) && (
+            <div className="btnrow" style={{ marginTop: 12 }}>
+              <button className="btn" style={{ flex: 1 }} onClick={() => t.run()}>Next</button>
+            </div>
+          )}
+
+          <Src meta={t.meta} />
+        </>
+      )}
+      {!t.data && !t.loading && (
+        <button className="btn" style={{ width: '100%' }} onClick={() => t.run()}>Get a question</button>
+      )}
+    </Card>
+    <div className="src"><span className="dot" /><span>Trivia from 4 independent sources · Open Trivia DB, The Trivia API, CyberWisp & Useless Facts</span></div>
+  </>);
+}
+
+/* ---------------------------------------------------------------- CATS */
+
+export function Cats() {
+  const c = useData('cats', P.cats, {}, { ttl: 0 });
+
+  return (<>
+    <Card style={{ padding: 0, overflow: 'hidden' }}>
+      {c.loading && <div style={{ padding: 20 }}><Spin t="Fetching cat" /></div>}
+      {c.error && <div style={{ padding: 16 }}><Err error={c.error} retry={() => c.run()} /></div>}
+      {c.data && (
+        <>
+          {c.data.image && (
+            <img src={c.data.image} alt="cat" style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', display: 'block', background: 'var(--s2)' }}
+              referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+          )}
+          <div style={{ padding: 12 }}>
+            {c.data.fact && <div style={{ fontSize: 15, lineHeight: 1.55, fontWeight: c.data.image ? 400 : 600 }}>{c.data.fact}</div>}
+            {!c.data.fact && c.data.image && <div className="dim sm">Random cat image · {c.data.tags?.length ? c.data.tags.slice(0, 3).join(', ') : 'cute cat'}</div>}
+            {c.data.tags?.length > 0 && <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>{c.data.tags.slice(0, 6).map((t, i) => <span key={i} className="pill">{t}</span>)}</div>}
+            <div className="btnrow" style={{ marginTop: 12 }}>
+              <button className="btn" style={{ flex: 1 }} onClick={() => c.run()}>Another cat</button>
+              {c.data.image && <a className="btn ghost" href={c.data.image} target="_blank" rel="noreferrer">Open image</a>}
+            </div>
+            <Src meta={c.meta} />
+          </div>
+        </>
+      )}
+      {!c.data && !c.loading && (
+        <div style={{ padding: 16 }}><button className="btn" style={{ width: '100%' }} onClick={() => c.run()}>Show a cat</button></div>
+      )}
+    </Card>
+    <div className="src"><span className="dot" /><span>Cats from 4 independent sources · facts & images</span></div>
+  </>);
+}
+
+/* ---------------------------------------------------------------- UNIVERSITIES */
+
+export function Universities() {
+  const [country, setCountry] = useState('India');
+  const [q, setQ] = useState('India');
+  const u = useData('universities', P.universities, { country: q }, { ttl: 3600000, deps: [q] });
+
+  const doSearch = () => {
+    const v = country.trim();
+    if (!v) return;
+    setQ(v);
+  };
+
+  return (<>
+    <form className="search" onSubmit={(e) => { e.preventDefault(); doSearch(); }}>
+      <Icon n="search" size={18} />
+      <input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="Country… e.g. India, USA, Germany" autoComplete="off" />
+      <button type="submit" className="btn sm" style={{ marginLeft: 6 }}>Search</button>
+    </form>
+
+    <Card style={{ marginTop: 12 }}>
+      <div className="chead"><Icon n="cap" size={16} /> Universities in {q}</div>
+      {u.loading && <Spin t={`Searching ${q}`} />}
+      {u.error && <Err error={u.error} retry={() => u.run()} />}
+      {u.data && (
+        <>
+          <div className="dim sm" style={{ margin: '8px 0' }}>{u.data.length} found</div>
+          <div className="list">
+            {u.data.slice(0, 30).map((uni, i) => (
+              <div className="row" key={i} style={{ alignItems: 'flex-start' }}>
+                <div className="main">
+                  <b style={{ fontSize: 13.5 }}>{uni.name}</b>
+                  <span className="dim sm">{[uni.state, uni.country].filter(Boolean).join(' · ')} {uni.alpha_two_code ? `(${uni.alpha_two_code})` : ''}</span>
+                  {uni.web_pages?.[0] && <a href={uni.web_pages[0]} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: 'var(--cyan)', marginTop: 2, display: 'inline-block' }}>{uni.web_pages[0].replace(/^https?:\/\//, '').slice(0, 40)}</a>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <Src meta={u.meta} />
+        </>
+      )}
+    </Card>
+    <div className="src"><span className="dot" /><span>University data from 3 independent sources · Hipolabs, GitHub mirror & College Scorecard</span></div>
+  </>);
+}
+
+/* ---------------------------------------------------------------- FOOD */
+
+export function Food() {
+  const [term, setTerm] = useState('chocolate');
+  const [q, setQ] = useState('chocolate');
+  const f = useData('food', P.food, { q }, { ttl: 3600000, deps: [q] });
+
+  const doSearch = () => {
+    const v = term.trim();
+    if (!v) return;
+    setQ(v);
+  };
+
+  return (<>
+    <form className="search" onSubmit={(e) => { e.preventDefault(); doSearch(); }}>
+      <Icon n="search" size={18} />
+      <input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Search food… e.g. apple, chocolate, banana" autoComplete="off" />
+      <button type="submit" className="btn sm" style={{ marginLeft: 6 }}>Search</button>
+    </form>
+
+    <div style={{ marginTop: 10 }}>
+      {f.loading && <Spin t={`Searching ${q}`} />}
+      {f.error && <Err error={f.error} retry={() => f.run()} />}
+      {f.data && (
+        <>
+          <div className="dim sm" style={{ marginBottom: 8 }}>{f.data.length} products found for "{q}"</div>
+          <div className="list">
+            {f.data.map((item, i) => (
+              <div className="row" key={i} style={{ alignItems: 'flex-start' }}>
+                {item.image && <img src={item.image} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: 'cover', background: 'var(--s2)', flexShrink: 0 }} referrerPolicy="no-referrer" />}
+                <div className="main">
+                  <b style={{ fontSize: 13.5 }}>{item.name}</b>
+                  <span className="dim sm">{[item.brand, item.source].filter(Boolean).join(' · ')} {item.code ? `· ${item.code.slice(0, 12)}` : ''}</span>
+                  {item.ingredients && <span className="dim sm" style={{ fontSize: 11, lineHeight: 1.3 }}>{String(item.ingredients).slice(0, 120)}</span>}
+                  {item.nutriments && Object.keys(item.nutriments).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                      {Object.entries(item.nutriments).slice(0, 4).map(([k, v], j) => (
+                        <span key={j} className="pill" style={{ fontSize: 10 }}>{k}: {typeof v === 'number' ? v.toFixed(1) : String(v).slice(0, 12)}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <Src meta={f.meta} />
+        </>
+      )}
+    </div>
+    <div className="src"><span className="dot" /><span>Food data from 3 independent sources · Open Food Facts, Fruityvice & USDA</span></div>
+  </>);
+}

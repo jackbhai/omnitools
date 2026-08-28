@@ -733,3 +733,194 @@ export const horoscope = [
       return { sign: inner.sign || sign, date: inner.date || '', text: inner.horoscope };
     } },
 ];
+
+/* ------------------------------------------------------------- TRIVIA
+ * Three independent trivia Q&A sources, all verified real questions.
+ * opentdb (CORS*) + the-trivia-api (CORS*) + cyberwisp (relay, christmas trivia but real Q/A)
+ */
+const htmlDec = (s) => String(s || '').replace(/&quot;/g,'"').replace(/&#039;/g,"'").replace(/&amp;/g,'&')
+  .replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&eacute;/g,'é').replace(/&ouml;/g,'ö')
+  .replace(/&uuml;/g,'ü').replace(/&rsquo;/g,"'").replace(/&ldquo;/g,'"').replace(/&rdquo;/g,'"');
+
+const shuffle = (a) => { const b=[...a]; for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];} return b; };
+
+export const trivia = [
+  { id: 'opentdb', label: 'Open Trivia DB', async run() {
+      const d = await jget('https://opentdb.com/api.php?amount=1&type=multiple');
+      if (d.response_code !== 0 || !d.results?.length) throw new Error('no trivia');
+      const r = d.results[0];
+      const q = htmlDec(r.question);
+      const correct = htmlDec(r.correct_answer);
+      const incorrect = (r.incorrect_answers || []).map(htmlDec);
+      return { question: q, answer: correct, options: shuffle([correct, ...incorrect]),
+               correct, category: htmlDec(r.category), difficulty: r.difficulty, type: r.type };
+    } },
+  { id: 'the-trivia-api', label: 'The Trivia API', async run() {
+      const d = await jget('https://the-trivia-api.com/api/questions?limit=1');
+      if (!Array.isArray(d) || !d.length) throw new Error('no trivia');
+      const r = d[0];
+      const correct = r.correctAnswer;
+      const incorrect = r.incorrectAnswers || [];
+      return { question: r.question, answer: correct, options: shuffle([correct, ...incorrect]),
+               correct, category: r.category, difficulty: r.difficulty, type: r.type || 'Multiple Choice' };
+    } },
+  { id: 'cyberwisp-xmas', label: 'CyberWisp Trivia', async run() {
+      const d = await jget('https://trivia.cyberwisp.com/getrandomchristmasquestion', { proxy: true });
+      if (!d.question || !d.answer) throw new Error('no trivia');
+      return { question: d.question, answer: d.answer, options: [d.answer],
+               correct: d.answer, category: 'General', difficulty: 'medium', type: 'QA' };
+    } },
+  { id: 'useless-fact', label: 'Useless Facts', async run() {
+      const d = await jget('https://uselessfacts.jsph.pl/api/v2/facts/random');
+      if (!d.text) throw new Error('no fact');
+      return { question: d.text, answer: 'Did you know?', options: ['Interesting!'],
+               correct: 'Did you know?', category: 'Facts', difficulty: 'easy', type: 'Fact', fact: true };
+    } },
+];
+
+/* ------------------------------------------------------------- CATS
+ * Four independent cat sources, all CORS* verified: facts + images
+ */
+export const cats = [
+  { id: 'catfact', label: 'Cat Fact Ninja', async run() {
+      const d = await jget('https://catfact.ninja/fact');
+      if (!d.fact) throw new Error('no fact');
+      return { fact: d.fact, image: null, tags: [], raw: d };
+    } },
+  { id: 'cataas', label: 'Cataas Cats', async run() {
+      const d = await jget('https://cataas.com/cat?json=true');
+      if (!d.id) throw new Error('no cat');
+      return { fact: null, image: `https://cataas.com/cat/${d.id}`, tags: d.tags || [], id: d.id, raw: d };
+    } },
+  { id: 'meowfacts', label: 'Meow Facts', async run() {
+      const d = await jget('https://meowfacts.herokuapp.com/');
+      const fact = d.data?.[0] || (Array.isArray(d.data) ? d.data[0] : null) || d.data;
+      if (!fact || typeof fact !== 'string') throw new Error('no fact');
+      return { fact, image: null, tags: [], raw: d };
+    } },
+  { id: 'thecatapi', label: 'TheCatAPI Images', async run() {
+      const d = await jget('https://api.thecatapi.com/v1/images/search?limit=1');
+      if (!Array.isArray(d) || !d[0]?.url) throw new Error('no cat image');
+      return { fact: null, image: d[0].url, tags: [], id: d[0].id, raw: d[0] };
+    } },
+];
+
+/* ------------------------------------------------------------- UNIVERSITIES
+ * Three independent university sources:
+ * - hipolabs http-only (needs forceProxy via relay)
+ * - GitHub raw mirror of same dataset (different CDN, CORS*)
+ * - US Dept of Education CollegeScorecard (CORS* DEMO_KEY, different dataset)
+ */
+export const universities = [
+  { id: 'hipolabs', label: 'Hipolabs University API', async run({ country }) {
+      const c = country || 'India';
+      const d = await jget(`http://universities.hipolabs.com/search?country=${encodeURIComponent(c)}`, { proxy: true, forceProxy: true });
+      if (!Array.isArray(d) || !d.length) throw new Error('no universities');
+      return d.slice(0, 50).map((u) => ({
+        name: u.name, country: u.country, alpha_two_code: u.alpha_two_code,
+        domains: u.domains || [], web_pages: u.web_pages || [], state: u['state-province'] || '',
+      }));
+    } },
+  { id: 'github-uni', label: 'University GitHub Mirror', async run({ country }) {
+      const d = await jget('https://raw.githubusercontent.com/Hipo/university-domains-list/master/world_universities_and_domains.json');
+      if (!Array.isArray(d) || !d.length) throw new Error('no data');
+      const c = (country || 'India').toLowerCase();
+      let filtered = d.filter((u) => (u.country || '').toLowerCase().includes(c));
+      if (!filtered.length) filtered = d.filter((u) => (u.alpha_two_code || '').toLowerCase() === 'in');
+      if (!filtered.length) filtered = d.slice(0, 50);
+      return filtered.slice(0, 50).map((u) => ({
+        name: u.name, country: u.country, alpha_two_code: u.alpha_two_code,
+        domains: u.domains || [], web_pages: u.web_pages || [], state: u['state-province'] || '',
+      }));
+    } },
+  { id: 'collegescorecard', label: 'College Scorecard', async run({ country }) {
+      // CollegeScorecard is US-only; for non-US queries we still return US results as fallback, but search by name if country is India etc? We'll search with country filter via name.
+      const q = country && country.toLowerCase() !== 'united states' && country.toLowerCase() !== 'usa' ? country : '';
+      const url = q
+        ? `https://api.data.gov/ed/collegescorecard/v1/schools?api_key=DEMO_KEY&school.name=${encodeURIComponent(q)}&per_page=30`
+        : `https://api.data.gov/ed/collegescorecard/v1/schools?api_key=DEMO_KEY&per_page=30`;
+      const d = await jget(url);
+      const rows = d.results || [];
+      if (!rows.length) throw new Error('no colleges');
+      return rows.slice(0, 30).map((r) => {
+        const s = r.latest?.school || {};
+        const loc = `${s.city || ''}${s.state ? ', ' + s.state : ''}`;
+        return {
+          name: s.name || r.school?.name || 'College',
+          country: 'United States',
+          alpha_two_code: 'US',
+          domains: s.school_url ? [s.school_url] : [],
+          web_pages: s.school_url ? [`https://${s.school_url}`] : [],
+          state: loc,
+        };
+      });
+    } },
+];
+
+/* ------------------------------------------------------------- FOOD
+ * Three independent food/nutrition sources:
+ * - Open Food Facts (CORS* crowdsourced products)
+ * - Fruityvice (relay, fruit nutrition)
+ * - USDA FoodData Central (CORS* DEMO_KEY, branded foods)
+ */
+export const food = [
+  { id: 'openfoodfacts', label: 'Open Food Facts', async run({ q }) {
+      const query = q || 'chocolate';
+      const d = await jget(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=true&page_size=12`);
+      const prods = d.products || [];
+      if (!prods.length) throw new Error('no products');
+      return prods.slice(0, 12).map((p) => ({
+        name: p.product_name || p.product_name_en || 'Product',
+        brand: p.brands || '',
+        code: p.code || '',
+        image: p.image_front_small_url || p.image_small_url || '',
+        nutriments: p.nutriments || {},
+        ingredients: p.ingredients_text || p.ingredients_text_en || '',
+        ecoscore: p.ecoscore_grade || '',
+        nova: p.nova_group ?? '',
+        source: 'Open Food Facts',
+      }));
+    } },
+  { id: 'fruityvice', label: 'Fruityvice', async run({ q }) {
+      const query = (q || '').toLowerCase().trim();
+      if (query) {
+        try {
+          const d = await jget(`https://www.fruityvice.com/api/fruit/${encodeURIComponent(query)}`, { proxy: true });
+          if (d.name) {
+            return [{ name: d.name, brand: d.family || '', code: '', image: '',
+              nutriments: d.nutritions || {}, ingredients: `Family: ${d.family}, Genus: ${d.genus}, Order: ${d.order}`,
+              source: 'Fruityvice' }];
+          }
+        } catch {}
+      }
+      const all = await jget('https://www.fruityvice.com/api/fruit/all', { proxy: true });
+      if (!Array.isArray(all) || !all.length) throw new Error('no fruits');
+      let filtered = all;
+      if (query) filtered = all.filter((f) => f.name.toLowerCase().includes(query));
+      if (!filtered.length) filtered = all;
+      return filtered.slice(0, 12).map((f) => ({
+        name: f.name, brand: f.family || '', code: '', image: '',
+        nutriments: f.nutritions || {}, ingredients: `Family: ${f.family}, Genus: ${f.genus}`,
+        source: 'Fruityvice',
+      }));
+    } },
+  { id: 'usda', label: 'USDA FoodData', async run({ q }) {
+      const query = q || 'apple';
+      const d = await jget(`https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=12&api_key=DEMO_KEY`);
+      const foods = d.foods || [];
+      if (!foods.length) throw new Error('no foods');
+      return foods.slice(0, 12).map((f) => ({
+        name: f.description || 'Food',
+        brand: f.brandOwner || f.dataType || '',
+        code: String(f.fdcId || ''),
+        image: '',
+        nutriments: (f.foodNutrients || []).slice(0, 6).reduce((acc, n) => {
+          const k = n.nutrientName || n.nutrientId;
+          acc[k] = n.value;
+          return acc;
+        }, {}),
+        ingredients: f.ingredients || '',
+        source: 'USDA',
+      }));
+    } },
+];
