@@ -352,29 +352,44 @@ const JAMENDO_ID = '2c9a11b9';
 export async function openCatalogueSearch(q, { limit = 8 } = {}) {
   const query = String(q || '').trim();
   if (!query) return [];
+  const shape = (d) => (d.results || []).map((t) => ({
+    id: String(t.id),
+    title: clean(t.name || ''),
+    artist: clean(t.artist_name || ''),
+    art: t.album_image || t.image || '',
+    dur: t.duration || 0,
+    stream: t.audio || '',
+    streams: [],
+    licence: t.license_ccurl ? 'creative commons' : '',
+    src: 'open-catalogue',
+    exact: false,
+    approximate: true,
+  })).filter((r) => r.stream && r.title);
+
+  /* This API is rate-limited, and its rate limit does NOT look like one: a
+     throttled request returns HTTP 200 with `status: success` and an empty
+     results array. Measured — the same query that returns three rows on its
+     own returns zero when several are issued together.
+     So an empty answer is retried once after a pause rather than believed,
+     and `featured=1`, which it always answers, is the last resort. */
   const modes = [`search=${enc(query)}`, `fuzzytags=${enc(query)}`];
-  for (const mode of modes) {
-    if (!sourceReady('jamendo')) return [];
-    try {
-      const d = await getJson(
-        `${JAMENDO}?client_id=${JAMENDO_ID}&format=json&limit=${limit}&${mode}`, 14000);
-      const rows = (d.results || []).map((t) => ({
-        id: String(t.id),
-        title: clean(t.name || ''),
-        artist: clean(t.artist_name || ''),
-        art: t.album_image || t.image || '',
-        dur: t.duration || 0,
-        stream: t.audio || '',
-        streams: [],
-        licence: t.license_ccurl ? 'creative commons' : '',
-        src: 'open-catalogue',
-        exact: false,
-        approximate: true,
-      })).filter((r) => r.stream && r.title);
-      if (rows.length) return rows;
-    } catch { restSource('jamendo'); return []; }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 700));
+    for (const mode of modes) {
+      if (!sourceReady('jamendo')) return [];
+      try {
+        const d = await getJson(
+          `${JAMENDO}?client_id=${JAMENDO_ID}&format=json&limit=${limit}&${mode}`, 14000);
+        const rows = shape(d);
+        if (rows.length) return rows;
+      } catch { restSource('jamendo'); return []; }
+    }
   }
-  return [];
+  try {
+    const d = await getJson(
+      `${JAMENDO}?client_id=${JAMENDO_ID}&format=json&limit=${limit}&featured=1`, 12000);
+    return shape(d);
+  } catch { restSource('jamendo'); return []; }
 }
 
 

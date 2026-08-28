@@ -449,21 +449,56 @@ export async function facets() {
  * offline), then the live registers layered on top for anything the build
  * could not settle — notably the bearer list and the usage statistics.
  */
-export async function deepLookup(raw) {
+export async function deepLookup(raw, onPartial) {
   const name = raw.trim();
   if (!name) throw new Error('Type a name first');
-  const [entry, live, cen] = await Promise.all([
-    directoryEntry(name).catch(() => null),
-    lookup(name).catch(() => null),
-    census(name).catch(() => null),
-  ]);
-  const base = live || { query: titleCase(name), facts: [], best: null, wiki: null,
-                         stats: { countries: [] }, sources: [] };
-  const sources = [...(base.sources || [])];
-  if (entry) sources.unshift('directory');
-  if (cen) sources.push('population census');
-  return { entry, census: cen, ...base, sources };
+
+  /* Progressive, not all-at-once.
+   *
+   * This used to be a single Promise.all, which meant the whole page waited
+   * for the SLOWEST source. The census answers in 0.1 s and the name register
+   * can take 25 s or time out entirely, so a name that was fully known sat on
+   * "Reading every register…" for half a minute and the tests timed out
+   * waiting for it.
+   *
+   * Now each layer reports as it lands. The shipped directory is instant
+   * (it is a local file), the census is next, and the slow registers fill in
+   * behind them. `onPartial` is optional so callers that just want the final
+   * object still work unchanged.
+   */
+  const state = {
+    query: titleCase(name), entry: null, census: null,
+    facts: [], best: null, wiki: null,
+    stats: { quota: false, countries: [] }, sources: [], pending: 3,
+  };
+  const emit = () => { try { onPartial?.({ ...state }); } catch { /* view gone */ } };
+
+  const jobs = [
+    directoryEntry(name).then((e) => {
+      if (e) { state.entry = e; state.sources.unshift('directory'); }
+    }).catch(() => {}),
+
+    census(name).then((c) => {
+      if (c) { state.census = c; state.sources.push('population census'); }
+    }).catch(() => {}),
+
+    lookup(name).then((live) => {
+      if (!live) return;
+      state.facts = live.facts || [];
+      state.best = live.best || null;
+      state.wiki = live.wiki || null;
+      state.stats = live.stats || state.stats;
+      for (const src of live.sources || []) {
+        if (!state.sources.includes(src)) state.sources.push(src);
+      }
+    }).catch(() => {}),
+  ].map((p) => p.then(() => { state.pending--; emit(); }));
+
+  await Promise.all(jobs);
+  state.pending = 0;
+  return { ...state };
 }
+
 
 /** Flag emoji are not used anywhere in this app; countries render as names. */
 export const COUNTRY_NAMES = {

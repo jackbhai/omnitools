@@ -204,6 +204,31 @@ const ALLOWED = [
   'saavncdn.com',
   'aac.saavncdn.com',
   'c.saavncdn.com',
+
+  // sources added while cross-checking the whole chain
+  'feeds.a.dj.com',
+  'dj.com',
+  'foxnews.com',
+  'api-v2.hearthis.at',
+  'hearthis.at',
+  'hearthis.app',
+  'api.openverse.org',
+  'openverse.org',
+  'api.jamendo.com',
+  'jamendo.com',
+  'prod-1.storage.jamendo.com',
+  'iptv-org.github.io',
+  'somafm.com',
+  'api.somafm.com',
+  'ice2.somafm.com',
+  'ice6.somafm.com',
+  'stream.radioparadise.com',
+  'radioparadise.com',
+  'de2.api.radio-browser.info',
+  'api.open-notify.org',
+  'open-notify.org',
+  'cdn.jsdelivr.net',
+  'jsdelivr.net',
 ];
 
 const CORS = {

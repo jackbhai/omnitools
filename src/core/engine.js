@@ -94,7 +94,8 @@ const timeout = (ms) => {
   return { signal: c.signal, cancel: setTimeout(() => c.abort(), ms), ctrl: c };
 };
 
-export async function jget(url, { ms = 12000, headers, text = false, proxy = false } = {}) {
+export async function jget(url, { ms = 12000, headers, text = false, proxy = false,
+                                  forceProxy = false } = {}) {
   const attempt = async (target) => {
     const t = timeout(ms);
     try {
@@ -103,14 +104,28 @@ export async function jget(url, { ms = 12000, headers, text = false, proxy = fal
       return text ? await r.text() : await r.json();
     } finally { clearTimeout(t.cancel); }
   };
-  try {
-    return await attempt(url);
-  } catch (e) {
-    if (!proxy) throw e;
-    for (const wrap of CORS_PROXIES) {            // rotate public proxies
-      try { return await attempt(wrap(url)); } catch { /* next */ }
+  /* An http-only origin can never be reached from an https page — the browser
+     blocks it before a request is made, and the failure is silent. Those
+     providers set forceProxy so the direct attempt is skipped entirely rather
+     than burning a timeout on something that cannot work. */
+  const mixed = forceProxy || (location.protocol === 'https:' && url.startsWith('http://'));
+  if (!mixed) {
+    try {
+      return await attempt(url);
+    } catch (e) {
+      if (!proxy) throw e;
+      for (const wrap of CORS_PROXIES) {
+        try { return await attempt(wrap(url)); } catch { /* next */ }
+      }
+      throw e;
     }
-    throw e;
+  }
+  {
+    let last = new Error('mixed content: this source is http-only');
+    for (const wrap of CORS_PROXIES) {
+      try { return await attempt(wrap(url)); } catch (e) { last = e; }
+    }
+    throw last;
   }
 }
 

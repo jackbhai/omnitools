@@ -44,7 +44,16 @@ function Record({ name, onBack }) {
   useEffect(() => {
     let alive = true;
     setBusy(true); setErr(''); setD(null); setPeople(null);
-    N.deepLookup(name)
+    /* Render each layer the moment it lands. The census answers in a tenth of
+       a second while the encyclopedia registers can take half a minute, and
+       making the fast answer wait for the slow one was the whole problem. */
+    N.deepLookup(name, (partial) => {
+      if (!alive) return;
+      if (partial.entry || partial.census || partial.facts.length || partial.wiki) {
+        setD(partial);
+        setBusy(false);
+      }
+    })
       .then((r) => { if (alive) setD(r); })
       .catch((e) => { if (alive) setErr(e.message); })
       .finally(() => { if (alive) setBusy(false); });
@@ -227,6 +236,12 @@ function Record({ name, onBack }) {
         </div>)}
       {people?.length === 0 && <Empty t="The register lists no people under this name" />}
     </Card>
+
+    {d.pending > 0 && (
+      <div className="dim sm" style={{ textAlign: 'center', marginTop: 10 }}>
+        <span className="spin-sm" style={{ marginRight: 7, verticalAlign: '-2px' }} />
+        still reading {d.pending} more source{d.pending > 1 ? 's' : ''}…
+      </div>)}
 
     <div className="src"><span className="dot" />
       <span>{[d.entry && 'shipped directory', d.facts?.length && 'name register',

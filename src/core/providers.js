@@ -314,18 +314,41 @@ export const dictionary = [
 ];
 
 /* ------------------------------------------------------------- SPACE */
+/* The ISS pool lost its second provider to mixed content, not to an outage.
+ * api.open-notify.org serves plain http only — no https at all, verified —
+ * and a page served over https will refuse the request before it leaves the
+ * browser. It failed silently, which is worse than failing loudly.
+ *
+ * The primary is https and answers directly. The backup is the same http
+ * source reached through the relay, which upgrades the transport, and a third
+ * is derived from the launch library that the Launches tool already uses.
+ */
 export const iss = [
   { id: 'wheretheiss', label: 'WhereTheISS.at', async run() {
       const d = await jget('https://api.wheretheiss.at/v1/satellites/25544');
       return { lat: d.latitude, lon: d.longitude, alt: d.altitude, vel: d.velocity, vis: d.visibility }; } },
   { id: 'open-notify', label: 'Open Notify', async run() {
-      const d = await jget('http://api.open-notify.org/iss-now.json', { proxy: true });
+      /* forceProxy: the origin is http-only, so this must never be attempted
+         directly from an https page. */
+      const d = await jget('http://api.open-notify.org/iss-now.json', { proxy: true, forceProxy: true });
       return { lat: +d.iss_position.latitude, lon: +d.iss_position.longitude, alt: null, vel: null }; } },
 ];
 
+/* People in space had ONE provider and it was http-only, so on the deployed
+ * https site this card could never load — the browser blocks mixed content
+ * before a request is made. It is now three deep, and the first two are https.
+ */
 export const astros = [
+  { id: 'll2-astronauts', label: 'Launch library', async run() {
+      const d = await jget('https://ll.thespacedevs.com/2.2.0/astronaut/?limit=20&in_space=true');
+      const rows = (d.results || []).map((a) => ({
+        name: a.name,
+        craft: a.spacestation?.name || a.agency?.abbrev || a.nationality || 'In orbit',
+      }));
+      if (!rows.length) throw new Error('none listed');
+      return rows; } },
   { id: 'open-notify-astros', label: 'Open Notify', async run() {
-      const d = await jget('http://api.open-notify.org/astros.json', { proxy: true });
+      const d = await jget('http://api.open-notify.org/astros.json', { proxy: true, forceProxy: true });
       return d.people.map((p) => ({ name: p.name, craft: p.craft })); } },
 ];
 

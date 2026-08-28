@@ -227,8 +227,16 @@ export const PUBLISHERS = [
     url: 'https://feeds.nbcnews.com/nbcnews/public/world' },
   { id: 'abc',        n: 'ABC News',          cc: 'US', topic: 'TOP',
     url: 'https://abcnews.go.com/abcnews/topstories' },
+  /* This one is http-only — the publisher serves no https for its feed,
+     verified. That is harmless HERE and only here: feeds are fetched by the
+     relay server-side, never by the browser, so there is no mixed-content
+     block. Anything the browser fetches directly must be https. */
   { id: 'cnn',        n: 'CNN World',         cc: 'US', topic: 'WORLD',
     url: 'http://rss.cnn.com/rss/edition_world.rss' },
+  { id: 'wsj',        n: 'Wall Street Journal', cc: 'US', topic: 'WORLD',
+    url: 'https://feeds.a.dj.com/rss/RSSWorldNews.xml' },
+  { id: 'fox',        n: 'Fox News World',    cc: 'US', topic: 'WORLD',
+    url: 'https://moxie.foxnews.com/google-publisher/world.xml' },
   { id: 'techcrunch', n: 'TechCrunch',        cc: 'US', topic: 'TECHNOLOGY',
     url: 'https://techcrunch.com/feed/' },
   { id: 'verge',      n: 'The Verge',         cc: 'US', topic: 'TECHNOLOGY',
