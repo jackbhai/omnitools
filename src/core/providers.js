@@ -1124,9 +1124,14 @@ export const gurbaniAng = [
       const d = await jget(`https://api.gurbaninow.com/v2/ang/${a}`);
       if (!d.page?.length) throw new Error('no ang');
       return { ang: d.pageno, source: d.source?.english || 'Guru Granth Sahib', count: d.count, lines: d.page.map((p) => ({
-        id: p.line?.id || '', gurmukhi: p.line?.gurmukhi?.akhar || p.line?.gurmukhi || '',
-        unicode: p.line?.gurmukhi?.unicode || p.unicode || '', transliteration: p.transliteration?.english || '',
-        translation_en: p.translation?.english?.default || p.translation?.english || '', translation_pu: p.translation?.punjabi?.default || '',
+        id: p.line?.id || '', 
+        gurmukhi: p.line?.gurmukhi?.akhar || p.line?.gurmukhi || p.line?.gurmukhi?.unicode || '',
+        unicode: p.line?.gurmukhi?.unicode || p.unicode || p.line?.gurmukhi?.akhar || '',
+        transliteration: p.transliteration?.english || p.transliteration?.english?.default || p.line?.transliteration?.english || '',
+        translation_en: p.translation?.english?.default || p.translation?.english || p.translation?.en?.default || '',
+        translation_pu: p.translation?.punjabi?.default || p.translation?.punjabi || p.translation?.pu?.default || '',
+        translation_es: p.translation?.spanish?.default || p.translation?.spanish || p.translation?.es?.default || '',
+        translation_hi: p.translation?.hindi?.default || p.translation?.hindi || '',
       })) };
     } },
   { id: 'banidb-ang', label: 'BaniDB Ang', async run({ ang }) {
@@ -1134,16 +1139,27 @@ export const gurbaniAng = [
       const d = await jget(`https://api.banidb.com/v2/angs/${a}`);
       if (!d.page?.length) throw new Error('no ang');
       return { ang: d.source?.pageNo || a, source: d.source?.english || 'Guru Granth Sahib', count: d.count, lines: d.page.map((p) => ({
-        id: p.verseId || '', gurmukhi: p.verse?.gurmukhi || '', unicode: p.verse?.unicode || '',
-        transliteration: p.transliteration?.english || '', translation_en: p.translation?.en?.default || p.translation?.en || '',
+        id: p.verseId || '', 
+        gurmukhi: p.verse?.gurmukhi || p.verse?.unicode || '',
+        unicode: p.verse?.unicode || p.verse?.gurmukhi || '',
+        transliteration: p.transliteration?.english || p.transliteration?.en?.default || '',
+        translation_en: p.translation?.en?.default || p.translation?.en || p.translation?.english?.default || '',
+        translation_pu: p.translation?.pu?.default || p.translation?.pu || p.translation?.punjabi?.default || '',
+        translation_es: p.translation?.es?.default || p.translation?.es || p.translation?.spanish?.default || '',
+        translation_hi: p.translation?.hi?.default || p.translation?.hi || '',
       })) };
     } },
   { id: 'banidb-jsdelivr', label: 'BaniDB CDN Mirror', async run({ ang }) {
       const a = ang || 1;
-      // same as banidb but via different CDN path — proves liveness
       const d = await jget(`https://api.banidb.com/v2/angs/${a}`);
-      return { ang: a, source: 'BaniDB CDN', count: d.count || 0, lines: (d.page || []).slice(0, 5).map((p) => ({
-        id: p.verseId || '', unicode: p.verse?.unicode || '', gurmukhi: p.verse?.gurmukhi || '',
+      return { ang: a, source: 'BaniDB CDN', count: d.count || 0, lines: (d.page || []).map((p) => ({
+        id: p.verseId || '', 
+        unicode: p.verse?.unicode || p.verse?.gurmukhi || '',
+        gurmukhi: p.verse?.gurmukhi || p.verse?.unicode || '',
+        transliteration: p.transliteration?.english || '',
+        translation_en: p.translation?.en?.default || p.translation?.en || '',
+        translation_pu: p.translation?.pu?.default || '',
+        translation_es: p.translation?.es?.default || '',
       })) };
     } },
 ];
@@ -1169,8 +1185,14 @@ export const gurbaniShabads = [
       const d = await jget(`https://api.gurbaninow.com/v2/shabad/${id}`);
       if (!d.shabad?.length) throw new Error('no shabad');
       return { id: d.shabadinfo?.shabadid || id, ang: d.shabadinfo?.pageno || 0, raag: d.shabadinfo?.raag?.english || '', author: d.shabadinfo?.writer?.english || '', count: d.count, lines: d.shabad.map((p) => ({
-        id: p.line?.id || '', gurmukhi: p.line?.gurmukhi?.akhar || '', unicode: p.line?.gurmukhi?.unicode || '',
-        transliteration: p.transliteration?.english || '', translation_en: p.translation?.english?.default || '', translation_pu: p.translation?.punjabi?.default || '', translation_es: p.translation?.spanish?.default || '',
+        id: p.line?.id || '', 
+        gurmukhi: p.line?.gurmukhi?.akhar || p.line?.gurmukhi?.unicode || p.line?.gurmukhi || '',
+        unicode: p.line?.gurmukhi?.unicode || p.line?.gurmukhi?.akhar || p.unicode || '',
+        transliteration: p.transliteration?.english || p.transliteration?.english?.default || '',
+        translation_en: p.translation?.english?.default || p.translation?.english || p.translation?.en?.default || '',
+        translation_pu: p.translation?.punjabi?.default || p.translation?.punjabi || p.translation?.pu?.default || '',
+        translation_es: p.translation?.spanish?.default || p.translation?.spanish || p.translation?.es?.default || '',
+        translation_hi: p.translation?.hindi?.default || '',
       })) };
     } },
   { id: 'banidb-shabad', label: 'BaniDB Shabad', async run({ shabadId }) {
@@ -1178,14 +1200,27 @@ export const gurbaniShabads = [
       const d = await jget(`https://api.banidb.com/v2/shabads/${id}`);
       if (!d.verses?.length) throw new Error('no shabad');
       return { id: d.shabadId || id, ang: d.shabadInfo?.pageNo || 0, raag: d.shabadInfo?.raag?.english || '', author: d.shabadInfo?.writer?.english || '', count: d.verses.length, lines: d.verses.map((p) => ({
-        id: p.verseId || '', gurmukhi: p.verse?.gurmukhi || '', unicode: p.verse?.unicode || '',
-        transliteration: p.transliteration?.english || '', translation_en: p.translation?.en?.default || p.translation?.en || '', translation_pu: p.translation?.pu?.default || '', translation_es: p.translation?.es?.default || '',
+        id: p.verseId || '', 
+        gurmukhi: p.verse?.gurmukhi || p.verse?.unicode || '',
+        unicode: p.verse?.unicode || p.verse?.gurmukhi || '',
+        transliteration: p.transliteration?.english || p.transliteration?.en?.default || '',
+        translation_en: p.translation?.en?.default || p.translation?.en || '',
+        translation_pu: p.translation?.pu?.default || p.translation?.pu || '',
+        translation_es: p.translation?.es?.default || p.translation?.es || '',
+        translation_hi: p.translation?.hi?.default || '',
       })) };
     } },
   { id: 'banidb-shabad-mirror', label: 'BaniDB Shabad Mirror', async run({ shabadId }) {
       const id = shabadId || 1;
       const d = await jget(`https://api.banidb.com/v2/shabads/${id}`);
-      return { id, ang: 0, raag: '', author: '', count: d.verses?.length || 0, lines: (d.verses || []).slice(0, 5).map((p) => ({ unicode: p.verse?.unicode || '' })) };
+      return { id, ang: d.shabadInfo?.pageNo || 0, raag: d.shabadInfo?.raag?.english || '', author: d.shabadInfo?.writer?.english || '', count: d.verses?.length || 0, lines: (d.verses || []).map((p) => ({ 
+        unicode: p.verse?.unicode || p.verse?.gurmukhi || '',
+        gurmukhi: p.verse?.gurmukhi || p.verse?.unicode || '',
+        transliteration: p.transliteration?.english || '',
+        translation_en: p.translation?.en?.default || '',
+        translation_pu: p.translation?.pu?.default || '',
+        translation_es: p.translation?.es?.default || '',
+      })) };
     } },
 ];
 
@@ -1214,8 +1249,13 @@ export const gurbaniSearch = [
       const res = d.results || d.shabads || d || [];
       if (!Array.isArray(res) || !res.length) throw new Error('no results');
       return res.slice(0, 20).map((r) => ({
-        id: r.shabadId || r.id || '', gurmukhi: r.verse?.gurmukhi || r.gurmukhi || '', unicode: r.verse?.unicode || r.unicode || '',
-        transliteration: r.transliteration?.english || r.verse?.transliteration || '', translation_en: r.translation?.english?.default || r.translation?.en || '',
+        id: r.shabadId || r.id || '', 
+        gurmukhi: r.verse?.gurmukhi || r.gurmukhi || r.verse?.unicode || '',
+        unicode: r.verse?.unicode || r.unicode || r.verse?.gurmukhi || '',
+        transliteration: r.transliteration?.english || r.verse?.transliteration || r.transliteration?.english?.default || '',
+        translation_en: r.translation?.english?.default || r.translation?.en || r.translation?.en?.default || '',
+        translation_pu: r.translation?.punjabi?.default || r.translation?.pu?.default || '',
+        translation_es: r.translation?.spanish?.default || r.translation?.es?.default || '',
       }));
     } },
   { id: 'banidb-search', label: 'BaniDB Search', async run({ q }) {
@@ -1224,15 +1264,25 @@ export const gurbaniSearch = [
       const res = d.verses || d.results || d.shabads || [];
       if (!Array.isArray(res) || !res.length) throw new Error('no results');
       return res.slice(0, 20).map((r) => ({
-        id: r.shabadId || r.verseId || '', gurmukhi: r.verse?.gurmukhi || r.gurmukhi || '', unicode: r.verse?.unicode || r.unicode || '',
-        transliteration: r.transliteration?.english || '', translation_en: r.translation?.en?.default || r.translation?.en || '',
+        id: r.shabadId || r.verseId || '', 
+        gurmukhi: r.verse?.gurmukhi || r.gurmukhi || r.verse?.unicode || '',
+        unicode: r.verse?.unicode || r.unicode || r.verse?.gurmukhi || '',
+        transliteration: r.transliteration?.english || r.transliteration?.en?.default || '',
+        translation_en: r.translation?.en?.default || r.translation?.en || '',
+        translation_pu: r.translation?.pu?.default || '',
+        translation_es: r.translation?.es?.default || '',
       }));
     } },
   { id: 'banidb-search-mirror', label: 'Search Mirror', async run({ q }) {
       const query = q || 'satnam';
       const d = await jget(`https://api.banidb.com/v2/search/${encodeURIComponent(query)}`);
       const res = d.verses || [];
-      return res.slice(0, 5).map((r) => ({ unicode: r.verse?.unicode || '' }));
+      return res.slice(0, 10).map((r) => ({ 
+        unicode: r.verse?.unicode || r.verse?.gurmukhi || '',
+        gurmukhi: r.verse?.gurmukhi || r.verse?.unicode || '',
+        transliteration: r.transliteration?.english || '',
+        translation_en: r.translation?.en?.default || '',
+      }));
     } },
 ];
 
