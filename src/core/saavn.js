@@ -460,19 +460,30 @@ export async function matchTrack({ title, artist }) {
   } catch { /* the archive is allowed to be unavailable too */ }
 
   /* Tiers G and H: openly-licensed audio, from an aggregator that spans three
-     commons platforms and from the largest of those platforms directly. These
-     will not have the film recording — they return an independent artist's
-     take on the same style — so the bar is lower than for a real catalogue
-     match but the result is always flagged inexact and never claims to be the
-     original. Better than silence, honestly labelled. */
+     commons platforms and from the largest of those platforms directly.
+
+     These can never hold the film recording, so searching them for the exact
+     title mostly returns nothing — measured: "Zaalima" and "Mehmaan" both
+     came back empty from every query built out of the song name. Asking them
+     the same question as a real catalogue was the bug.
+
+     What they DO hold is a great deal of music in the same style. So after
+     the literal attempts, they are asked for the STYLE — the same genre word
+     the radio tier uses — which is a question they can actually answer.
+     Anything found this way is flagged inexact and the player says so. */
   try {
-    const { openAudioSearch, openCatalogueSearch } = await import('./sources');
+    const { openAudioSearch, openCatalogueSearch, radioHint } = await import('./sources');
+    const style = radioHint({ title: t, artist });
+    const queries = [`${t} ${artist || ''}`.trim(), t, artist, style].filter(Boolean);
     for (const finder of [openAudioSearch, openCatalogueSearch]) {
-      for (const query of [`${t} ${artist || ''}`.trim(), t]) {
+      for (const query of queries) {
         let rows = [];
         try { rows = await finder(query, { limit: 8 }); } catch { rows = []; }
         if (!rows.length) continue;
-        const hit = rank(rows, 30) || rows[0];
+        /* A style match is not a title match, so it is only accepted when the
+           literal attempts are already exhausted — which is why the style word
+           is last in the list rather than merged into the scoring. */
+        const hit = rank(rows, 30) || (query === style ? rows[0] : null);
         if (hit?.stream) return { ...hit, approximate: true };
       }
     }
