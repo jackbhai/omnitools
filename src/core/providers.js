@@ -195,6 +195,28 @@ export const sun = [
       const d = await jget(`https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lon}&formatted=0`);
       if (d.status !== 'OK') throw new Error(d.status);
       return d.results; } },
+  { id: 'sunrisesunset-io', label: 'SunriseSunset.io', async run({ lat, lon }) {
+      const d = await jget(`https://api.sunrisesunset.io/json?lat=${lat}&lng=${lon}`);
+      if (d.status !== 'OK') throw new Error(d.status);
+      return {
+        sunrise: d.results.sunrise, sunset: d.results.sunset,
+        solar_noon: d.results.solar_noon, day_length: d.results.day_length,
+        civil_twilight_begin: d.results.dawn, civil_twilight_end: d.results.dusk,
+        nautical_twilight_begin: d.results.nautical_twilight_begin,
+        nautical_twilight_end: d.results.nautical_twilight_end,
+        moonrise: d.results.moonrise, moonset: d.results.moonset,
+        moon_phase: d.results.moon_phase,
+      };
+    } },
+  { id: 'open-meteo-sun', label: 'Open-Meteo Sun', async run({ lat, lon }) {
+      const d = await jget(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=sunrise,sunset,daylight_duration&timezone=auto&forecast_days=1`);
+      if (!d.daily?.sunrise?.[0] || !d.daily?.sunset?.[0]) throw new Error('no sun');
+      return {
+        sunrise: d.daily.sunrise[0], sunset: d.daily.sunset[0],
+        day_length: d.daily.daylight_duration?.[0] ? `${Math.floor(d.daily.daylight_duration[0]/3600)}h ${Math.floor((d.daily.daylight_duration[0]%3600)/60)}m` : '',
+        solar_noon: '', civil_twilight_begin: '', civil_twilight_end: '',
+      };
+    } },
 ];
 
 /* ------------------------------------------------------------- HOLIDAYS */
@@ -634,5 +656,80 @@ export const nameInfo = [
 export const dogs = [
   { id: 'dogceo', label: 'Dog CEO', async run() {
       const d = await jget('https://dog.ceo/api/breeds/image/random');
-      return { url: d.message }; } },
+      return { url: d.message, breed: (d.message.match(/breeds\/([^/]+)\//) || [])[1] || '' }; } },
+  { id: 'randomdog', label: 'Random Dog', async run() {
+      const d = await jget('https://random.dog/woof.json');
+      return { url: d.url }; } },
+  { id: 'thedogapi', label: 'TheDogAPI', async run() {
+      const d = await jget('https://api.thedogapi.com/v1/images/search?limit=1');
+      const r = d[0] || {};
+      return { url: r.url, breed: r.breeds?.[0]?.name || '' }; } },
+  { id: 'dogapi-dog', label: 'DogAPI.dog', async run() {
+      // this one returns breed info + images; pick a random breed's first image
+      const d = await jget('https://dogapi.dog/api/v2/breeds');
+      const all = d.data || [];
+      if (!all.length) throw new Error('no breeds');
+      const pick = all[Math.floor(Math.random() * Math.min(all.length, 50))];
+      const img = pick.attributes?.images || {};
+      const url = Object.values(img)[0] || '';
+      if (!url) throw new Error('no image');
+      return { url, breed: pick.attributes?.name || '', info: pick.attributes?.description || '' };
+    } },
+];
+
+export const dogBreeds = [
+  { id: 'dogapi-breeds', label: 'DogAPI.dog Breeds', async run() {
+      const d = await jget('https://dogapi.dog/api/v2/breeds');
+      return (d.data || []).slice(0, 80).map((b) => ({
+        id: b.id, name: b.attributes?.name || '',
+        desc: b.attributes?.description || '',
+        life: b.attributes?.life || {}, weight: b.attributes?.male_weight || {},
+        hypo: b.attributes?.hypoallergenic, origin: b.attributes?.origin || '',
+      }));
+    } },
+  { id: 'dogceo-list', label: 'Dog CEO Breeds', async run() {
+      const d = await jget('https://dog.ceo/api/breeds/list/all');
+      const out = [];
+      for (const [breed, subs] of Object.entries(d.message || {})) {
+        if (subs.length) subs.forEach((s) => out.push({ id: `${breed}-${s}`, name: `${s} ${breed}`, desc: '', life: {}, weight: {} }));
+        else out.push({ id: breed, name: breed, desc: '', life: {}, weight: {} });
+      }
+      return out.slice(0, 80);
+    } },
+];
+
+export const riddles = [
+  { id: 'riddles-vercel', label: 'Riddles API', async run() {
+      const d = await jget('https://riddles-api.vercel.app/random');
+      return { q: d.riddle, a: d.answer };
+    } },
+  { id: 'riddles-nkilm', label: 'Riddles NK', async run() {
+      const d = await jget('https://riddles-api-nkilm.vercel.app/random');
+      return { q: d.riddle, a: d.answer };
+    } },
+  { id: 'jokeapi-riddle', label: 'JokeAPI Misc', async run() {
+      const d = await jget('https://v2.jokeapi.dev/joke/Miscellaneous?type=twopart&safe-mode');
+      if (d.type !== 'twopart') throw new Error('no riddle');
+      return { q: d.setup, a: d.delivery };
+    } },
+];
+
+export const horoscope = [
+  { id: 'freehoro', label: 'Free Horoscope API', async run({ sign }) {
+      const d = await jget(`https://freehoroscopeapi.com/api/v1/get-horoscope/daily?sign=${sign}`, { proxy: true });
+      const inner = d.data || d;
+      if (!inner.horoscope) throw new Error('no horoscope');
+      return { sign: inner.sign || sign, date: inner.date || '', text: inner.horoscope };
+    } },
+  { id: 'ohmanda', label: 'Ohmanda', async run({ sign }) {
+      const d = await jget(`https://ohmanda.com/api/horoscope/${sign}/`, { proxy: true });
+      if (!d.horoscope) throw new Error('no horoscope');
+      return { sign: d.sign || sign, date: d.date || '', text: d.horoscope };
+    } },
+  { id: 'horoscope-app', label: 'Horoscope App', async run({ sign }) {
+      const d = await jget(`https://horoscope-app-api.vercel.app/api/v1/get-horoscope/daily?sign=${sign}`, { proxy: true });
+      const inner = d.data || d;
+      if (!inner.horoscope) throw new Error('no horoscope');
+      return { sign: inner.sign || sign, date: inner.date || '', text: inner.horoscope };
+    } },
 ];

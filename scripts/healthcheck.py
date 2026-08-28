@@ -221,6 +221,19 @@ FIXED = [
     ('data', 'quakes', 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson', 'json'),
     ('data', 'medicines shard', 'https://jackbhai.github.io/omnitools/med/_meta.json', 'json'),
     ('data', 'names shard', 'https://jackbhai.github.io/omnitools/names/_meta.json', 'json'),
+
+    # new tools — verified real data, 2-3 independent fallbacks
+    ('data', 'dogs ceo', 'https://dog.ceo/api/breeds/image/random', 'json'),
+    ('data', 'dogs random', 'https://random.dog/woof.json', 'json'),
+    ('data', 'dogs thedogapi', 'https://api.thedogapi.com/v1/images/search?limit=1', 'rows'),
+    ('data', 'dogs breed list', 'https://dogapi.dog/api/v2/breeds', 'rows'),
+    ('data', 'sun v1', 'https://api.sunrise-sunset.org/json?lat=28.6&lng=77.2&formatted=0', 'json'),
+    ('data', 'sun v2', 'https://api.sunrise-sunset.org/v2?lat=28.6&lng=77.2', 'json'),
+    ('data', 'sun io', 'https://api.sunrisesunset.io/json?lat=28.6&lng=77.2', 'json'),
+    ('data', 'riddles vercel', 'https://riddles-api.vercel.app/random', 'json'),
+    ('data', 'riddles nkilm', 'https://riddles-api-nkilm.vercel.app/random', 'json'),
+    ('data', 'horoscope free', f'{RELAY}/?url=https%3A%2F%2Ffreehoroscopeapi.com%2Fapi%2Fv1%2Fget-horoscope%2Fdaily%3Fsign%3Daries', 'json'),
+    ('data', 'horoscope ohmanda', f'{RELAY}/?url=https%3A%2F%2Fohmanda.com%2Fapi%2Fhoroscope%2Faries%2F', 'json'),
 ]
 
 

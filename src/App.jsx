@@ -24,6 +24,7 @@ import { Screen } from './tools/screen';
 import { Names } from './tools/names';
 import { Launches, Recipes, WorldData } from './tools/extra';
 import { LiveTV } from './tools/tv';
+import { Dogs, SunTimes, Riddles, Horoscope } from './tools/newtools';
 import { providerStats } from './core/engine';
 import { Icon } from './ui/icons';
 
@@ -88,6 +89,7 @@ const TOOLS = [
   // ---------- Time ----------
   { id:'clock',     n:'World Clock',   i:'clock',    c:'Time', t:'live', d:'12 zones live',              C:L.WorldClock },
   { id:'otd',       n:'On This Day',   i:'calendar', c:'Time', t:'live', d:'History today',              C:L.OnThisDay },
+  { id:'sun',       n:'Sun Times',     i:'sun',      c:'Time', t:'live', d:'Sunrise, sunset & moon',     C:SunTimes },
   { id:'age',       n:'Age Calc',      i:'cake',     c:'Time', t:'off',  d:'Exact age',                  C:O.AgeCalc },
   { id:'ts',        n:'Timestamp',     i:'timer',    c:'Time', t:'off',  d:'Unix ↔ date',                C:O.TimestampTool },
 
@@ -115,6 +117,9 @@ const TOOLS = [
   { id:'jokes',     n:'Jokes',         i:'smile',    c:'Media', t:'live', d:'Random joke',               C:L.Jokes },
   { id:'quotes',    n:'Quotes',        i:'quote',    c:'Media', t:'live', d:'Inspiration',               C:L.Quotes },
   { id:'recipes',   n:'Recipes',       i:'flask',    c:'Everyday', t:'live', d:'790 recipes, 37 cuisines', C:Recipes },
+  { id:'dogs',      n:'Dog Explorer',  i:'smile',    c:'Everyday', t:'live', d:'Breeds, photos & facts',     C:Dogs },
+  { id:'riddles',   n:'Riddles',       i:'quote',    c:'Everyday', t:'live', d:'Brain teasers with answer',  C:Riddles },
+  { id:'horoscope', n:'Horoscope',     i:'star',     c:'Everyday', t:'live', d:'Daily zodiac predictions',   C:Horoscope },
 
   // ---------- the resolver ----------
   { id:'manga',     n:'Manga',         i:'book',     c:'Everyday', t:'live', d:'Read chapters + pages',      C:R.Manga },

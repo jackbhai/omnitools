@@ -241,6 +241,26 @@ const ALLOWED = [
   'lldev.thespacedevs.com',
   'fdo.rocketlaunch.live',
   'rocketlaunch.live',
+
+  // new tools — verified CORS or via relay
+  'freehoroscopeapi.com',
+  'ohmanda.com',
+  'horoscope-app-api.vercel.app',
+  'api.sunrisesunset.io',
+  'sunrisesunset.io',
+  'api.sunrise-sunset.org',
+  'sunrise-sunset.org',
+  'dog.ceo',
+  'random.dog',
+  'api.thedogapi.com',
+  'thedogapi.com',
+  'dogapi.dog',
+  'riddles-api.vercel.app',
+  'riddles-api-nkilm.vercel.app',
+  'api.zippopotam.us',
+  'zippopotam.us',
+  'api.postcodes.io',
+  'postcodes.io',
 ];
 
 const CORS = {
