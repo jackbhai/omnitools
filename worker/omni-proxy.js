@@ -33,9 +33,16 @@
  *   Music -> Library -> Speed.
  */
 
+/* The upstream host, decoded at runtime rather than written out — the same
+   thing src/core/endpoints.js does, so the name is not sitting in plain text
+   in a public repository. This is cosmetic, not a security boundary: the
+   request is still visible in a network trace. The point is that the project
+   does not advertise where it sources from. */
+const VENDOR_HOST = atob('YWhtN3htYWtraS5jb20=');
+
 const ALLOWED = [
   // audio resolution + the utility API family
-  'ahm7xmakki.com',
+  VENDOR_HOST,
   'c.ymcdn.org',
   'ymcdn.org',
 

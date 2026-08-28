@@ -74,7 +74,7 @@ relays fallback me rahenge — kuch tootega nahi.
 Worker me ek **host allow-list** hai — sirf in hosts ko fetch kar sakta hai:
 
 ```
-ahm7xmakki.com · api.piped.private.coffee · c.ymcdn.org · itunes.apple.com
+the upstream host · api.piped.private.coffee · c.ymcdn.org · itunes.apple.com
 + Piped ke backup mirrors
 ```
 

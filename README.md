@@ -1,8 +1,19 @@
-# ⚡ OmniTools
+# OmniTools
 
-**47 tools in one mobile web app. No login, no signup, no API keys.**
+**76 tools in one mobile web app. No login, no signup, no API keys, no ads.**
 
-🔗 **Live:** https://jackbhai.github.io/omnitools/
+Live: https://jackbhai.github.io/omnitools/
+
+---
+
+## Continuing this project in a new chat
+
+**[`CONTINUE-HERE.md`](CONTINUE-HERE.md)** is the entire handoff in one file —
+architecture, every bug already found and fixed, all measurements, credentials,
+current state and next steps. Paste it into a new chat and nothing else is
+needed.
+
+The Playwright suite is at [`tests/qa_new.py`](tests/qa_new.py) — 170 checks.
 
 ---
 
@@ -13,123 +24,132 @@
 | Display font | `Bangers` |
 | Body font | `DM Sans` |
 | Mono font | `DM Mono` |
-| Background | `#000000` (true AMOLED — saves battery) |
-| Primary | `#00FF9C` light green |
+| Background | `#000000` — true AMOLED, saves battery |
+| Primary | `#00FF9C` green |
 | Secondary | `#00E5FF` cyan |
+| Text | `#E8FFF4` |
 
-Glassmorphism cards, neon glow, gradient text, safe-area support for notched phones.
+**Zero emoji.** 108 hand-written SVG icons, so glyphs inherit the theme colour
+and stay crisp at any DPI instead of rendering as a different font on every OS.
+Enforced by `scripts/deemoji.py`.
+
+**No vendor names in the UI.** Sources are described by what they are — "second
+catalogue", "public archive" — never by who runs them. Enforced by
+`scripts/debrand.py --check`.
 
 ---
 
-## "Koi feature band na ho" — how it's engineered
+## How this stays working
 
-### 1. Most tools need no network at all
-**25 of 47 tools** are pure browser computation — calculators, converters,
-generators, encoders, text utilities. They have **100% uptime by construction**.
-They work on a plane, in a tunnel, with Wi-Fi off.
+### Most tools need no network at all
+A large share of the 76 are pure browser computation — calculators, converters,
+generators, encoders, text utilities. **100% uptime by construction.** They
+work on a plane, in a tunnel, with Wi-Fi off.
 
-### 2. Live tools use provider POOLS, not single APIs
+### The rest have independent fallbacks
+Not mirrors of one API. A fallback only counts if it fails for *different
+reasons* than the thing it backs up — different company, different CDN,
+different infrastructure.
+
+Music has **nine tiers**:
 
 ```
-Tool → Pool (2–3 independent APIs) → Router
-                                      ├─ round-robin  (spreads load, avoids quotas)
-                                      ├─ health score (failures demote a provider)
-                                      ├─ circuit breaker (dead API skipped 60s)
-                                      ├─ 2-layer cache (memory + localStorage)
-                                      └─ stale-while-offline (old data > error)
+A  primary resolver          vendor API
+B  16 catalogue mirrors       community forks, CORS-open, raced in waves
+B0 Worker song racer          30 catalogues behind one request
+C  catalogue direct           the catalogue's own API
+J  second catalogue           a DIFFERENT Indian service, own DB and CDN
+D  open music network         4 decentralised nodes
+E  public archive             a public library
+I  community uploads          an upload platform
+G  open-licence pool          three commons platforms
+H  open catalogue             a CC music label
+F  live radio                 explicit offer, never a silent substitution
 ```
 
-Every result shows **which source answered**, and a `failover ×N` tag when a
-backup had to step in.
+Each was verified by **blocking the tier above it in a real browser** and
+confirming the next one answers:
 
-| Capability | Providers |
-|---|---|
-| Weather | Open-Meteo → MET Norway → wttr.in |
-| Geocoding | Open-Meteo Geo → Nominatim → Photon |
-| Air quality | Open-Meteo AQ → WAQI |
-| Currency | Frankfurter (ECB) → open.er-api → jsDelivr currency-api |
-| Crypto | CoinLore → CoinCap |
-| PIN code | India Post → Zippopotam |
-| Dictionary | Free Dictionary → Wiktionary |
-| Wikipedia | Wikimedia REST → MediaWiki Action |
-| News | HN Algolia → Lobste.rs |
-| GitHub | GitHub REST → Codeberg |
-| Books | Open Library → Gutendex |
-| Movies/TV | Film index → TVmaze |
-| Festivals | **Built-in table** → Google ICS → Nager.Date |
-| Music | Audius · Archive.org · Radio Browser (DE→NL) · iTunes |
-| ISS | WhereTheISS.at → Open Notify |
+```
+primary dead        → catalogue-2        + relay dead        → catalogue-2
++ mirrors dead      → open-network       + open network dead → public-archive
++ archive dead      → community-uploads  + community dead    → open-licence
++ aggregator dead   → open-catalogue     last resort         → live radio
+```
 
-### 3. Festivals ships its own data
-Every free holiday API we tested fails for India — Nager.Date returns **HTTP 204**
-for `IN`, HolidayAPI returns **401**, and the public CORS proxies measured
-**408 / 401 / 522**. So the Indian & Pakistani calendars (2025–2027) are **built
-into the bundle**: instant, offline, and impossible to break.
+### A 200 response is not health
+Every health check fetches **real content** — rows, bytes, playable audio — not
+a status code.
 
----
+This is not theoretical. One song mirror shipped here for months answering
+every search perfectly while every download link it returned was a 404: ten
+songs, five quality rungs each, fifty dead addresses. A status-code check
+called it healthy the entire time.
 
-## 🎵 Music
+```bash
+python3 scripts/healthcheck.py all      # music|radio|tv|news|relay|data|all
+```
 
-Only **legal, CORS-clean** sources. The ⬇ button appears *only* where the
-licence actually permits download.
+The script reads its URLs **out of the source files**, so it cannot drift out
+of date when a source is added or removed.
 
-| Source | Content | Download? |
-|---|---|---|
-| **Radio Browser** | 71 Punjabi · 444 Hindi · 63 Urdu · 500 India · 70 Pakistan stations | ▶ play only |
-| **Audius** | ~100 punjabi / ~100 bollywood / 65 pakistani full tracks | ⬇ when artist allows |
-| **Archive.org** | 7,398 punjabi · 2,894 bollywood · 1,696 hindi items | ⬇ **yes** (MP3/FLAC) |
-| **iTunes** | Full Indian catalogue metadata | ▶ 30s preview only |
-
-> JioSaavn/Gaana unofficial APIs were **tested and rejected** — all 8 mirrors are
-> dead (402 / 404 / DNS failure), none send CORS headers, and serving copyrighted
-> audio would risk a DMCA takedown of the whole repo.
-
-### Player features
-10-band equalizer · 7 presets (incl. **Punjabi Beat**, Bass Boost) · bass &
-treble shelves · loudness compressor · live spectrum visualizer · playback speed
-with pitch preservation · **background play** (MediaSession lock-screen controls)
-· **offline caching** to IndexedDB.
+### Nothing is faked
+No placeholder rows, no demo values, no "coming soon". If a source cannot be
+verified, the tool does not ship. When something is genuinely unknown the UI
+leaves it out rather than inventing it — a missing album shows nothing, not
+"Unknown Album".
 
 ---
 
-## Tools
+## What's inside
 
-**India (8)** Weather+AQI · Festivals · PIN Code · IFSC · GST · Income Tax · EMI · SIP
-**Time (4)** World Clock · On This Day · Age · Timestamp
-**Money (3)** Currency · Crypto · Percentage
-**Music (1)** Full player
-**Learn (5)** Wikipedia · Dictionary · Books · Countries · Name Guess
-**Media (4)** Tech News · Movies & TV · Jokes · Quotes
-**Space (2)** ISS Tracker · Earthquakes
-**Text (4)** Case Convert · Word Count · Line Tools · Lorem
-**Dev (8)** Base64 · URL · JSON/YAML · JWT · Regex · Hash · GitHub · My IP
-**Generate (4)** Password · UUID · QR · Dice
-**Convert (4)** Units · Temperature · Colour+WCAG · BMI
+**Music** — 30 verified sources, ad-free, background playback, equaliser,
+sleep timer, real-analyser visualisers.
+
+**Live TV** — 2,420 Indian channels from 9 merged playlists, ranked by
+*measured* live rate rather than by popularity. Dead channels are demoted and
+labelled, never silently hidden.
+
+**FM** — 5 independent sources with liveness memory.
+
+**News** — 52 country editions, 49 publisher feeds, topic search.
+
+**India** — trains, metro, buses, medicines (253,802), names (5,695).
+
+**Everyday** — weather, air quality, currency, recipes, converters,
+generators, encoders, and around forty more.
 
 ---
 
-## Stack
+## Architecture
 
-React 18 · Vite · vanilla CSS · PWA (service worker + manifest) ·
-GitHub Actions → GitHub Pages. **88 KB gzipped.**
+```
+Browser (React + Vite, fully static)
+  ├─ direct fetch to ~130 CORS-open upstreams        preferred path
+  └─ Cloudflare Worker                                only where CORS blocks
+       /            CORS relay, host allow-list
+       /song        races 30 song catalogues
+       /song-health paged (Cloudflare caps 50 subrequests/request)
+       /rss  /search  /topic  /surname  /yt
+```
+
+No backend, no database, no server rendering. Deploy is a push to `main`.
+
+---
+
+## Development
 
 ```bash
 npm install
-npm run dev      # localhost:3000
-npm run build
+npx vite --host 0.0.0.0 --port 5190
 ```
 
----
+Before committing:
 
-## Honest limitations
-
-1. **AhaConvert-style file conversion is not included.** Image/PDF/video
-   conversion needs `ffmpeg.wasm` (~25 MB) and `pdf-lib`. That's a deliberate
-   next phase, not a claim being made today.
-2. **CORS-less APIs** (RestCountries, CoinCap, wttr.in) route through public
-   proxies which are unreliable. Each has a CORS-clean primary, so the tool
-   still works — the proxy is only the backup.
-3. **WAQI uses the shared `demo` token**, rate-limited by design.
-4. **Lunar festival dates** (Diwali, Eid) are the officially published dates;
-   regional observance can differ by a day.
-5. **No login** means no cross-device sync — favourites live in `localStorage`.
+```bash
+npx vite build
+python3 scripts/debrand.py --check
+python3 scripts/deemoji.py
+python3 scripts/healthcheck.py all
+python3 tests/qa_new.py
+```

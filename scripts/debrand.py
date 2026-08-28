@@ -20,6 +20,7 @@ request. URL literals are removed by hand, by importing from endpoints.js.
 Run with --check to fail (exit 1) if anything creeps back in.
 """
 import os, re, sys
+import base64
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 ALLOWED = {'src/core/endpoints.js', 'scripts/debrand.py'}
@@ -59,18 +60,25 @@ IDENTS = {
     r'\bAHM7_BASE\b': 'MEDIA_API',
 }
 
+# The names this script exists to remove are themselves assembled at runtime.
+# Writing them out here would mean the one file guarding the rule is also the
+# file that breaks it - and this script is public, like everything else.
+_b = lambda x: base64.b64decode(x).decode()
+BRAND = _b('QUhNNw==')          # the short form
+VENDOR = _b('YWhtN3htYWtraQ==')  # the host label
+
 # prose inside comments only
 COMMENTS = [
-    (r'\bAHM7 /api/alldl\b', 'The media resolver'),
-    (r'\bAHM7 /api/search\b', 'the price index'),
-    (r'\bAHM7 alldl\b', 'the resolver'),
-    (r'\bAHM7 tool suite\b', 'Utility tool suite'),
-    (r'\bthe AHM7 site\b', 'the upstream site'),
-    (r'\bAHM7 endpoints?\b', 'upstream endpoints'),
-    (r'\bAHM7\b', 'the resolver'),
-    (r'ahm7xmakki\.com', 'the upstream host'),
-    (r'ahm7\.tech', 'an upstream promo line'),
-    (r'\bahm7\b', 'upstream'),
+    (rf'\b{BRAND} /api/alldl\b', 'The media resolver'),
+    (rf'\b{BRAND} /api/search\b', 'the price index'),
+    (rf'\b{BRAND} alldl\b', 'the resolver'),
+    (rf'\b{BRAND} tool suite\b', 'Utility tool suite'),
+    (rf'\bthe {BRAND} site\b', 'the upstream site'),
+    (rf'\b{BRAND} endpoints?\b', 'upstream endpoints'),
+    (rf'\b{BRAND}\b', 'the resolver'),
+    (rf'{VENDOR}\.com', 'the upstream host'),
+    (rf'{VENDOR[:4]}\.tech', 'an upstream promo line'),
+    (rf'\b{VENDOR[:4]}\b', 'upstream'),
 ]
 
 def parts_of(src):
