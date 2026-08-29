@@ -440,19 +440,43 @@ export function FullPlayer() {
       <div className="full-ctl">
         {/* The seek bar shows how much is buffered as well as how far in you
             are — a stalled track and a slow track look identical without it. */}
-        <div className="seekwrap">
-          <div className="seektrack">
-            <i className="buf" style={{ width: (p.dur ? (buffered / p.dur) * 100 : 0) + '%' }} />
-            <i className="played" style={{ width: (p.dur ? (p.pos / p.dur) * 100 : 0) + '%' }} />
-          </div>
-          <input type="range" className="seek" min="0" max={p.dur || 0} step="0.1" value={p.pos}
-            onChange={(e) => p.seek(+e.target.value)} disabled={!p.dur} aria-label="Seek" />
-        </div>
-        <div className="times">
-          <span>{mmss(p.pos)}</span>
-          <span className="rem">{p.dur ? '-' + mmss(p.dur - p.pos) : ''}</span>
-          <span>{mmss(p.dur)}</span>
-        </div>
+        {(() => {
+          // Effective duration: p.dur may be Infinity/0 for HLS until manifest parsed
+          // Fall back to seekable, buffered, or track.dur so seek bar works
+          let effDur = p.dur;
+          if (!isFinite(effDur) || effDur <= 0) {
+            try {
+              const el = p.audio?.current;
+              if (el?.seekable?.length) effDur = el.seekable.end(el.seekable.length - 1);
+              else if (el?.buffered?.length) effDur = el.buffered.end(el.buffered.length - 1);
+              else if (p.track?.dur && isFinite(p.track.dur)) effDur = p.track.dur;
+            } catch {}
+          }
+          if (!isFinite(effDur) || effDur <= 0) effDur = 0;
+          const canSeek = effDur > 0 || buffered > 0;
+          const pctBuf = effDur ? Math.min(100, (buffered / effDur) * 100) : 0;
+          const pctPlayed = effDur ? Math.min(100, (p.pos / effDur) * 100) : 0;
+          return (<>
+            <div className="seekwrap">
+              <div className="seektrack">
+                <i className="buf" style={{ width: pctBuf + '%' }} />
+                <i className="played" style={{ width: pctPlayed + '%' }} />
+              </div>
+              <input type="range" className="seek" min="0" max={effDur || 100} step="0.1"
+                value={Math.min(p.pos, effDur || p.pos)}
+                onInput={(e) => p.seek(+e.target.value)}
+                onChange={(e) => p.seek(+e.target.value)}
+                disabled={!canSeek}
+                aria-label="Seek"
+                style={{ touchAction: 'none' }} />
+            </div>
+            <div className="times">
+              <span>{mmss(p.pos)}</span>
+              <span className="rem">{effDur ? '-' + mmss(Math.max(0, effDur - p.pos)) : ''}</span>
+              <span>{mmss(effDur || p.dur)}</span>
+            </div>
+          </>);
+        })()}
         <div className="btns">
           <button className={`cbtn ${p.shuffle ? 'act' : ''}`} aria-label="Shuffle"
             onClick={() => p.setShuffle(!p.shuffle)}><Icon n="shuffle" size={18} /></button>

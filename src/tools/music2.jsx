@@ -89,22 +89,31 @@ function TrackList({ tracks, player, onPlay, loading, more, onMore, onRemove }) 
   const [, bump] = useState(0);
   useEffect(() => onLibrary(() => bump((n) => n + 1)), []);
 
-  /* Infinite scroll: load the next page when the end of the list appears. */
+  /* Infinite scroll: load the next page when the end of the list appears.
+     FIX: guard rapid triggers, use smaller rootMargin, disconnect properly */
   useEffect(() => {
-    if (!onMore || !sentinel.current) return;
-    const io = new IntersectionObserver((e) => { if (e[0].isIntersecting) onMore(); },
-      { rootMargin: '400px' });
+    if (!onMore || !sentinel.current || loading) return;
+    let triggered = false;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && !triggered && !loading) {
+        triggered = true;
+        onMore();
+        // debounce next trigger by 800ms
+        setTimeout(() => { triggered = false; }, 800);
+      }
+    }, { rootMargin: '200px', threshold: 0.1 });
     io.observe(sentinel.current);
     return () => io.disconnect();
-  }, [onMore, tracks.length]);
+  }, [onMore, tracks.length, loading]);
 
   if (!tracks?.length) return null;
   return (<>
     <div className="list">
       {tracks.map((t, i) => {
         const active = player.track && (player.track.id ?? player.track.url) === (t.id ?? t.url);
+        const key = `${t.id || t.url || t.title}-${i}-${(t.title||'').slice(0,8)}`;
         return (
-          <div className="row" key={(t.id || '') + i} onClick={() => onPlay(t, i)}
+          <div className="row" key={key} onClick={() => onPlay(t, i)}
             style={{ cursor: 'pointer', background: active ? 'rgba(0,255,156,.07)' : '' }}>
             {t.art
               ? <img src={t.art} alt="" loading="lazy"
@@ -207,62 +216,75 @@ function SearchTab({ player }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [tips, setTips] = useState([]);
-  const [focused, setFocused] = useState(false);   // only suggest while typing
-  const [more, setMore] = useState(null);          // next() or false
+  const [focused, setFocused] = useState(false);
+  const [more, setMore] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const nextRef = useRef(null);
   const seq = useRef(0);
+  const abortRef = useRef(null);
 
   const run = useCallback(async (term) => {
     const s = String(term || '').trim();
     if (!s) return;
+    // Abort previous
+    if (abortRef.current) abortRef.current.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     const my = ++seq.current;
-    setBusy(true); setErr(''); setTips([]);
+    setBusy(true); setErr(''); setTips([]); setFocused(false);
+    // Show immediate feedback: clear old list fast so user knows new search started
+    setTracks(null);
     try {
-      const r = await searchMusic(s);
-      if (my !== seq.current) return;
-      setTracks(r.tracks);
-      nextRef.current = r.next;
-      setMore(r.next ? true : false);
-
-      /* Second pass: the catalogue knows about releases the upload-based
-         mirror misses, especially older and regional material. Its titles are
-         matched to real streams in the background and merged in, so the list
-         grows a moment after it first paints rather than making the user wait.
-         Measured: 100 catalogue rows per query on every regional term. */
-      if (catalogueReady()) {
-        searchCatalogue(s, { limit: 40 })
-          .then(async (entries) => {
-            if (my !== seq.current || !entries.length) return;
-            const extra = await toPlayableList(entries, { limit: 18 });
-            if (my !== seq.current) return;
-            setTracks((cur) => {
-              const seen = new Set((cur || []).map((t) => t.id));
-              const add = extra.filter((t) => t?.id && !seen.has(t.id));
-              return add.length ? [...(cur || []), ...add] : cur;
-            });
-          })
-          .catch(() => {});
+      // FAST PATH: omni-proxy 34 sources race (0.5-1s) via searchMusic which now uses it
+      const r = await searchMusic(s, { deep: false });
+      if (ctrl.signal.aborted || my !== seq.current) return;
+      if (r.tracks?.length) {
+        setTracks(r.tracks);
+        nextRef.current = r.next;
+        setMore(r.next ? true : false);
+        // Warm top 2 only
+        r.tracks.slice(0, 2).forEach((t, i) => { if (t.id) { rememberTrack(t.id, t); prefetchAudio(t.id, i); } });
+        setBusy(false);
+        // Background enrichment: catalogue + second pass without blocking UI
+        if (catalogueReady()) {
+          searchCatalogue(s, { limit: 30 })
+            .then(async (entries) => {
+              if (ctrl.signal.aborted || my !== seq.current || !entries.length) return;
+              const extra = await toPlayableList(entries, { limit: 12 });
+              if (ctrl.signal.aborted || my !== seq.current) return;
+              setTracks((cur) => {
+                if (!cur) return cur;
+                const seen = new Set(cur.map((t) => t.id));
+                const add = extra.filter((t) => t?.id && !seen.has(t.id));
+                return add.length ? [...cur, ...add] : cur;
+              });
+            })
+            .catch(() => {});
+        }
+        return;
       }
-      /* Warm just the top two while the user reads the list. Warming more
-         backfired: each resolve mints a fresh signed CDN link and invalidates
-         the previous one, so deep prefetching left later tracks with dead
-         links (MediaError 4). Two is enough for the common first tap. */
-      r.tracks.slice(0, 2).forEach((t, i) => { if (t.id) { rememberTrack(t.id, t); prefetchAudio(t.id, i); } });
+      // If fast path empty, try deeper
+      const r2 = await searchMusic(s, { deep: true });
+      if (ctrl.signal.aborted || my !== seq.current) return;
+      setTracks(r2.tracks);
+      nextRef.current = r2.next;
+      setMore(r2.next ? true : false);
+      r2.tracks.slice(0, 2).forEach((t, i) => { if (t.id) { rememberTrack(t.id, t); prefetchAudio(t.id, i); } });
     } catch (e) {
+      if (ctrl.signal.aborted) return;
       if (my === seq.current) { setErr(e.message || 'Search failed'); setTracks([]); }
     } finally {
-      if (my === seq.current) setBusy(false);
+      if (!ctrl.signal.aborted && my === seq.current) setBusy(false);
     }
   }, []);
 
-  useEffect(() => { run('babbu maan'); }, [run]);
+  useEffect(() => { run('babbu maan'); return () => abortRef.current?.abort(); }, [run]);
 
-  /* Suggestions only while the box actually has focus. Leaving the dropdown
-     mounted after a search covered the results list and swallowed taps. */
   useEffect(() => {
     if (!focused || q.trim().length < 2) { setTips([]); return; }
-    const t = setTimeout(async () => setTips(await suggest(q)), 300);
+    const t = setTimeout(async () => {
+      try { setTips(await suggest(q)); } catch { setTips([]); }
+    }, 250);
     return () => clearTimeout(t);
   }, [q, focused]);
 
@@ -273,7 +295,8 @@ function SearchTab({ player }) {
       const add = await nextRef.current();
       if (add.length) setTracks((cur) => [...(cur || []), ...add]);
       else { setMore(false); nextRef.current = null; }
-    } finally { setLoadingMore(false); }
+    } catch { setMore(false); }
+    finally { setLoadingMore(false); }
   }, [loadingMore]);
 
   return (<>
@@ -282,29 +305,31 @@ function SearchTab({ player }) {
         <Icon n="search" size={17} />
         <input value={q} onChange={(e) => setQ(e.target.value)}
           onFocus={() => setFocused(true)}
-          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          onBlur={() => setTimeout(() => setFocused(false), 120)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { setTips([]); setFocused(false); run(q); e.target.blur(); }
+            if (e.key === 'Escape') { setTips([]); setFocused(false); e.target.blur(); }
           }}
-          placeholder="Any song, artist or album…" enterKeyHint="search" />
-        {q && <button className="ip-x" onClick={() => { setQ(''); setTips([]); }} aria-label="Clear">
+          placeholder="Any song, artist or album…" enterKeyHint="search" autoComplete="off" />
+        {q && <button className="ip-x" onClick={() => { setQ(''); setTips([]); setTracks(null); }} aria-label="Clear">
           <Icon n="x" size={16} /></button>}
       </div>
       {focused && tips.length > 0 && (
         <div className="list" style={{ position: 'absolute', top: '100%', left: 0, right: 0,
-          zIndex: 40, marginTop: 4, maxHeight: 240, overflowY: 'auto' }}>
+          zIndex: 40, marginTop: 4, maxHeight: 240, overflowY: 'auto', boxShadow: '0 12px 24px rgba(0,0,0,.18)' }}>
           {tips.map((s) => (
-            <button key={s} className="col" style={{ background: 'none', border: 0,
-              textAlign: 'left', width: '100%', cursor: 'pointer' }}
+            <button key={s} className="row" style={{ background: 'none', border: 0,
+              textAlign: 'left', width: '100%', cursor: 'pointer', padding: '10px 12px' }}
               onMouseDown={(e) => { e.preventDefault(); setQ(s); setTips([]); setFocused(false); run(s); }}>
+              <Icon n="search" size={14} style={{ opacity: .5 }} />
               <b style={{ fontSize: 13 }}>{s}</b>
             </button>))}
         </div>)}
     </div>
 
-    <div className="cats">
+    <div className="cats" style={{ gap: 6 }}>
       {QUICK.map((x) => (
-        <button key={x} className="cat"
+        <button key={x} className="cat" style={{ textTransform: 'capitalize' }}
           onClick={() => { setQ(x); setTips([]); setFocused(false); run(x); }}>{x}</button>))}
     </div>
 

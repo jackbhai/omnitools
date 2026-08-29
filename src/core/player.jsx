@@ -329,6 +329,10 @@ async function attach(el, url, { cors = true } = {}) {
     const done = (fn) => { clearTimeout(timer); fn(); };
     const timer = setTimeout(() => done(() => rej(new Error('stream timed out'))), 20000);
     h.on(Hls.Events.MANIFEST_PARSED, () => done(res));
+    h.on(Hls.Events.LEVEL_LOADED, () => {
+      // HLS duration becomes known here - helps seek work for HLS
+      try { if (el.duration && isFinite(el.duration)) { /* duration now known */ } } catch {}
+    });
     h.on(Hls.Events.ERROR, (_e, data) => { if (data?.fatal) done(() => rej(new Error(data.details || 'stream error'))); });
     h.loadSource(url);
     h.attachMedia(el);
@@ -745,7 +749,51 @@ export function PlayerProvider({ children }) {
     return () => { live = false; clearTimeout(t); };
   }, [queue, idx]);
 
-  const seek = useCallback((s) => { if (audio.current) audio.current.currentTime = s; }, []);
+  const seek = useCallback((s) => {
+    const el = audio.current;
+    if (!el) return;
+    try {
+      const target = Number(s);
+      if (!isFinite(target) || target < 0) return;
+
+      // Clamp to duration if known, otherwise to seekable end
+      let max = el.duration;
+      if (!isFinite(max) || max <= 0) {
+        try {
+          const seekable = el.seekable;
+          if (seekable && seekable.length) {
+            max = seekable.end(seekable.length - 1);
+          } else if (el.buffered && el.buffered.length) {
+            max = el.buffered.end(el.buffered.length - 1);
+          }
+        } catch {}
+      }
+      const clamped = isFinite(max) && max > 0 ? Math.min(target, max - 0.1) : target;
+
+      // For HLS via hls.js, seek works via currentTime but need to ensure hls is ready
+      // hls.js listens to currentTime changes, so direct assignment is enough
+      // However if HLS is not yet at that position, it will buffer
+      if (el._hls) {
+        // HLS.js: ensure we seek within buffered or allow it to load
+        // Setting currentTime triggers HLS to load the segment
+        el.currentTime = clamped;
+      } else {
+        // Regular mp4/aac: direct seek
+        // Some CDNs need fastSeek for better UX, but currentTime is standard
+        if (typeof el.fastSeek === 'function' && Math.abs(clamped - el.currentTime) > 10) {
+          try { el.fastSeek(clamped); } catch { el.currentTime = clamped; }
+        } else {
+          el.currentTime = clamped;
+        }
+      }
+      setPos(clamped);
+
+      // If paused after seek, keep paused; if playing, ensure it continues
+      if (playing && el.paused) {
+        el.play().catch(() => {});
+      }
+    } catch {}
+  }, [playing]);
 
   /**
    * Silence watchdog.

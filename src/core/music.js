@@ -127,51 +127,154 @@ const dedupe = (list) => {
 const isSong = (t) => !t.dur || (t.dur >= 45 && t.dur <= 1500);
 const JUNK = /\b(full album|jukebox|all songs|non ?stop|mashup \d+ ?min|live show|interview|podcast|episode)\b/i;
 
+/* ---- FAST SEARCH CACHE ---- */
+const FAST_CACHE = new Map();
+const FAST_TTL = 5 * 60 * 1000;
+function cacheGet(q) {
+  const k = q.toLowerCase().trim();
+  const v = FAST_CACHE.get(k);
+  if (v && Date.now() - v.at < FAST_TTL) return v.data;
+  if (v) FAST_CACHE.delete(k);
+  return null;
+}
+function cacheSet(q, data) {
+  const k = q.toLowerCase().trim();
+  FAST_CACHE.set(k, { data, at: Date.now() });
+  if (FAST_CACHE.size > 120) {
+    const first = FAST_CACHE.keys().next().value;
+    FAST_CACHE.delete(first);
+  }
+}
+
+/* ---- FAST PATH: omni-proxy 34 sources race = 0.5-1s vs piped 14s ---- */
+async function omniProxySearch(q, { limit = 20 } = {}) {
+  const query = String(q || '').trim();
+  if (!query) return [];
+  const cached = cacheGet('proxy:' + query + ':' + limit);
+  if (cached) return cached;
+  try {
+    const { search } = await import('./saavn');
+    const rows = await search(query, { limit });
+    if (rows?.length) {
+      // Convert to music2 shape: needsResolve false, already has stream
+      const shaped = rows.map(r => ({
+        id: r.id,
+        title: r.title,
+        artist: r.artist,
+        album: r.album || '',
+        art: r.art || '',
+        dur: r.dur || 0,
+        year: r.year || '',
+        lang: r.lang || '',
+        stream: r.stream,
+        streams: r.streams || [],
+        src: r.src || 'catalogue-2',
+        exact: true,
+        needsResolve: false,
+      })).filter(t => t.stream && t.title);
+      if (shaped.length) {
+        cacheSet('proxy:' + query + ':' + limit, shaped);
+        return shaped;
+      }
+    }
+  } catch {}
+  return [];
+}
+
 /**
  * Search, fanned out across filters, with pagination.
+ * NOW: fast path first (omni-proxy 34 sources 0.5s), then piped as fallback.
  * @returns {Promise<{tracks:Array, next:Function|null}>}
  */
-export async function searchMusic(q, { deep = true } = {}) {
+export async function searchMusic(q, { deep = false } = {}) {
   const query = String(q || '').trim();
   if (!query) return { tracks: [], next: null };
-  const enc = encodeURIComponent(query);
 
-  const primary = await anyMirror(`/search?q=${enc}&filter=music_songs`, {
-    pick: (d) => d.items,
-  });
-  let tracks = (primary.data || []).map(toTrack).filter(Boolean);
-  const base = primary.base;
-  let token = primary.raw?.nextpage || null;
+  // 1. Try fast cache
+  const cached = cacheGet('music:' + query + ':' + (deep ? 'deep' : 'fast'));
+  if (cached) return cached;
 
-  /* One query on one filter yields 20 rows; adding these two took the same
-     query to 54 unique ids in testing. Fired in parallel, failures ignored. */
-  if (deep) {
-    const extra = await Promise.allSettled([
-      jget(`${base}/search?q=${enc}&filter=music_videos`, { ms: 12000 }),
-      jget(`${base}/search?q=${enc}&filter=all`, { ms: 12000 }),
-    ]);
-    for (const r of extra) {
-      if (r.status !== 'fulfilled') continue;
-      tracks = tracks.concat((r.value.items || []).map(toTrack).filter(Boolean));
+  // 2. Fast path: omni-proxy 34 mirrors (0.5-1s) - primary for Indian music
+  try {
+    const fast = await omniProxySearch(query, { limit: 20 });
+    if (fast.length >= 3) {
+      const result = { tracks: fast, next: null, base: 'omni-proxy' };
+      cacheSet('music:' + query + ':' + (deep ? 'deep' : 'fast'), result);
+      return result;
     }
+  } catch {}
+
+  // 3. Super search (multi-engine + discovery) in parallel - 1-2s
+  try {
+    const { superSearch } = await import('./music-super');
+    const superRows = await Promise.race([
+      superSearch(query, { limit: 15 }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000))
+    ]).catch(() => []);
+    if (superRows?.length) {
+      const shaped = superRows.map(r => ({
+        id: r.id,
+        title: r.title,
+        artist: r.artist,
+        album: r.album || '',
+        art: r.art || '',
+        dur: r.dur || 0,
+        stream: r.stream || r.preview || '',
+        streams: r.streams || [],
+        src: r.src || 'super',
+        exact: r.exact ?? true,
+        needsResolve: !r.stream || !!r.needsFetch,
+      })).filter(t => (t.stream || t.needsResolve) && t.title);
+      if (shaped.length >= 2) {
+        const result = { tracks: shaped, next: null, base: 'super' };
+        cacheSet('music:' + query + ':' + (deep ? 'deep' : 'fast'), result);
+        return result;
+      }
+    }
+  } catch {}
+
+  // 4. Fallback: piped mirrors - reduced timeout 6s not 14s
+  const enc = encodeURIComponent(query);
+  try {
+    const primary = await anyMirror(`/search?q=${enc}&filter=music_songs`, {
+      ms: 6000,
+      pick: (d) => d.items,
+    });
+    let tracks = (primary.data || []).map(toTrack).filter(Boolean);
+    const base = primary.base;
+    let token = primary.raw?.nextpage || null;
+
+    if (deep) {
+      const extra = await Promise.allSettled([
+        jget(`${base}/search?q=${enc}&filter=music_videos`, { ms: 6000 }),
+        jget(`${base}/search?q=${enc}&filter=all`, { ms: 6000 }),
+      ]);
+      for (const r of extra) {
+        if (r.status !== 'fulfilled') continue;
+        tracks = tracks.concat((r.value.items || []).map(toTrack).filter(Boolean));
+      }
+    }
+
+    tracks = dedupe(tracks).filter((t) => isSong(t) && !JUNK.test(t.title));
+
+    const next = async () => {
+      if (!token) return [];
+      const u = `${base}/nextpage/search?nextpage=${encodeURIComponent(token)}` +
+                `&q=${enc}&filter=music_songs`;
+      try {
+        const d = await jget(u, { ms: 8000 });
+        token = d.nextpage || null;
+        return dedupe((d.items || []).map(toTrack).filter(Boolean))
+          .filter((t) => isSong(t) && !JUNK.test(t.title));
+      } catch { token = null; return []; }
+    };
+
+    const result = { tracks, next: token ? next : null, base };
+    cacheSet('music:' + query + ':' + (deep ? 'deep' : 'fast'), result);
+    return result;
+  } catch {
+    return { tracks: [], next: null, base: null };
   }
-
-  tracks = dedupe(tracks).filter((t) => isSong(t) && !JUNK.test(t.title));
-
-  /** Load the next page of the primary filter. Returns [] when exhausted. */
-  const next = async () => {
-    if (!token) return [];
-    const u = `${base}/nextpage/search?nextpage=${encodeURIComponent(token)}` +
-              `&q=${enc}&filter=music_songs`;
-    try {
-      const d = await jget(u, { ms: 16000 });
-      token = d.nextpage || null;
-      return dedupe((d.items || []).map(toTrack).filter(Boolean))
-        .filter((t) => isSong(t) && !JUNK.test(t.title));
-    } catch { token = null; return []; }
-  };
-
-  return { tracks, next: token ? next : null, base };
 }
 
 /**
