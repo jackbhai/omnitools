@@ -429,7 +429,7 @@ export function Settings() {
 
           <div className="dim sm" style={{ marginTop: 10, fontSize: 11, lineHeight: 1.4 }}>
             <b>Live Check System Features:</b><br/>
-            • Checks 15+ categories: Offline tools, Live tools health (via provider stats), PWA (SW, Cache, Standalone, Manifest), Theme system (7 themes + custom), Storage (LocalStorage, Cache API, IndexedDB), Kundli 3-Layer Engine, Devotional, Music 8-tier fallback, Travel, Health, Convert, News, Weather, Currency, TV, Books<br/>
+            • Checks 15+ categories: Offline tools, Live tools health (via provider stats), PWA (SW, Cache, Standalone, Manifest), Theme system (7 themes + custom), Storage (LocalStorage, Cache API, IndexedDB), Kundli 3-Layer Engine, Devotional, Music 22-tier best-to-best (Jamendo full v3.0 + Last.fm + Deezer + Discogs + Freesound + Mixcloud + Genrenator + GaanaAPI + JioSaavnAPI + multi-engine 5-in-1 + Spotify + iTunes + Audius + Archive + hearthis + Openverse + Radio), Travel, Health, Convert, News, Weather, Currency, TV, Books<br/>
             • Shows % working per feature and per category, overall % health<br/>
             • Live logs with timestamp, type (info/pass/warn/fail), real-time what is being checked<br/>
             • Progress bar with current/total/percent/check name<br/>

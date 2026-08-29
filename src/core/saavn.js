@@ -543,6 +543,32 @@ export async function matchTrack({ title, artist }) {
     }
   } catch { /* the second catalogue is allowed to be down too */ }
 
+  /* Tier K: Multi-engine Cloudflare - 5 sources in one (Gaana+Hungama+Wynk+YT+Saavn)
+     From GitHub scan: mohd-baquir-qureshi/music-api - 320kbps direct mp3
+     This is the best find - different companies, different CDNs, already on Cloudflare edge */
+  try {
+    const { multiEngineSearchAll, multiEngineFetch } = await import('./sources');
+    for (const query of [`${t} ${artist || ''}`.trim(), t]) {
+      let rows = [];
+      try { rows = await multiEngineSearchAll(query, { limit: 10 }); } catch { rows = []; }
+      if (!rows.length) continue;
+      // Try to get stream for rows needing fetch
+      for (const r of rows.slice(0, 2)) {
+        if (r.needsFetch && r.streamId) {
+          try {
+            const fetched = await multiEngineFetch(r.streamId);
+            if (fetched?.stream) {
+              const hit = rank([{ ...r, ...fetched }], 35);
+              if (hit?.stream) return hit;
+            }
+          } catch {}
+        }
+      }
+      const hit = rank(rows.filter(r => r.stream), 35);
+      if (hit?.stream) return hit;
+    }
+  } catch { /* multi-engine allowed to be down */ }
+
   /* Every route to a real catalogue is gone — including the case where
      search() threw rather than returning nothing, which an earlier version
      let escape and so never reached this line at all.
@@ -596,7 +622,103 @@ export async function matchTrack({ title, artist }) {
       const hit = rank(rows, 30);
       if (hit?.stream) return { ...hit, approximate: true };
     }
-  } catch { /* fall through to the commons tiers */ }
+  } catch { /* fall through to preview tiers */ }
+
+  /* Tiers L,M: Preview tiers - Deezer, iTunes, Spotify - 30s previews when full track fails
+     Free, no auth, different infrastructure - last chance before commons */
+  try {
+    const { deezerSearch, itunesPreviewSearch, spotifySearch } = await import('./sources');
+    for (const query of [`${t} ${artist || ''}`.trim(), t]) {
+      let rows = [];
+      try {
+        const [deezer, itunes, spotify] = await Promise.allSettled([
+          deezerSearch(query, { limit: 6 }),
+          itunesPreviewSearch(query, { limit: 6 }),
+          spotifySearch(query, { limit: 6 }),
+        ]);
+        rows = [];
+        if (deezer.status === 'fulfilled') rows.push(...deezer.value);
+        if (itunes.status === 'fulfilled') rows.push(...itunes.value);
+        if (spotify.status === 'fulfilled') rows.push(...spotify.value);
+      } catch { rows = []; }
+      if (!rows.length) continue;
+      const hit = rank(rows, 30);
+      if (hit?.stream) return { ...hit, approximate: true, isPreview: true };
+    }
+  } catch { /* previews allowed to fail */ }
+
+  /* Tier N: Jamendo enhanced - 2 client_ids, CC licensed full tracks */
+  try {
+    const { jamendoEnhancedSearch } = await import('./sources');
+    for (const query of [`${t} ${artist || ''}`.trim(), t, artist]) {
+      let rows = [];
+      try { rows = await jamendoEnhancedSearch(query, { limit: 8 }); } catch { rows = []; }
+      if (!rows.length) continue;
+      const hit = rank(rows, 25);
+      if (hit?.stream) return { ...hit, approximate: true };
+    }
+  } catch { /* jamendo enhanced allowed to fail */ }
+
+  /* Tier O: Jamendo full API - tracks + albums + radios per v3.0 docs */
+  try {
+    const { jamendoFullSearch } = await import('./sources');
+    for (const query of [`${t} ${artist || ''}`.trim(), t, artist]) {
+      let rows = [];
+      try { rows = await jamendoFullSearch(query, { limit: 8 }); } catch { rows = []; }
+      if (!rows.length) continue;
+      const hit = rank(rows, 25);
+      if (hit?.stream) return { ...hit, approximate: true };
+    }
+  } catch { /* jamendo full allowed to fail */ }
+
+  /* Tier T: Gaana enhanced - 3 mirrors + HLS 320k cyberboysumanjay+ZingyTomato */
+  try {
+    const { gaanaEnhancedSearch } = await import('./sources');
+    for (const query of [`${t} ${artist || ''}`.trim(), t]) {
+      let rows = [];
+      try { rows = await gaanaEnhancedSearch(query, { limit: 8 }); } catch { rows = []; }
+      if (!rows.length) continue;
+      const hit = rank(rows, 35);
+      if (hit?.stream) return hit;
+    }
+  } catch { /* gaana enhanced allowed to fail */ }
+
+  /* Tier U: Saavn extra - sumit.co + codyandersan high quality */
+  try {
+    const { saavnExtraSearch } = await import('./sources');
+    for (const query of [`${t} ${artist || ''}`.trim(), t]) {
+      let rows = [];
+      try { rows = await saavnExtraSearch(query, { limit: 8 }); } catch { rows = []; }
+      if (!rows.length) continue;
+      const hit = rank(rows, 35);
+      if (hit?.stream) return hit;
+    }
+  } catch { /* saavn extra allowed to fail */ }
+
+  /* Tier R: Mixcloud DJ sets - Punjabi/Bollywood mixes, public CORS* */
+  try {
+    const { mixcloudSearch } = await import('./sources');
+    for (const query of [`${t} ${artist || ''}`.trim(), t, artist]) {
+      let rows = [];
+      try { rows = await mixcloudSearch(query, { limit: 6 }); } catch { rows = []; }
+      if (!rows.length) continue;
+      // Mixcloud doesn't give direct mp3 but has player - return as mix
+      const hit = rank(rows, 20);
+      if (hit) return { ...hit, approximate: true, isMix: true };
+    }
+  } catch { /* mixcloud allowed to fail */ }
+
+  /* Tier S: Freesound loops - CC samples, useful for sound effects + music loops */
+  try {
+    const { freesoundSearch } = await import('./sources');
+    for (const query of [`${t} ${artist || ''}`.trim(), t]) {
+      let rows = [];
+      try { rows = await freesoundSearch(query, { limit: 6 }); } catch { rows = []; }
+      if (!rows.length) continue;
+      const hit = rank(rows, 20);
+      if (hit?.stream) return { ...hit, approximate: true };
+    }
+  } catch { /* freesound allowed to fail */ }
 
   /* Tiers G and H: openly-licensed audio, from an aggregator that spans three
      commons platforms and from the largest of those platforms directly.

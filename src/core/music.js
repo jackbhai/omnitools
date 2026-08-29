@@ -202,6 +202,41 @@ export async function suggest(q) {
   } catch { return []; }
 }
 
+/** Super search across ALL 22 tiers — Cloudflare worker + multi-engine + previews + discovery */
+export async function superSearchAll(q, { limit = 20 } = {}) {
+  const query = String(q || '').trim();
+  if (!query) return [];
+  try {
+    const { superSearch } = await import('./music-super');
+    const r = await superSearch(query, { limit });
+    if (r?.length) return r;
+    if (r?.results?.length) return r.results;
+  } catch {}
+  try {
+    const { discoverySearch } = await import('./music-discovery');
+    const r = await discoverySearch(query, { limit });
+    return r || [];
+  } catch { return []; }
+}
+
+/** Discovery metadata - Last.fm + Discogs + Genrenator for enrichment */
+export async function discoveryMeta(q, { limit = 8 } = {}) {
+  const query = String(q || '').trim();
+  if (!query) return { lastfm: [], discogs: [], genres: [] };
+  try {
+    const { discoveryMetadata } = await import('./music-discovery');
+    return await discoveryMetadata(query, { limit });
+  } catch { return { lastfm: [], discogs: [], genres: [] }; }
+}
+
+/** Genrenator random genres for fun discovery + radio hints */
+export async function randomGenres({ count = 5 } = {}) {
+  try {
+    const { genrenatorGenres } = await import('./music-discovery');
+    return await genrenatorGenres({ count });
+  } catch { return []; }
+}
+
 /* ------------------------------------------------------------- playlists */
 /** Playlists matching a query — the richest bulk source (101 tracks/call). */
 export async function findPlaylists(q) {
