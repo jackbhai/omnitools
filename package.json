@@ -14,11 +14,10 @@
   "dependencies": {
     "astronomy-engine": "^2.1.19",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
-  },
-  "devDependencies": {
+    "react-dom": "^19.2.8",
     "@vitejs/plugin-react": "^6.1.0",
     "vite": "^8.2.2"
   },
+  "devDependencies": {},
   "type": "module"
 }
