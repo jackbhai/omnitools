@@ -1,0 +1,6 @@
+worker
+scripts
+tests
+.github
+*.md
+!README.md
