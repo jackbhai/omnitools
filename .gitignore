@@ -1,0 +1,33 @@
+node_modules
+dist
+shots
+*.log
+.DS_Store
+dbg.py
+shot.py
+lt.py
+livetest.py
+contrast.py
+t2.py
+qa.py
+audiotest.py
+full_audit.py
+verify2.py
+qa_visual.py
+qa_hand_audio.py
+dbg_sub.py
+qa_brand.py
+qa_music.py
+qa_catalogue.py
+qa_world.py
+qa_new.py
+
+# The Playwright suite lives at tests/qa_new.py so a fresh clone can run it.
+# The copy at the repo root stays ignored - it is the scratch one edited during
+# a session. Keep the two in sync before committing.
+!tests/
+!tests/qa_new.py
+
+# One-off diagnostic probes from earlier sessions. They name the upstream host
+# in plain text and are not part of the product.
+scripts/probe_*.py

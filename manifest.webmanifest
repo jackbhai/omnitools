@@ -1,0 +1,125 @@
+{
+  "name": "OmniTools — 100+ tools, no login, works offline",
+  "short_name": "OmniTools",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#00FF9C",
+  "description": "100+ free tools - Bus Train Metro Travel, Music ad-free EQ background, Medicine 253k, Kundli 3-Layer Pro, Gita Quran Bible Gurbani, Currency Crypto, Weather AQI, News 52 countries, Dev Text Generate Convert - No login - Works offline - 8-tier fallback - Install as app",
+  "categories": ["productivity", "utilities", "travel", "music", "health", "lifestyle", "education", "entertainment"],
+  "dir": "ltr",
+  "lang": "en",
+  "launch_handler": {
+    "client_mode": ["navigate-existing", "auto"]
+  },
+  "handle_links": "preferred",
+  "edge_side_panel": {
+    "preferred_width": 400
+  },
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "./icon.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Music Player - Ad-free",
+      "short_name": "Music",
+      "description": "Ad-free music with EQ, background playback, 8-tier fallback",
+      "url": "./#music",
+      "icons": [{ "src": "./icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Bus Train Metro - Plan Journey",
+      "short_name": "Travel",
+      "description": "Delhi Bus, Train, Metro, Multi-modal journey planner",
+      "url": "./#bus",
+      "icons": [{ "src": "./icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Medicine - 253k Database",
+      "short_name": "Medicine",
+      "description": "253,802 medicines - uses, side effects, price",
+      "url": "./#med",
+      "icons": [{ "src": "./icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Kundli Pro v3 - No Fake Data",
+      "short_name": "Kundli",
+      "description": "Professional Vedic Kundli 3-Layer Architecture - VSOP87 + BPHS + AI",
+      "url": "./#kundli",
+      "icons": [{ "src": "./icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Settings - Themes + PWA + Live Check",
+      "short_name": "Settings",
+      "description": "PWA install, themes dark light amoled ocean forest sunset midnight + custom maker, live check system",
+      "url": "./#settings",
+      "icons": [{ "src": "./icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Weather + AQI",
+      "short_name": "Weather",
+      "description": "Weather forecast + Air Quality Index",
+      "url": "./#weather",
+      "icons": [{ "src": "./icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "./icon.svg",
+      "sizes": "1280x720",
+      "type": "image/svg+xml",
+      "form_factor": "wide",
+      "label": "OmniTools - 100+ tools in one app"
+    },
+    {
+      "src": "./icon.svg",
+      "sizes": "720x1280",
+      "type": "image/svg+xml",
+      "form_factor": "narrow",
+      "label": "OmniTools - Works offline, install as app"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "./#imgconv",
+      "accept": {
+        "image/*": [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".svg"]
+      }
+    },
+    {
+      "action": "./#audioconv",
+      "accept": {
+        "audio/*": [".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac"]
+      }
+    },
+    {
+      "action": "./#dataconv",
+      "accept": {
+        "application/json": [".json"],
+        "text/csv": [".csv"],
+        "text/xml": [".xml"],
+        "application/xml": [".xml"]
+      }
+    }
+  ],
+  "share_target": {
+    "action": "./#txtfile",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "protocol_handlers": [
+    {
+      "protocol": "web+omnitools",
+      "url": "./#%s"
+    }
+  ]
+}
