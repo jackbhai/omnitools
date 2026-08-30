@@ -145,6 +145,7 @@ export const Max = Expand;
 export const Min = (p) => <S {...p}><path d="M9 4.5H4.5v5M15 4.5h4.5v5M9 19.5H4.5v-5M15 19.5h4.5v-5" /></S>;
 export const Down = (p) => <S {...p}><path d="m5 9 7 7 7-7" /></S>;
 export const Up = (p) => <S {...p}><path d="m5 15 7-7 7 7" /></S>;
+export const Plus = (p) => <S {...p}><path d="M12 5v14M5 12h14" /></S>;
 export const Trash = (p) => <S {...p}><path d="M4 6.5h16M9.5 6.5V4.2h5v2.3M6.5 6.5l.9 13a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5l.9-13" /><path d="M10.5 10.5v6.5M13.5 10.5v6.5" /></S>;
 export const Queue = (p) => <S {...p}><path d="M3 6h11M3 11h11M3 16h7" /><path d="M17.5 20V11.5l4-1.2V19" /><circle cx="16" cy="20" r="1.6" /><circle cx="20" cy="18.8" r="1.6" /></S>;
 export const Mic = (p) => <S {...p}><rect x="9" y="2.5" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5" /></S>;
