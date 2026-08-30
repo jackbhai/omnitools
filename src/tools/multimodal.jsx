@@ -61,7 +61,7 @@ function buildOptions(a, b) {
       if (r) {
         const w = walkMin(sA.km) + walkMin(sB.km);
         out.push({
-          mode: 'Metro', icon: '<Icon n="metro" size={17} />',
+          mode: 'Metro', icon: <><Icon n="metro" size={17} /></>,
           minutes: r.minutes + w, fare: r.fare, changes: r.changes,
           km: +(r.km + sA.km + sB.km).toFixed(2), walkMin: w,
           legs: [
@@ -85,7 +85,7 @@ function buildOptions(a, b) {
       if (r) {
         const w = walkMin(sA.km) + walkMin(sB.km);
         out.push({
-          mode: 'Bus', icon: '<Icon n="bus" size={17} />',
+          mode: 'Bus', icon: <><Icon n="bus" size={17} /></>,
           minutes: r.minutes + w, fare: r.fare, changes: r.changes,
           km: +(r.km + sA.km + sB.km).toFixed(2), walkMin: w,
           legs: [
@@ -146,7 +146,7 @@ function buildOptions(a, b) {
           }
         }
         if (legs.some((l) => l.kind === 'bus')) {
-          out.push({ mode: 'Bus + Metro', icon: '<Icon n="bus" size={17} /><Icon n="metro" size={17} />', minutes: mins, fare, changes,
+          out.push({ mode: 'Bus + Metro', icon: <><Icon n="bus" size={17} /><Icon n="metro" size={17} /></>, minutes: mins, fare, changes,
             km: +km.toFixed(2), walkMin: legs.filter((l) => l.kind === 'walk')
               .reduce((s, l) => s + l.min, 0), legs, detail: core });
         }
@@ -173,7 +173,7 @@ function Picker({ label, value, onPick, onNear }) {
           {hits.map((h, i) => (
             <button key={i} className="col" style={{ background: 'none', border: 0,
               textAlign: 'left', width: '100%', cursor: 'pointer' }}
-              onMouseDown={(e) => { e.preventDefault(); onPick(h); setOpen(false); setQ(''); }}><b style={{ fontSize: 13.5 }}>{h.kind === 'metro' ? '<Icon n="metro" size={17} />' : '<Icon n="bus" size={17} />'} {h.n}</b></button>))}
+              onMouseDown={(e) => { e.preventDefault(); onPick(h); setOpen(false); setQ(''); }}><b style={{ fontSize: 13.5 }}>{h.kind === 'metro' ? <><Icon n="metro" size={17} /></> : <><Icon n="bus" size={17} /></>} {h.n}</b></button>))}
         </div>)}
     </div>);
 }

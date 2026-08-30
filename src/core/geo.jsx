@@ -119,7 +119,7 @@ export function LocBar({ compact }) {
       </div>
       {loc.src !== 'gps' && (
         <button className="btn sm" onClick={requestGps} disabled={status === 'locating'}>
-          {status === 'locating' ? '…' : '<Icon n="pin" size={17} /> Use GPS'}
+          {status === 'locating' ? '…' : <><Icon n="pin" size={17} /> Use GPS</>}
         </button>)}
     </div>
   );

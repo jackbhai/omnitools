@@ -273,7 +273,7 @@ export function DataConvert() {
         out = '<?xml version="1.0"?>\n<root>' + x(o) + '</root>';
       }
     }
-  } catch (e) { err = '<Icon n="warn" size={16} /> ' + e.message; }
+  } catch (e) { err = <><Icon n="warn" size={16} /> </> + e.message; }
   return (<><Chips items={[{v:'json2csv',l:'JSON → CSV'},{v:'csv2json',l:'CSV → JSON'},{v:'json2xml',l:'JSON → XML'}]}
       value={mode} onPick={setMode} /><div className="fld"><label>Input</label><textarea value={inp} onChange={(e) => setInp(e.target.value)}
         placeholder={mode === 'csv2json' ? 'name,age\nAmit,30' : '[{"name":"Amit","age":30}]'} /></div>

@@ -70,7 +70,7 @@ export function MetroPlanner() {
         <div className="cats" style={{ marginTop: 12 }}>
           {routes.map((x, i) => (
             <button key={i} className={`cat ${sel === i ? 'on' : ''}`} onClick={() => setSel(i)}>
-              {i === 0 ? ' Fastest' : x.changes === 0 ? '<Icon n="train" size={17} /> Direct' : `${x.changes} change${x.changes > 1 ? 's' : ''}`}
+              {i === 0 ? ' Fastest' : x.changes === 0 ? <><Icon n="train" size={17} /> Direct</> : `${x.changes} change${x.changes > 1 ? 's' : ''}`}
               {' · '}{x.minutes}m
             </button>))}
         </div>)}
@@ -104,7 +104,7 @@ export function MetroPlanner() {
               <div className="row" key={i} style={{ padding: '9px 14px' }}><span style={{ width: 22, textAlign: 'center', flex: '0 0 auto',
                   color: isEnd ? 'var(--green)' : isChange ? 'var(--warn)' : 'var(--fg3)',
                   fontSize: isEnd ? 13 : 11 }}>
-                  {isEnd ? '◉' : isChange ? '<Icon n="refresh" size={15} />' : '•'}</span><div className="main"><b style={{ fontSize: 13, color: isChange ? 'var(--warn)' : '' }}>{n}</b>
+                  {isEnd ? '◉' : isChange ? <><Icon n="refresh" size={15} /></> : '•'}</span><div className="main"><b style={{ fontSize: 13, color: isChange ? 'var(--warn)' : '' }}>{n}</b>
                   {isChange && <span className="dim sm">interchange</span>}
                 </div><span className="dim sm">{i}</span></div>);
           })}

@@ -56,13 +56,13 @@ export function Base64() {
   const [t, setT] = useState(''); const [enc, setEnc] = useState(true);
   let out = '';
   try { out = enc ? btoa(unescape(encodeURIComponent(t))) : decodeURIComponent(escape(atob(t))); }
-  catch { out = t ? '<Icon n="warn" size={16} /> Invalid Base64' : ''; }
+  catch { out = t ? <><Icon n="warn" size={16} /> Invalid Base64</> : ''; }
   return (<><Chips items={[{v:'e',l:'Encode'},{v:'d',l:'Decode'}]} value={enc?'e':'d'} onPick={(v)=>setEnc(v==='e')} /><Field label={enc?'Plain text':'Base64'} as="textarea" value={t} onChange={(e)=>setT(e.target.value)} /><Out v={out} /></>);
 }
 
 export function UrlEncode() {
   const [t, setT] = useState(''); const [enc, setEnc] = useState(true);
-  let out = ''; try { out = enc ? encodeURIComponent(t) : decodeURIComponent(t); } catch { out = '<Icon n="warn" size={16} /> Invalid'; }
+  let out = ''; try { out = enc ? encodeURIComponent(t) : decodeURIComponent(t); } catch { out = <><Icon n="warn" size={16} /> Invalid</>; }
   return (<><Chips items={[{v:'e',l:'Encode'},{v:'d',l:'Decode'}]} value={enc?'e':'d'} onPick={(v)=>setEnc(v==='e')} /><Field label="Text / URL" as="textarea" value={t} onChange={(e)=>setT(e.target.value)} /><Out v={out} /></>);
 }
 
@@ -75,7 +75,7 @@ export function JsonTool() {
       out = mode === 'pretty' ? JSON.stringify(o, null, 2)
         : mode === 'min' ? JSON.stringify(o)
         : toYaml(o, 0);
-    } catch (e) { err = '<Icon n="warn" size={16} /> ' + e.message; }
+    } catch (e) { err = <><Icon n="warn" size={16} /> </> + e.message; }
   }
   return (<><Field label="JSON" as="textarea" value={t} onChange={(e)=>setT(e.target.value)} placeholder='{"key":"value"}' /><Chips items={[{v:'pretty',l:'Beautify'},{v:'min',l:'Minify'},{v:'yaml',l:'→ YAML'}]} value={mode} onPick={setMode} />
     {err ? <div className="err"><p>{err}</p></div> : <Out v={out} />}
@@ -278,7 +278,7 @@ export function JwtDecode() {
       if (p.length < 2) throw new Error('Not a JWT (needs 3 parts)');
       const dec = (x) => JSON.stringify(JSON.parse(atob(x.replace(/-/g,'+').replace(/_/g,'/'))), null, 2);
       head = dec(p[0]); body = dec(p[1]);
-    } catch (e) { err = '<Icon n="warn" size={16} /> ' + e.message; }
+    } catch (e) { err = <><Icon n="warn" size={16} /> </> + e.message; }
   }
   return (<><Field label="JWT token" as="textarea" value={t} onChange={(e)=>setT(e.target.value)} placeholder="eyJhbGciOi…" />
     {err && <div className="err"><p>{err}</p></div>}

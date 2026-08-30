@@ -201,9 +201,9 @@ export function Music() {
   };
 
   const TABS = [
-    { v: 'radio', l: '<Icon n="radio" size={17} /> Radio' }, { v: 'audius', l: '<Icon n="music" size={17} /> Tracks' },
-    { v: 'archive', l: '<Icon n="disc" size={17} /> Archive' }, { v: 'itunes', l: ' Catalog' },
-    { v: 'offline', l: '<Icon n="download" size={16} /> Offline' },
+    { v: 'radio', l: <><Icon n="radio" size={17} /> Radio</> }, { v: 'audius', l: <><Icon n="music" size={17} /> Tracks</> },
+    { v: 'archive', l: <><Icon n="disc" size={17} /> Archive</> }, { v: 'itunes', l: ' Catalog' },
+    { v: 'offline', l: <><Icon n="download" size={16} /> Offline</> },
   ];
   const LANGS = ['punjabi', 'hindi', 'urdu', 'bhojpuri', 'tamil', 'bengali'];
 
@@ -232,7 +232,7 @@ export function Music() {
             onChange={(e) => { audio.current.currentTime = +e.target.value; }} />)}
         <div className="btnrow"><button className="btn ghost sm" onClick={() => setShowEq((v) => !v)}> Equalizer</button>
           {(track.dlUrl || (track.download && track.download !== 'archive')) && (<><a className="btn sm" href={track.dlUrl || track.download} download target="_blank" rel="noreferrer"><Icon n="download" size={16} /> Download</a><button className="btn ghost sm" disabled={saving === track.id} onClick={() => cacheTrack(track)}>
-              {saving === track.id ? 'Saving…' : '<Icon n="save" size={18} /> Save offline'}</button></>)}
+              {saving === track.id ? 'Saving…' : <><Icon n="save" size={18} /> Save offline</>}</button></>)}
           {track.src === 'iTunes' && <span className="tag w">preview only</span>}
           {tab === 'radio' && <span className="tag c">live stream</span>}
         </div></Card>)}
@@ -282,7 +282,7 @@ export function Music() {
                     style={{ width: 42, height: 42, borderRadius: 9, objectFit: 'cover', flex: '0 0 auto', background: 'var(--s3)' }}
                     onError={(e) => { e.target.style.visibility = 'hidden'; }} />
                 : <div style={{ width: 42, height: 42, borderRadius: 9, background: 'var(--s3)', display: 'grid', placeItems: 'center', flex: '0 0 auto' }}>
-                    {tab === 'radio' ? '<Icon n="radio" size={17} />' : '<Icon n="music" size={17} />'}</div>}
+                    {tab === 'radio' ? <><Icon n="radio" size={17} /></> : <><Icon n="music" size={17} /></>}</div>}
               <div className="main"><b style={{ fontSize: 13.5 }}>{(t.title || t.name || '').slice(0, 48)}</b><span className="dim sm">
                   {t.artist || t.country || ''}
                   {t.bitrate ? ` · ${t.bitrate}kbps ${t.codec}` : ''}

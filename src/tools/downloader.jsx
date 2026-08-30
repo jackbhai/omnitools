@@ -35,28 +35,66 @@ export function Downloader() {
     if (!url.trim()) return;
     setBusy(true); setErr(''); setInfo(null);
     const id = ytId(url);
+    const rawUrl = url.trim();
     let got = null;
 
-    // 1) the resolver — broadest platform coverage
-    try {
-      // must go through the CORS proxy - the resolver sends no ACAO header
-      const d = await resolveJson(url.trim());
-      const m = d.mediaInfo || {};
-      if (m.videoUrl || m.audioUrl) {
-        got = {
-          title: m.title || 'Media', author: m.author || '', platform: m.platform || '',
-          thumb: m.thumbnail || m.coverImage || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : ''),
-          audio: m.audioUrl || null, video: m.videoUrl || null,
-          qualities: [], audioOptions: [], id, via: 'resolver',
-        };
-      }
-    } catch { /* try piped */ }
+    // 1) Primary resolver — broadest platform coverage (YouTube, Instagram, TikTok, FB, X, etc)
+    // Instagram is slow: needs 30-45s, retry twice
+    const isInsta = /instagram\.com|instagr\.am/i.test(rawUrl);
+    const isTikTok = /tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com/i.test(rawUrl);
+    const resolverMs = isInsta ? 45000 : isTikTok ? 35000 : 30000;
+    for (let attempt = 0; attempt < (isInsta ? 2 : 1) && !got; attempt++) {
+      try {
+        const d = await resolveJson(rawUrl, { ms: resolverMs });
+        const m = d.mediaInfo || {};
+        const videoUrl = m.videoUrl || d.url || (Array.isArray(d.links) ? d.links[0] : '') || '';
+        const audioUrl = m.audioUrl || '';
+        if (videoUrl || audioUrl) {
+          got = {
+            title: m.title || d.title || 'Media', author: m.author || '', platform: m.platform || d.platform || '',
+            thumb: m.thumbnail || m.coverImage || d.thumbnail || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : ''),
+            audio: audioUrl || null, video: videoUrl || null,
+            qualities: [], audioOptions: [], id, via: attempt ? `resolver-retry${attempt+1}` : 'resolver',
+          };
+        }
+      } catch { /* try again */ }
+    }
 
-    // 2) Piped — gives an explicit per-quality list for YouTube
-    if (id) {
+    // 2) Instagram direct scrape fallback via proxy (og:video)
+    // Instagram pages sometimes contain video URL in meta tags — try via our CORS proxy
+    if (!got && isInsta) {
+      try {
+        const { proxyBase } = await import('../core/settings');
+        const proxy = proxyBase();
+        if (proxy) {
+          const pageUrl = `${proxy}/?url=${encodeURIComponent(rawUrl)}`;
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 12000);
+          const r = await fetch(pageUrl, { signal: ctrl.signal });
+          clearTimeout(timer);
+          if (r.ok) {
+            const html = await r.text();
+            // Look for og:video or video_url
+            const ogVideo = html.match(/property="og:video" content="([^"]+)"/) || html.match(/"video_url":"([^"]+)"/) || html.match(/"videoUrl":"([^"]+)"/);
+            const ogImage = html.match(/property="og:image" content="([^"]+)"/);
+            if (ogVideo && ogVideo[1]) {
+              const vUrl = ogVideo[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+              got = {
+                title: 'Instagram Reel', author: '', platform: 'Instagram',
+                thumb: ogImage ? ogImage[1] : '', audio: null, video: vUrl,
+                qualities: [], audioOptions: [], id, via: 'og-scrape',
+              };
+            }
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    // 3) Piped — gives an explicit per-quality list for YouTube
+    if (!got && id) {
       for (const base of PIPED) {
         try {
-          const d = await jget(`${base}/streams/${id}`, { ms: 15000 });
+          const d = await jget(`${base}/streams/${id}`, { ms: 12000 });
           const vids = (d.videoStreams || []).filter((v) => v.url);
           const auds = (d.audioStreams || []).sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
           if (vids.length || auds.length) {
@@ -72,7 +110,7 @@ export function Downloader() {
               audioOptions: auds.map((a) => ({
                 q: `${Math.round((a.bitrate || 0) / 1000)} kbps ${(a.mimeType || '').split('/')[1] || ''}`,
                 url: a.url, size: a.contentLength })),
-              id, via: got ? 'direct + index' : 'index',
+              id, via: got ? 'direct + index' : 'piped',
             };
             break;
           }
@@ -80,7 +118,16 @@ export function Downloader() {
       }
     }
 
-    if (!got) setErr('Could not fetch this link. It may be private, region-locked, or unsupported.');
+    // 4) Helpful error
+    if (!got) {
+      if (isInsta) {
+        setErr('Instagram reels are slow (30-45s) — try again. The resolver scrapes Instagram and sometimes times out. Ensure reel is public. If still fails, try YouTube/TikTok which are faster.');
+      } else if (isTikTok) {
+        setErr('TikTok links may need 2-3 tries. Ensure link is public. Try again in 10s.');
+      } else {
+        setErr('Could not fetch this link. It may be private, region-locked, or unsupported. Try YouTube, Instagram public reels, TikTok public, X, Facebook public videos.');
+      }
+    }
     setInfo(got); setBusy(false);
   };
 
@@ -110,40 +157,57 @@ export function Downloader() {
     setSaving(name);
     setNote('Starting…');
     const t0 = Date.now();
-    try {
-      const res = await fetch(u, { mode: 'cors', signal: ctrl.signal });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const total = +(res.headers.get('content-length') || 0);
-      const reader = res.body?.getReader();
-      let blob;
-      if (reader) {
-        const chunks = [];
-        let got = 0;
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          got += value.length;
-          const mb = (got / 1048576).toFixed(1);
-          const secs = Math.round((Date.now() - t0) / 1000);
-          setNote(total ? `${Math.round((got / total) * 100)}% · ${mb} MB` : `${mb} MB · ${secs}s`);
+    // Try direct first, then via proxy if CORS fails
+    const { proxyBase } = await import('../core/settings');
+    const proxy = proxyBase();
+    const urlsToTry = [u];
+    if (proxy) urlsToTry.push(`${proxy}/?url=${encodeURIComponent(u)}`);
+
+    let lastErr = null;
+    for (const tryUrl of urlsToTry) {
+      try {
+        const res = await fetch(tryUrl, { mode: 'cors', signal: ctrl.signal });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const total = +(res.headers.get('content-length') || 0);
+        const reader = res.body?.getReader();
+        let blob;
+        if (reader) {
+          const chunks = [];
+          let got = 0;
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            got += value.length;
+            const mb = (got / 1048576).toFixed(1);
+            const secs = Math.round((Date.now() - t0) / 1000);
+            setNote(total ? `${Math.round((got / total) * 100)}% · ${mb} MB` : `${mb} MB · ${secs}s`);
+          }
+          blob = new Blob(chunks);
+        } else {
+          blob = await res.blob();
         }
-        blob = new Blob(chunks);
-      } else {
-        blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 15000);
+        setNote(`Saved (${(blob.size / 1048576).toFixed(1)} MB)`);
+        abortRef.current = null;
+        setSaving('');
+        setTimeout(() => setNote(''), 5000);
+        return;
+      } catch (e) {
+        lastErr = e;
+        if (e.name === 'AbortError') { setNote('Cancelled'); break; }
+        // Try next URL (proxy) if first failed
+        if (tryUrl === u) { setNote('Direct failed, trying via proxy…'); continue; }
       }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = name;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 15000);
-      setNote(`Saved (${(blob.size / 1048576).toFixed(1)} MB)`);
-    } catch (e) {
-      if (e.name === 'AbortError') { setNote('Cancelled'); }
-      else {
-        setNote('Opening in a new tab…');
-        window.open(u, '_blank', 'noopener');
-      }
+    }
+    // All failed - fallback to opening in new tab
+    if (lastErr?.name !== 'AbortError') {
+      setNote('Opening in a new tab…');
+      window.open(u, '_blank', 'noopener');
     }
     abortRef.current = null;
     setSaving('');
@@ -161,7 +225,7 @@ export function Downloader() {
     </div>
     <div className="btnrow">
       <button className="btn" style={{ flex: 1 }} disabled={busy || !url.trim()} onClick={fetchInfo}>
-        {busy ? 'Fetching…' : '<Icon n="search" size={16} /> Fetch'}</button>
+        {busy ? 'Fetching…' : <><Icon n="search" size={16} /> Fetch</>}</button>
       <button className="btn ghost" onClick={async () => {
         try { setUrl(await navigator.clipboard.readText()); } catch {} }}><Icon n="list" size={18} /> Paste</button>
     </div>
@@ -209,7 +273,7 @@ export function Downloader() {
         ) : info.audio ? (
           <button className="btn" style={{ width: '100%' }}
             onClick={() => grab(info.audio, `${sanitize(info.title)}.m4a`)}>
-            {saving.endsWith('.m4a') ? (note || 'Downloading…') : '<Icon n="download" size={16} /> Download audio (M4A)'}</button>
+            {saving.endsWith('.m4a') ? (note || 'Downloading…') : <><Icon n="download" size={16} /> Download audio (M4A)</>}</button>
         ) : <span className="dim sm">No separate audio track available.</span>}
         {info.audio && (
           <audio controls src={info.audio} style={{ width: '100%', marginTop: 10 }} preload="none" />)}
@@ -249,13 +313,13 @@ export function Downloader() {
                 </div>
                 <button className="btn sm" disabled={!!saving}
                   onClick={() => grab(v.url, `${sanitize(info.title)}-${v.q}.mp4`)}>
-                  {saving.includes(v.q) ? (note || '…') : '<Icon n="download" size={16} />'}</button>
+                  {saving.includes(v.q) ? (note || '…') : <><Icon n="download" size={16} /> Download</>}</button>
               </div>))}
           </div>
         </>) : info.video ? (<>
           <button className="btn" style={{ width: '100%' }} disabled={!!saving}
             onClick={() => grab(info.video, `${sanitize(info.title)}.mp4`)}>
-            {saving.endsWith('.mp4') ? (note || 'Downloading…') : '<Icon n="download" size={16} /> Download video (best available)'}</button>
+            {saving.endsWith('.mp4') ? (note || 'Downloading…') : <><Icon n="download" size={16} /> Download video (best available)</>}</button>
           <div className="src" style={{ marginTop: 10 }}>
             <span className="dot warn" />
             <span>This source returns a single best-quality file, not a quality list.

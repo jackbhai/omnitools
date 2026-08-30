@@ -176,7 +176,7 @@ export function TempMail() {
     {!box && (
       <Card><div className="chead"><Icon n="mail" size={18} /> Disposable email</div><p className="dim sm">Generate a throwaway address to receive verification mails
           without giving away your real inbox.</p><button className="btn" style={{ width: '100%', marginTop: 12 }} disabled={busy} onClick={create}>
-          {busy ? 'Creating…' : '<Icon n="mail" size={18} /> Create address'}</button></Card>)}
+          {busy ? 'Creating…' : <><Icon n="mail" size={18} /> Create address</>}</button></Card>)}
     {err && <div className="err"><p>{err}</p></div>}
     {box && (<><Card><div className="chead">Your temporary address</div><div className="out" style={{ fontSize: 14 }}>{box.email}</div><div className="btnrow"><Copy text={box.email} label="Copy address" /><button className="btn ghost sm" disabled={busy} onClick={refresh}>
             {busy ? '…' : ' Check inbox'}</button><button className="btn ghost sm" onClick={create}>New</button></div></Card><div className="dim sm" style={{ margin: '10px 0 6px' }}>{inbox.length} message(s)</div>
