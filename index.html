@@ -10,6 +10,79 @@
 <link href="https://fonts.googleapis.com/css2?family=Bangers&family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />
 <link rel="manifest" href="./manifest.webmanifest" />
 <title>OmniTools — 100+ tools, no login</title>
+<style>
+#error-display {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #1a1a1a;
+  color: #ff6b6b;
+  padding: 20px;
+  font-family: monospace;
+  font-size: 14px;
+  overflow: auto;
+  z-index: 9999;
+}
+#error-display h2 {
+  color: #ff6b6b;
+  margin-top: 0;
+}
+#error-display p {
+  color: #fff;
+}
+#error-display pre {
+  background: #000;
+  padding: 15px;
+  border-radius: 4px;
+  overflow: auto;
+  color: #fff;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+#error-display button {
+  margin-top: 20px;
+  padding: 12px 24px;
+  background: #4ecdc4;
+  color: #000;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+}
+</style>
 </head>
-<body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body>
+<body>
+<div id="error-display">
+  <h2>⚠️ Error Detected</h2>
+  <p id="error-message"></p>
+  <pre id="error-stack"></pre>
+  <button onclick="location.reload()">Reload Page</button>
+</div>
+<div id="root"></div>
+<script>
+// Global error handler - shows errors on screen for mobile users
+window.onerror = function(msg, url, line, col, error) {
+  var display = document.getElementById('error-display');
+  var msgEl = document.getElementById('error-message');
+  var stackEl = document.getElementById('error-stack');
+  display.style.display = 'block';
+  msgEl.textContent = msg;
+  stackEl.textContent = error ? error.stack : 'Error at ' + url + ':' + line + ':' + col;
+  return false;
+};
+window.onunhandledrejection = function(event) {
+  var display = document.getElementById('error-display');
+  var msgEl = document.getElementById('error-message');
+  var stackEl = document.getElementById('error-stack');
+  display.style.display = 'block';
+  msgEl.textContent = 'Unhandled Promise Rejection';
+  stackEl.textContent = event.reason ? (event.reason.stack || event.reason.toString()) : 'Unknown error';
+};
+</script>
+<script type="module" src="/src/main.jsx"></script>
+</body>
 </html>
