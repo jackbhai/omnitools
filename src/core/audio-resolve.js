@@ -90,6 +90,12 @@ export function cleanMediaUrl(raw) {
       const id = u.pathname.slice(1);
       if (id) return `https://www.youtube.com/watch?v=${id}`;
     }
+    // Instagram resolver needs trailing slash for reels — measured: without slash it returns success:false
+    if (/instagram\.com$/i.test(u.hostname) || /instagram\.com$/i.test(u.hostname.replace(/^www\./,''))) {
+      if (/\/reel\/[^/]+$/i.test(u.pathname) || /\/p\/[^/]+$/i.test(u.pathname)) {
+        if (!u.pathname.endsWith('/')) u.pathname += '/';
+      }
+    }
     return u.toString().replace(/\?$/, '');
   } catch { return String(raw).trim(); }
 }
