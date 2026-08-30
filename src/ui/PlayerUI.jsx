@@ -10,6 +10,22 @@ const mmss = (s) => (!s || !isFinite(s)) ? '0:00'
 export function MiniPlayer() {
   const p = usePlayer();
   if (!p?.track) return null;
+  if (p.miniHidden && !p.full) {
+    // Hidden but still playing — show tiny restore pill
+    return (
+      <div className="mini mini-hidden">
+        <button className="mini-restore" onClick={() => p.setMiniHidden(false)} title="Show player">
+          <Icon n="music" size={14} /> {p.playing ? 'Playing' : 'Paused'} · {p.track.title?.slice(0,20) || 'Music'}
+        </button>
+        <button className="mini-btn" onClick={() => p.setMiniHidden(false)} aria-label="Expand">
+          <Icon n="up" size={14} />
+        </button>
+        <button className="mini-btn" onClick={(e) => { e.stopPropagation(); p.stop?.(); }} aria-label="Stop">
+          <Icon n="x" size={14} />
+        </button>
+      </div>
+    );
+  }
   // When collapsed, the IFrame must stay mounted (off-screen) so playback
   // continues while the user browses other tools.
   const hidden = p.yt && !p.full ? (
@@ -23,16 +39,11 @@ export function MiniPlayer() {
     <div className="mini" onClick={() => p.setFull(true)}>
       <div className="mini-prog"><i style={{ width: pct + '%' }} /></div>
       <div className="mini-row">
-        {/* The thumbnail turns too, at the same rate as the full player's
-            disc, so the collapsed bar still says "this is playing" without
-            needing to read anything. */}
         {p.track.art
           ? <img className={`mini-art ${p.playing ? 'spin' : ''}`} src={p.track.art} alt=""
               onError={(e) => { e.target.style.visibility = 'hidden'; }} />
           : <div className={`mini-ph ${p.playing ? 'spin' : ''}`}><Icon n="music" size={17} /></div>}
         <div className="mini-txt">
-          {/* A title longer than the bar scrolls once on its own instead of
-              being cut off with an ellipsis the user can do nothing about. */}
           <b className="mini-ttl"><span>{p.track.title || p.track.name}</span></b>
           <span>{p.err ? <em style={{ color: 'var(--bad)' }}>{p.err}</em>
             : p.loading ? (p.stage || 'Loading ad-free audio…')
@@ -45,6 +56,18 @@ export function MiniPlayer() {
           {p.loading ? <span className="spin-sm" /> : <Icon n={p.playing ? 'pause' : 'play'} size={15} />}</button>
         <button className="mini-btn" aria-label="Next"
           onClick={(e) => { e.stopPropagation(); p.step(1); }}><Icon n="next" size={17} /></button>
+        <button className="mini-btn" aria-label="Full screen" title="Full screen"
+          onClick={(e) => { e.stopPropagation(); p.setFull(true); }}>
+          <Icon n="max" size={15} />
+        </button>
+        <button className="mini-btn" aria-label="Minimize" title="Minimize player"
+          onClick={(e) => { e.stopPropagation(); p.setMiniHidden(true); }}>
+          <Icon n="down" size={15} />
+        </button>
+        <button className="mini-btn" aria-label="Close" title="Stop and close"
+          onClick={(e) => { e.stopPropagation(); p.stop?.(); }}>
+          <Icon n="x" size={14} />
+        </button>
       </div>
     </div>
   </>);
@@ -275,8 +298,14 @@ export function FullPlayer() {
   return (
     <div className="full">
       <div className="full-top">
-        <button className="iconbtn" onClick={() => p.setFull(false)}>⌄</button>
+        <button className="iconbtn" onClick={() => p.setFull(false)} title="Minimize to bar">⌄</button>
         <div className="full-ttl"><b>Now playing</b><span>{t.src || 'OmniTools'}</span></div>
+        <button className="iconbtn" aria-label="Minimize to hidden" title="Hide player (keep playing)"
+          onClick={() => { p.setFull(false); p.setMiniHidden(true); }}>
+          <Icon n="down" size={16} /></button>
+        <button className="iconbtn" aria-label="Close player" title="Stop and close"
+          onClick={() => { p.setFull(false); p.stop?.(); }}>
+          <Icon n="x" size={16} /></button>
         <button className="iconbtn" aria-label="Sleep timer"
           onClick={() => setSleepOpen((v) => !v)}
           style={{ color: p.sleep ? 'var(--green)' : '' }}>

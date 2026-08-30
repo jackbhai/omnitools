@@ -141,7 +141,10 @@ export const Bolt = (p) => <S {...p}><path d="M13.2 2.5 4.5 13.4h6L9.8 21.5l9-11
 export const Moon = (p) => <S {...p}><path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.7 8.7 0 1 0 11.1 11.1z" /></S>;
 export const Cast = (p) => <S {...p}><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4h13A2.5 2.5 0 0 1 21 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14" /><path d="M3 20a1 1 0 0 0 0-2M3 16.5a4.5 4.5 0 0 1 4.5 4.5M3 12.5A8.5 8.5 0 0 1 11.5 21" /></S>;
 export const Expand = (p) => <S {...p}><path d="M4 9V4.5h5M20 9V4.5h-5M4 15v4.5h5M20 15v4.5h-5" /></S>;
-export const Plus = (p) => <S {...p}><path d="M12 5v14M5 12h14" /></S>;
+export const Max = Expand;
+export const Min = (p) => <S {...p}><path d="M9 4.5H4.5v5M15 4.5h4.5v5M9 19.5H4.5v-5M15 19.5h4.5v-5" /></S>;
+export const Down = (p) => <S {...p}><path d="m5 9 7 7 7-7" /></S>;
+export const Up = (p) => <S {...p}><path d="m5 15 7-7 7 7" /></S>;
 export const Trash = (p) => <S {...p}><path d="M4 6.5h16M9.5 6.5V4.2h5v2.3M6.5 6.5l.9 13a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5l.9-13" /><path d="M10.5 10.5v6.5M13.5 10.5v6.5" /></S>;
 export const Queue = (p) => <S {...p}><path d="M3 6h11M3 11h11M3 16h7" /><path d="M17.5 20V11.5l4-1.2V19" /><circle cx="16" cy="20" r="1.6" /><circle cx="20" cy="18.8" r="1.6" /></S>;
 export const Mic = (p) => <S {...p}><rect x="9" y="2.5" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5" /></S>;
@@ -167,7 +170,7 @@ export const ICONS = {
   back: Back, refresh: Refresh, filter: Filter, bank: Bank, box: Box,
   repeat: Repeat, repeatone: RepeatOne, shuffle: Shuffle,
   volume: Volume, volumeoff: VolumeOff, wave: Wave, bolt: Bolt, moon: Moon,
-  cast: Cast, expand: Expand, plus: Plus, trash: Trash, queue: Queue, mic: Mic,
+  cast: Cast, expand: Expand, max: Max, min: Min, down: Down, up: Up, plus: Plus, trash: Trash, queue: Queue, mic: Mic,
 };
 
 /** <Icon n="bus" size={22} /> */

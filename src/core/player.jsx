@@ -389,6 +389,7 @@ export function PlayerProvider({ children }) {
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState('off');     // off | one | all
   const [full, setFull] = useState(false);
+  const [miniHidden, setMiniHidden] = useState(false);
   const [err, setErr] = useState('');
   const [lyrics, setLyrics] = useState(null);
   const [eq, setEq] = useState([...PRESETS.Flat]);
@@ -891,11 +892,17 @@ export function PlayerProvider({ children }) {
   }, [enableEq]);
 
   const value = {
-    audio, yt, stage, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, err, lyrics, via,
+    audio, yt, stage, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, miniHidden, err, lyrics, via,
     canViz,
     eq, preset, bass, treb, comp, rate, sleep,
-    play, toggle, step, seek, retry, extendQueue, setRadio, setShuffle, setRepeat, setFull, setSleep, applyPreset,
+    play, toggle, step, seek, retry, extendQueue, setRadio, setShuffle, setRepeat, setFull, setMiniHidden, setSleep, applyPreset,
     eqOn, enableEq,
+    stop: () => {
+      try { audio.current?.pause(); } catch {}
+      try { if (audio.current) { audio.current.removeAttribute('src'); audio.current.load(); } } catch {}
+      setPlaying(false); setTrack(null); setFull(false); setMiniHidden(false); setQueue([]); setIdx(-1);
+      playTokenRef.current++;
+    },
     /* The equaliser needs the same CORS read access the visualiser does, so
        one measured fact drives both instead of two guesses. */
     eqCapable: canViz && Chain.canProcess(audio.current),

@@ -23,6 +23,7 @@ function Screen({ ch, onClose, onNext }) {
   const hlsRef = useRef(null);
   const [state, setState] = useState('starting');   // starting | live | failed
   const [why, setWhy] = useState('');
+  const [retries, setRetries] = useState(0);
 
   useEffect(() => {
     let dead = false;
@@ -37,57 +38,74 @@ function Screen({ ch, onClose, onNext }) {
     };
 
     (async () => {
-      /* Safari plays HLS itself; everywhere else needs the engine, and if the
-         engine will not load the user is told rather than shown a black box. */
       if (TV.nativeHls()) {
         v.src = ch.url;
-        v.play().catch(() => fail('The browser refused to start this stream.'));
+        try { await v.play(); TV.noteWatched(ch); TV.noteLive(ch.url, true); }
+        catch { fail('Tap play to start — browser blocked autoplay'); }
       } else {
         let Hls;
         try { Hls = await TV.loadHls(); }
         catch (e) { fail(e.message); return; }
         if (dead) return;
-        if (!Hls.isSupported()) { fail('This browser cannot play live streams.'); return; }
-        const hls = new Hls({ maxBufferLength: 20, manifestLoadingTimeOut: 12000,
-                              manifestLoadingMaxRetry: 2, levelLoadingMaxRetry: 2 });
+        if (!Hls.isSupported()) { fail('This browser cannot play live streams. Try Chrome/Edge.'); return; }
+        const hls = new Hls({
+          maxBufferLength: 30, maxMaxBufferLength: 60,
+          manifestLoadingTimeOut: 15000, manifestLoadingMaxRetry: 3,
+          levelLoadingMaxRetry: 3, fragLoadingMaxRetry: 3,
+          enableWorker: true, lowLatencyMode: false,
+        });
         hlsRef.current = hls;
         hls.on(Hls.Events.ERROR, (_e, data) => {
           if (!data?.fatal) return;
-          fail(data.type === Hls.ErrorTypes.NETWORK_ERROR
-            ? 'This channel is not responding right now.'
-            : 'This stream could not be decoded.');
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            // Auto retry once for network errors
+            if (retries < 1) { setRetries(r => r+1); hls.startLoad(); return; }
+            fail('This channel is not responding right now. Try next.');
+          } else {
+            fail('This stream could not be decoded. Try another channel.');
+          }
         });
         hls.loadSource(ch.url);
         hls.attachMedia(v);
-        v.play().catch(() => { /* autoplay may need a tap; the controls are there */ });
+        v.play().catch(() => { /* needs tap */ });
+        TV.noteWatched(ch);
+        TV.noteLive(ch.url, true);
       }
-      TV.noteWatched(ch);
-      TV.noteLive(ch.url, true);
     })();
 
     const onPlaying = () => { if (!dead) setState('live'); };
-    const onErr = () => fail('The stream stopped unexpectedly.');
+    const onErr = () => fail('The stream stopped unexpectedly. Tap retry or next.');
+    const onWaiting = () => { if (!dead && state !== 'failed') setState('starting'); };
     v.addEventListener('playing', onPlaying);
     v.addEventListener('error', onErr);
-    /* A stream that never reaches `playing` is as broken as one that errors,
-       and without this it would spin forever. */
+    v.addEventListener('waiting', onWaiting);
     const guard = setTimeout(() => {
-      if (!dead && v.readyState < 3) fail('This channel did not start in time.');
-    }, 16000);
+      if (!dead && v.readyState < 3) fail('This channel did not start in time — try next.');
+    }, 18000);
 
     return () => {
       dead = true;
       clearTimeout(guard);
       v.removeEventListener('playing', onPlaying);
       v.removeEventListener('error', onErr);
-      try { hlsRef.current?.destroy(); } catch { /* already gone */ }
+      v.removeEventListener('waiting', onWaiting);
+      try { hlsRef.current?.destroy(); } catch {}
       hlsRef.current = null;
-      try { v.pause(); v.removeAttribute('src'); v.load(); } catch { /* fine */ }
+      try { v.pause(); v.removeAttribute('src'); v.load(); } catch {}
     };
-  }, [ch?.id, ch?.url]);   // eslint-disable-line
+  }, [ch?.id, ch?.url, retries]);   // eslint-disable-line
 
   const [fav, setFav] = useState(() => TV.isTvFav(ch?.id));
   useEffect(() => { setFav(TV.isTvFav(ch?.id)); }, [ch?.id]);
+
+  const togglePiP = async () => {
+    try {
+      const v = vid.current;
+      if (!v) return;
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else if (v.requestPictureInPicture) await v.requestPictureInPicture();
+    } catch {}
+  };
 
   return (
     <div className="tv-screen">
@@ -95,18 +113,20 @@ function Screen({ ch, onClose, onNext }) {
         <video ref={vid} playsInline controls autoPlay
           style={{ width: '100%', height: '100%', background: '#000', display: 'block' }} />
         {state === 'starting' && (
-          <div className="tv-overlay"><div className="spin" /><span>Tuning in…</span></div>)}
+          <div className="tv-overlay"><div className="spin" /><span>Tuning in… {retries ? `(retry ${retries})` : ''}</span></div>)}
         {state === 'failed' && (
           <div className="tv-overlay">
             <Icon n="warn" size={26} style={{ color: 'var(--warn)' }} />
             <b style={{ fontSize: 13 }}>{ch.name}</b>
             <span className="dim sm" style={{ textAlign: 'center', maxWidth: 260 }}>{why}</span>
             <span className="dim" style={{ fontSize: 10.5, textAlign: 'center', maxWidth: 280 }}>
-              These are public streams that anyone can publish; some are off air
-              or region-locked at any moment.
+              Public streams — some are off air or region-locked. Try next or retry.
             </span>
             <div className="btnrow" style={{ justifyContent: 'center' }}>
-              <button className="btn sm" onClick={onNext}>Try the next channel</button>
+              <button className="btn sm" onClick={() => { setRetries(0); setState('starting'); setWhy(''); }}>
+                <Icon n="refresh" size={14} /> Retry</button>
+              <button className="btn ghost sm" onClick={onNext}>Next channel</button>
+              <button className="btn ghost sm" onClick={onClose}><Icon n="x" size={14} /> Close</button>
             </div>
           </div>)}
       </div>
@@ -122,17 +142,23 @@ function Screen({ ch, onClose, onNext }) {
           <b style={{ fontSize: 13 }}>{ch.name}</b>
           <span className="dim sm">
             {ch.group}{ch.quality ? ` · ${ch.quality}` : ''}
-            {state === 'live' ? ' · live' : ''}
+            {state === 'live' ? ' · live' : state === 'starting' ? ' · tuning…' : ' · offline'}
           </span>
         </div>
-        <button className="rowbtn" aria-label="Favourite channel"
+        <button className="rowbtn" aria-label="Favourite" title="Save"
           onClick={() => { TV.toggleTvFav(ch); setFav((v) => !v); }}
           style={{ color: fav ? 'var(--green)' : 'var(--fg3)' }}>
           <Icon n={fav ? 'staron' : 'star'} size={17} /></button>
-        <button className="rowbtn" aria-label="Fullscreen"
-          onClick={() => { try { vid.current?.requestFullscreen?.(); } catch { /* denied */ } }}>
-          <Icon n="grid" size={17} /></button>
-        <button className="rowbtn" aria-label="Close player" onClick={onClose}>
+        <button className="rowbtn" aria-label="Picture-in-Picture" title="PiP"
+          onClick={togglePiP}>
+          <Icon n="expand" size={16} /></button>
+        <button className="rowbtn" aria-label="Fullscreen" title="Fullscreen"
+          onClick={() => { try { vid.current?.requestFullscreen?.(); } catch {} }}>
+          <Icon n="max" size={17} /></button>
+        <button className="rowbtn" aria-label="Minimize" title="Minimize"
+          onClick={onClose}>
+          <Icon n="down" size={17} /></button>
+        <button className="rowbtn" aria-label="Close" title="Close" onClick={onClose}>
           <Icon n="x" size={17} /></button>
       </div>
     </div>);
