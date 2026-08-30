@@ -33,10 +33,12 @@ import { favourites, isFav, toggleFav, history, topPlayed, playlists,
          clearHistory, onLibrary, libraryStats } from '../core/library';
 import { getSettings, setSetting, testProxy, usingBuiltin, BUILTIN_PROXY } from '../core/settings';
 import * as SRC from '../core/sources';
+import { HomeTab } from './music-home';
 
 const mmss = (s) => (!s ? '' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
 
 const TABS = [
+  ['home',     'cog',     'Home'],
   ['search',   'search',  'Search'],
   ['artists',  'smile',   'Artists'],
   ['library',  'staron',  'Library'],
@@ -59,7 +61,7 @@ const QUICK = ['babbu maan', 'sidhu moose wala', 'diljit dosanjh', 'ishq murshid
 
 export function Music() {
   const player = usePlayer();
-  const [tab, setTab] = useState('search');
+  const [tab, setTab] = useState('home');
   const [, bump] = useState(0);
   useEffect(() => onWarm(() => bump((n) => n + 1)), []);
 
@@ -72,6 +74,7 @@ export function Music() {
         </button>))}
     </div>
 
+    {tab === 'home'     && <HomeTab player={player} />}
     {tab === 'search'   && <SearchTab player={player} />}
     {tab === 'artists'  && <ArtistsTab player={player} />}
     {tab === 'library'  && <LibraryTab player={player} />}
