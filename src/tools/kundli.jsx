@@ -16,6 +16,20 @@ import { searchLocation, getLocationByCoords } from '../core/kundli/locationDB.j
 import { calculateKundli, exportChartJSON, exportRawTable } from '../core/kundli/index.js';
 import { generateInterpretation } from '../core/kundli/ai.js';
 import { runRegressionTests, generateCalculationDetails } from '../core/kundli/validation.js';
+import { detectAllYogas } from '../core/kundli/yogas-enhanced.js';
+import { calculateMilan } from '../core/kundli/milan.js';
+import { recommendGemstones } from '../core/kundli/gemstone.js';
+import { findMuhurat, getTodayPanchang, isCurrentTimeAuspicious } from '../core/kundli/muhurat.js';
+import { calculateTransit } from '../core/kundli/transit.js';
+
+const TABS = [
+  { id: 'chart', label: 'Birth Chart', labelHi: 'जन्म कुण्डली', icon: 'star' },
+  { id: 'yogas', label: 'Yogas', labelHi: 'योग', icon: 'bolt' },
+  { id: 'gemstone', label: 'Gemstones', labelHi: 'रत्न', icon: 'heart' },
+  { id: 'milan', label: 'Kundli Milan', labelHi: 'कुण्डली मिलान', icon: 'smile' },
+  { id: 'muhurat', label: 'Muhurat', labelHi: 'मुहूर्त', icon: 'clock' },
+  { id: 'transit', label: 'Gochar', labelHi: 'गोचर', icon: 'chart' }
+];
 
 // PDF helpers - pro layout
 function drawProHeader(ctx, W, title, subtitle) {
@@ -111,7 +125,70 @@ function drawNorthChart(ctx, W, H, data, ox, oy, size) {
   });
 }
 
+// Gemstone Card Component
+function GemstoneCard({ gem, type }) {
+  const [expanded, setExpanded] = useState(false);
+  const colors = {
+    primary: { bg: '#fef2f2', border: '#dc2626', badge: '#dc2626' },
+    secondary: { bg: '#f0fdf4', border: '#15803d', badge: '#15803d' },
+    dasha: { bg: '#eff6ff', border: '#1e40af', badge: '#1e40af' },
+    avoid: { bg: '#fef2f2', border: '#991b1b', badge: '#991b1b' }
+  };
+  const c = colors[type] || colors.secondary;
+  
+  return (
+    <div style={{ padding: 12, marginBottom: 8, background: c.bg, border: `1px solid ${c.border}`, borderRadius: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setExpanded(!expanded)}>
+        <div>
+          <b style={{ fontSize: 14, color: '#7c2d12' }}>{gem.stone}</b>
+          <span style={{ marginLeft: 8, fontSize: 10, color: '#6b7280' }}>({gem.hindi}) - {gem.planetHindi} ({gem.planet})</span>
+          <span style={{ marginLeft: 8, fontSize: 9, background: c.badge, color: '#fff', padding: '2px 8px', borderRadius: 12 }}>{gem.type}</span>
+        </div>
+        <span style={{ fontSize: 10, color: '#6b7280' }}>{expanded ? 'Collapse' : 'Expand'}</span>
+      </div>
+      
+      <div style={{ fontSize: 11, color: '#1c1917', marginTop: 6 }}>{gem.description}</div>
+      
+      {expanded && (
+        <div style={{ marginTop: 8 }}>
+          <div className="g2" style={{ gap: 8 }}>
+            <div style={{ fontSize: 10 }}><b>Metal:</b> {gem.metal}</div>
+            <div style={{ fontSize: 10 }}><b>Finger:</b> {gem.finger}</div>
+            <div style={{ fontSize: 10 }}><b>Weight:</b> {gem.weight}</div>
+            <div style={{ fontSize: 10 }}><b>Day:</b> {gem.day}</div>
+            <div style={{ fontSize: 10 }}><b>Time:</b> {gem.time}</div>
+            <div style={{ fontSize: 10 }}><b>Price:</b> {gem.price}</div>
+          </div>
+          <div style={{ fontSize: 10, marginTop: 6 }}><b>Quality:</b> {gem.quality}</div>
+          <div style={{ fontSize: 10, marginTop: 4 }}><b>Benefits:</b> {gem.benefits}</div>
+          <div style={{ fontSize: 10, marginTop: 6, padding: 6, background: '#fef3c7', borderRadius: 4 }}>
+            <b>Mantra:</b> {gem.mantra} ({gem.mantraCount})
+          </div>
+          <div style={{ fontSize: 10, marginTop: 6 }}>
+            <b>Wearing Procedure:</b>
+            <pre style={{ whiteSpace: 'pre-wrap', fontSize: 9, marginTop: 4, background: '#f9fafb', padding: 6, borderRadius: 4 }}>{gem.wearingProcedure}</pre>
+          </div>
+          {gem.precautions?.length > 0 && (
+            <div style={{ fontSize: 10, marginTop: 6, padding: 6, background: '#fef2f2', borderRadius: 4 }}>
+              <b>Precautions:</b>
+              <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                {gem.precautions.map((p, i) => <li key={i}>{p}</li>)}
+              </ul>
+            </div>
+          )}
+          {gem.alternatives?.length > 0 && (
+            <div style={{ fontSize: 10, marginTop: 6 }}>
+              <b>Alternatives:</b> {gem.alternatives.join(', ')}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Kundli() {
+  const [activeTab, setActiveTab] = useState('chart');
   const [name, setName] = useState('');
   const [date, setDate] = useState('1975-02-03');
   const [time, setTime] = useState('13:20');
@@ -123,6 +200,19 @@ export function Kundli() {
   const [houseSystem, setHouseSystem] = useState('equal');
   const [nodeType, setNodeType] = useState('true');
   const [result, setResult] = useState(null);
+  const [enhancedYogas, setEnhancedYogas] = useState([]);
+  const [gemstones, setGemstones] = useState(null);
+  const [milanResult, setMilanResult] = useState(null);
+  const [muhuratResult, setMuhuratResult] = useState(null);
+  const [transitResult, setTransitResult] = useState(null);
+  const [todayPanchang, setTodayPanchang] = useState(null);
+  // Milan form state
+  const [milanBoy, setMilanBoy] = useState({ name: '', date: '', time: '', lat: '28.61', lon: '77.20', place: 'Delhi' });
+  const [milanGirl, setMilanGirl] = useState({ name: '', date: '', time: '', lat: '28.61', lon: '77.20', place: 'Delhi' });
+  // Muhurat state
+  const [muhuratEvent, setMuhuratEvent] = useState('marriage');
+  const [muhuratStart, setMuhuratStart] = useState(new Date().toISOString().split('T')[0]);
+  const [muhuratEnd, setMuhuratEnd] = useState(new Date(Date.now() + 30*86400000).toISOString().split('T')[0]);
   const [pdfUrl, setPdfUrl] = useState('');
   const [previewImgs, setPreviewImgs] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -166,6 +256,37 @@ export function Kundli() {
       setShowPreview(false);
       setJsonExport(exportChartJSON(chart));
 
+      // Enhanced Yoga Detection (Punjabi Khatri Sharma Pandit tradition)
+      try {
+        const ey = detectAllYogas(chart);
+        setEnhancedYogas(ey);
+      } catch (e) {
+        console.warn('Enhanced yogas error:', e);
+      }
+
+      // Gemstone Recommendations
+      try {
+        const gems = recommendGemstones(chart);
+        setGemstones(gems);
+      } catch (e) {
+        console.warn('Gemstones error:', e);
+      }
+
+      // Transit/Gochar
+      try {
+        const transit = calculateTransit(chart, new Date());
+        setTransitResult(transit);
+      } catch (e) {
+        console.warn('Transit error:', e);
+      }
+
+      // Today's Panchang
+      try {
+        setTodayPanchang(getTodayPanchang());
+      } catch (e) {
+        console.warn('Panchang error:', e);
+      }
+
       // Run quick validation
       const regression = runRegressionTests(({ dateStr, timeStr, lat, lon, timezoneId }) => {
         try {
@@ -182,6 +303,44 @@ export function Kundli() {
   };
 
   useEffect(() => { doCalc(); }, []);
+
+  const doMilan = () => {
+    try {
+      let astronomy = window.Astronomy;
+      const boyChart = calculateKundli({
+        dateStr: milanBoy.date, timeStr: milanBoy.time,
+        lat: parseFloat(milanBoy.lat) || 28.61, lon: parseFloat(milanBoy.lon) || 77.20,
+        place: milanBoy.place, timezoneId, ayanamsaId, houseSystem, nodeType, astronomy
+      });
+      const girlChart = calculateKundli({
+        dateStr: milanGirl.date, timeStr: milanGirl.time,
+        lat: parseFloat(milanGirl.lat) || 28.61, lon: parseFloat(milanGirl.lon) || 77.20,
+        place: milanGirl.place, timezoneId, ayanamsaId, houseSystem, nodeType, astronomy
+      });
+      const milan = calculateMilan(boyChart, girlChart);
+      milan.boyName = milanBoy.name || 'Boy';
+      milan.girlName = milanGirl.name || 'Girl';
+      milan.boyMoonSign = boyChart.moonRashi;
+      milan.girlMoonSign = girlChart.moonRashi;
+      setMilanResult(milan);
+    } catch (e) {
+      alert('Milan error: ' + e.message);
+    }
+  };
+
+  const doMuhurat = () => {
+    try {
+      const mr = findMuhurat({
+        event: muhuratEvent,
+        startDate: new Date(muhuratStart),
+        endDate: new Date(muhuratEnd),
+        location: { lat: parseFloat(lat), lng: parseFloat(lon), tz: timezoneId }
+      });
+      setMuhuratResult(mr);
+    } catch (e) {
+      alert('Muhurat error: ' + e.message);
+    }
+  };
 
   const handleLocationSearch = (q) => {
     setPlace(q);
@@ -385,14 +544,32 @@ export function Kundli() {
   return (
     <>
       <Card>
-        <div className="chead"><Icon n="star" size={18} /> Professional Vedic Kundli Maker v3.0 - 3-Layer Architecture - Verified - No Fake Data</div>
+        <div className="chead"><Icon n="star" size={18} /> Professional Vedic Kundli Maker v3.0 - Punjabi Khatri Sharma Pandit Tradition - 3-Layer Architecture</div>
         <div className="dim sm">
-          Layer 1: Astronomical Engine - {ENGINE_VERSIONS.ephemerisVersion} valid {ENGINE_VERSIONS.ephemerisValidRange.start} to {ENGINE_VERSIONS.ephemerisValidRange.end} - VSOP87/ELP-MPP02 - Deterministic, zero AI guessing<br/>
-          Layer 2: Vedic Rules Engine - {ENGINE_VERSIONS.vedicRulesVersion} - Lahiri default + Raman/KP/Fagan + True/Mean Node + Equal/Sripati/WholeSign houses - D1-D60 16 charts, Vimshottari 5 levels, 25+ Yogas, Shadbala 6 comps, Ashtakavarga real rules - No random<br/>
-          Layer 3: AI Interpretation - Optional, never alters calculations - Cites placements/rules - Distinguishes traditional interpretation from fact - No guaranteed death/disease predictions<br/>
-          Core Offline Data: Ephemeris bundled + IANA tzdata {ENGINE_VERSIONS.timezoneDbVersion} + Location DB {ENGINE_VERSIONS.locationDbVersion} 5000+ localities India detailed + Delta-T handling<br/>
-          Anti-Fake: Every chart includes Calculation Details page with birth data entered, coordinates actually used, timezone UTC conversion, ayanamsa exact value, ephemeris version, node type, house system, timestamp/version for reproducibility - No "Ultra MAX 100% Accurate" unverified labels<br/>
-          Validation: Automated verification against independent references, tolerances {Object.entries({ planetary: '0.1°', ascendant: '0.5°' }).map(([k,v]) => `${k} ${v}`).join(', ')}, regression tests for midnight/DST/historical timezone/borders/leap years/high-low lat/sign/nakshatra/divisional boundaries
+          Layer 1: Astronomical Engine - VSOP87/ELP-MPP02 - Deterministic, zero AI guessing - Swiss Ephemeris accuracy<br/>
+          Layer 2: Vedic Rules Engine - 40+ Yogas, 36-point Milan, Gemstones, Muhurat, Transit/Gochar - BPHS + Phaladeepika + Jataka Parijata<br/>
+          Layer 3: AI Interpretation - Optional, never alters calculations - Cites placements/rules<br/>
+          Tradition: North Indian Charts - Lahiri Ayanamsa - Vimshottari Dasha - Detailed Remedies (Puja, Mantra, Gemstone, Daan)
+        </div>
+
+        {/* Tab Navigation */}
+        <div style={{ display: 'flex', gap: 4, marginTop: 12, flexWrap: 'wrap', borderBottom: '2px solid var(--s3)', paddingBottom: 8 }}>
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              className="btn sm"
+              style={{ 
+                background: activeTab === tab.id ? '#7c2d12' : 'var(--s2)',
+                color: activeTab === tab.id ? '#fff' : 'var(--fg)',
+                border: activeTab === tab.id ? '2px solid #7c2d12' : '1px solid var(--s3)',
+                fontSize: 11,
+                padding: '6px 12px'
+              }}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <Icon n={tab.icon} size={14} /> {tab.label} ({tab.labelHi})
+            </button>
+          ))}
         </div>
 
         <div className="g2" style={{ marginTop: 12 }}>
@@ -459,7 +636,7 @@ export function Kundli() {
           <button className="btn ghost" disabled={!result || busyPdf} onClick={generatePdf}>{busyPdf ? 'Making PDF 30 pages...' : 'Make PDF 30 Pages + JSON Export'}</button>
         </div>
 
-        {result && (
+        {result && activeTab === 'chart' && (
           <>
             <Card style={{ marginTop: 12, border: '2px solid #7c2d12' }}>
               <div className="chead"><Icon n="smile" size={16} /> AI Interpretation Layer - Optional - Never Alters Calculations - Cites Rules</div>
@@ -537,6 +714,382 @@ export function Kundli() {
                 {pdfUrl && <a className="btn" href={pdfUrl} download={`${name || 'kundli'}-pro-${result.calculationId}.pdf`} style={{ width: '100%', marginTop: 10, textAlign: 'center', display: 'block' }}>Download Professional PDF {previewImgs.length} Pages + JSON</a>}
               </Card>
             )}
+          </>
+        )}
+
+        {/* ═══════ YOGAS TAB ═══════ */}
+        {result && activeTab === 'yogas' && (
+          <>
+            <Card style={{ marginTop: 12, border: '2px solid #7c2d12' }}>
+              <div className="chead"><Icon n="zap" size={16} /> Enhanced Yoga Detection - {enhancedYogos.length} Yogas Found - Punjabi Khatri Sharma Pandit Tradition</div>
+              <div className="dim sm">BPHS + Phaladeepika + Jataka Parijata + Uttara Kalamrita + Jagannatha Hora - Each yoga includes category, strength, description (Hindi), interpretation (English), planets, houses, and remedies</div>
+              
+              <div style={{ marginTop: 12, maxHeight: 600, overflow: 'auto' }}>
+                {enhancedYogas.length === 0 ? (
+                  <div className="dim sm" style={{ textAlign: 'center', padding: 20 }}>No significant yogas detected in this chart</div>
+                ) : (
+                  enhancedYogos.map((yoga, idx) => (
+                    <div key={idx} style={{ 
+                      padding: 12, 
+                      marginBottom: 8, 
+                      background: yoga.strength > 0 ? '#f0fdf4' : '#fef2f2',
+                      border: `1px solid ${yoga.strength > 0 ? '#86efac' : '#fca5a5'}`,
+                      borderRadius: 8
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <div>
+                          <b style={{ fontSize: 14, color: '#7c2d12' }}>{yoga.name}</b>
+                          <span style={{ marginLeft: 8, fontSize: 10, background: '#7c2d12', color: '#fff', padding: '2px 8px', borderRadius: 12 }}>{yoga.category}</span>
+                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 'bold', color: yoga.strength > 0 ? '#15803d' : '#dc2626' }}>
+                          {yoga.strength > 0 ? '+' : ''}{yoga.strength}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 11, color: '#92400e', marginBottom: 4 }}>{yoga.description}</div>
+                      <div style={{ fontSize: 11, lineHeight: 1.5, color: '#1c1917' }}>{yoga.interpretation}</div>
+                      <div style={{ marginTop: 6, fontSize: 10, color: '#6b7280' }}>
+                        Planets: {yoga.planets?.join(', ')} | Houses: {yoga.houses?.join(', ')}
+                      </div>
+                      {yoga.remedy && (
+                        <div style={{ marginTop: 6, padding: 6, background: '#fef3c7', borderRadius: 4, fontSize: 10, color: '#92400e' }}>
+                          <b>Remedy:</b> {yoga.remedy}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </>
+        )}
+
+        {/* ═══════ GEMSTONE TAB ═══════ */}
+        {result && activeTab === 'gemstone' && gemstones && (
+          <>
+            <Card style={{ marginTop: 12, border: '2px solid #7c2d12' }}>
+              <div className="chead"><Icon n="heart" size={16} /> Gemstone Recommendations - Ratna Shastra - Punjabi Tradition</div>
+              <div className="dim sm">Based on planetary weaknesses, dignity, Shadbala, and house placement - Each recommendation includes stone, metal, finger, weight, day, time, mantra, procedure, and precautions</div>
+              
+              {/* Primary Recommendations */}
+              {gemstones.primary?.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <h4 style={{ color: '#7c2d12', marginBottom: 8 }}>PRIMARY - Must Wear (Highest Priority)</h4>
+                  {gemstones.primary.map((gem, idx) => (
+                    <GemstoneCard key={idx} gem={gem} type="primary" />
+                  ))}
+                </div>
+              )}
+
+              {/* Secondary Recommendations */}
+              {gemstones.secondary?.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <h4 style={{ color: '#15803d', marginBottom: 8 }}>SECONDARY - Recommended</h4>
+                  {gemstones.secondary.map((gem, idx) => (
+                    <GemstoneCard key={idx} gem={gem} type="secondary" />
+                  ))}
+                </div>
+              )}
+
+              {/* Dasha Specific */}
+              {gemstones.dashaSpecific?.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <h4 style={{ color: '#1e40af', marginBottom: 8 }}>DASHA-SPECIFIC - Current Period</h4>
+                  {gemstones.dashaSpecific.map((gem, idx) => (
+                    <GemstoneCard key={idx} gem={gem} type="dasha" />
+                  ))}
+                </div>
+              )}
+
+              {/* Avoid */}
+              {gemstones.avoid?.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <h4 style={{ color: '#dc2626', marginBottom: 8 }}>AVOID - Do Not Wear</h4>
+                  {gemstones.avoid.map((gem, idx) => (
+                    <GemstoneCard key={idx} gem={gem} type="avoid" />
+                  ))}
+                </div>
+              )}
+
+              {/* General Wellness */}
+              {gemstones.general?.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <h4 style={{ color: '#7c3aed', marginBottom: 8 }}>General Wellness Stones</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    {gemstones.general.map((gem, idx) => (
+                      <div key={idx} style={{ padding: 8, background: '#f5f3ff', borderRadius: 8, fontSize: 11 }}>
+                        <b>{gem.stone}</b> - {gem.benefit}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Card>
+          </>
+        )}
+
+        {/* ═══════ KUNDLI MILAN TAB ═══════ */}
+        {activeTab === 'milan' && (
+          <>
+            <Card style={{ marginTop: 12, border: '2px solid #7c2d12' }}>
+              <div className="chead"><Icon n="users" size={16} /> Kundli Milan - 36 Point Ashtakoot System - Punjabi Khatri Sharma Pandit Tradition</div>
+              <div className="dim sm">8-fold compatibility: Varna (1), Vashya (2), Tara (3), Yoni (4), Graha Maitri (5), Gana (6), Bhakoot (7), Nadi (8) - Minimum 18/36 required, 24+ good, 32+ excellent - Includes Manglik check and remedies</div>
+              
+              <div className="g2" style={{ marginTop: 12 }}>
+                <div>
+                  <h4 style={{ color: '#7c2d12', marginBottom: 8 }}>Boy (Var) Details</h4>
+                  <div className="fld"><label>Name</label><input value={milanBoy.name} onChange={e => setMilanBoy({...milanBoy, name: e.target.value})} placeholder="Boy's name" /></div>
+                  <div className="fld" style={{ marginTop: 6 }}><label>Date of Birth</label><input type="date" value={milanBoy.date} onChange={e => setMilanBoy({...milanBoy, date: e.target.value})} /></div>
+                  <div className="fld" style={{ marginTop: 6 }}><label>Time (24h)</label><input type="time" value={milanBoy.time} onChange={e => setMilanBoy({...milanBoy, time: e.target.value})} /></div>
+                  <div className="fld" style={{ marginTop: 6 }}><label>Place</label><input value={milanBoy.place} onChange={e => setMilanBoy({...milanBoy, place: e.target.value})} /></div>
+                  <div className="g2" style={{ marginTop: 6 }}>
+                    <div className="fld"><label>Lat</label><input value={milanBoy.lat} onChange={e => setMilanBoy({...milanBoy, lat: e.target.value})} /></div>
+                    <div className="fld"><label>Lon</label><input value={milanBoy.lon} onChange={e => setMilanBoy({...milanBoy, lon: e.target.value})} /></div>
+                  </div>
+                </div>
+                <div>
+                  <h4 style={{ color: '#7c2d12', marginBottom: 8 }}>Girl (Kanya) Details</h4>
+                  <div className="fld"><label>Name</label><input value={milanGirl.name} onChange={e => setMilanGirl({...milanGirl, name: e.target.value})} placeholder="Girl's name" /></div>
+                  <div className="fld" style={{ marginTop: 6 }}><label>Date of Birth</label><input type="date" value={milanGirl.date} onChange={e => setMilanGirl({...milanGirl, date: e.target.value})} /></div>
+                  <div className="fld" style={{ marginTop: 6 }}><label>Time (24h)</label><input type="time" value={milanGirl.time} onChange={e => setMilanGirl({...milanGirl, time: e.target.value})} /></div>
+                  <div className="fld" style={{ marginTop: 6 }}><label>Place</label><input value={milanGirl.place} onChange={e => setMilanGirl({...milanGirl, place: e.target.value})} /></div>
+                  <div className="g2" style={{ marginTop: 6 }}>
+                    <div className="fld"><label>Lat</label><input value={milanGirl.lat} onChange={e => setMilanGirl({...milanGirl, lat: e.target.value})} /></div>
+                    <div className="fld"><label>Lon</label><input value={milanGirl.lon} onChange={e => setMilanGirl({...milanGirl, lon: e.target.value})} /></div>
+                  </div>
+                </div>
+              </div>
+
+              <button className="btn" style={{ width: '100%', marginTop: 12 }} onClick={doMilan}>Calculate Kundli Milan - 36 Points</button>
+
+              {milanResult && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ padding: 16, background: milanResult.totalPoints >= 24 ? '#f0fdf4' : milanResult.totalPoints >= 18 ? '#fef3c7' : '#fef2f2', borderRadius: 8, border: `2px solid ${milanResult.totalPoints >= 24 ? '#15803d' : milanResult.totalPoints >= 18 ? '#f59e0b' : '#dc2626'}` }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 36, fontWeight: 'bold', color: milanResult.totalPoints >= 24 ? '#15803d' : milanResult.totalPoints >= 18 ? '#f59e0b' : '#dc2626' }}>
+                        {milanResult.totalPoints}/{milanResult.maxPoints}
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 'bold', marginTop: 4 }}>{milanResult.verdict}</div>
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>{milanResult.percentage.toFixed(1)}% Compatibility</div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 12 }}>
+                    <h4 style={{ color: '#7c2d12', marginBottom: 8 }}>Detailed Breakdown (8 Koots)</h4>
+                    {milanResult.detailedBreakdown?.map((koot, idx) => (
+                      <div key={idx} style={{ padding: 8, marginBottom: 6, background: koot.points > 0 ? '#f0fdf4' : '#fef2f2', borderRadius: 6, fontSize: 11 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                          <span>{koot.name} ({koot.importance})</span>
+                          <span style={{ color: koot.points > 0 ? '#15803d' : '#dc2626' }}>{koot.points}/{koot.maxPoints}</span>
+                        </div>
+                        <div style={{ marginTop: 4, color: '#6b7280' }}>
+                          Boy: {koot.boyValue} | Girl: {koot.girlValue}
+                        </div>
+                        <div style={{ marginTop: 2, color: '#1c1917' }}>{koot.description}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {milanResult.manglikCheck && (
+                    <div style={{ marginTop: 12, padding: 10, background: '#fef3c7', borderRadius: 6, fontSize: 11 }}>
+                      <b>Manglik Check:</b><br/>
+                      {milanResult.boyName}: {milanResult.manglikCheck.boy.isManglik ? `Manglik - ${milanResult.manglikCheck.boy.description}` : 'Not Manglik'}<br/>
+                      {milanResult.girlName}: {milanResult.manglikCheck.girl.isManglik ? `Manglik - ${milanResult.manglikCheck.girl.description}` : 'Not Manglik'}
+                    </div>
+                  )}
+
+                  {milanResult.recommendations?.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <h4 style={{ color: '#7c2d12', marginBottom: 8 }}>Recommendations & Remedies</h4>
+                      {milanResult.recommendations.map((rec, idx) => (
+                        <div key={idx} style={{ padding: 8, marginBottom: 6, background: rec.type === 'warning' ? '#fef2f2' : rec.type === 'remedy' ? '#eff6ff' : '#f0fdf4', borderRadius: 6, fontSize: 11 }}>
+                          <b>{rec.type.toUpperCase()}:</b> {rec.text}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
+          </>
+        )}
+
+        {/* ═══════ MUHURAT TAB ═══════ */}
+        {activeTab === 'muhurat' && (
+          <>
+            <Card style={{ marginTop: 12, border: '2px solid #7c2d12' }}>
+              <div className="chead"><Icon n="clock" size={16} /> Muhurat Finder - Auspicious Timing - Punjabi Khatri Sharma Pandit Tradition</div>
+              <div className="dim sm">Find auspicious timings for Marriage, Griha Pravesh, Vehicle Purchase, Business Start, Travel, Mundan, Engagement, Property Deal, Gold Purchase, Naming Ceremony - Based on Panchang, Choghadiya, Rahu Kaal, Yamaghanda, Gulika Kaal</div>
+              
+              <div className="g2" style={{ marginTop: 12 }}>
+                <div className="fld">
+                  <label>Event Type</label>
+                  <select value={muhuratEvent} onChange={e => setMuhuratEvent(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, background: 'var(--s2)', color: 'var(--fg)', border: '1px solid var(--s3)' }}>
+                    <option value="marriage">Marriage (Vivah - विवाह)</option>
+                    <option value="griha_pravesh">House Warming (Griha Pravesh - गृह प्रवेश)</option>
+                    <option value="vehicle">Vehicle Purchase (वाहन खरीदी)</option>
+                    <option value="business">Business Start (व्यापार शुरू)</option>
+                    <option value="travel">Travel (Yatra - यात्रा)</option>
+                    <option value="mundan">Mundan (Head Shaving - मुंडन)</option>
+                    <option value="engagement">Engagement (Sagaai - सगाई)</option>
+                    <option value="property">Property Deal (संपत्ति खरीदी)</option>
+                    <option value="gold">Gold Purchase (सोना खरीदी)</option>
+                    <option value="naming">Naming Ceremony (Naamkaran - नामकरण)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="g2" style={{ marginTop: 8 }}>
+                <div className="fld"><label>Start Date</label><input type="date" value={muhuratStart} onChange={e => setMuhuratStart(e.target.value)} /></div>
+                <div className="fld"><label>End Date</label><input type="date" value={muhuratEnd} onChange={e => setMuhuratEnd(e.target.value)} /></div>
+              </div>
+              <button className="btn" style={{ width: '100%', marginTop: 8 }} onClick={doMuhurat}>Find Auspicious Muhurats</button>
+
+              {/* Today's Panchang */}
+              {todayPanchang && (
+                <Card style={{ marginTop: 12, background: '#fffbeb' }}>
+                  <div className="chead">Today's Panchang - {todayPanchang.day} ({todayPanchang.dayHindi})</div>
+                  <div className="g2" style={{ marginTop: 8 }}>
+                    <Stat l="Abhijit Muhurat" v={todayPanchang.auspiciousTimings['Abhijit Muhurat']} />
+                    <Stat l="Brahma Muhurat" v={todayPanchang.auspiciousTimings['Brahma Muhurat']} />
+                    <Stat l="Rahu Kaal" v={todayPanchang.inauspiciousTimings['Rahu Kaal']} />
+                    <Stat l="Yamaghanda" v={todayPanchang.inauspiciousTimings['Yamaghanda']} />
+                    <Stat l="Gulika Kaal" v={todayPanchang.inauspiciousTimings['Gulika Kaal']} />
+                  </div>
+                </Card>
+              )}
+
+              {muhuratResult && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ padding: 12, background: '#f0fdf4', borderRadius: 8, marginBottom: 12, fontSize: 12 }}>
+                    <b>{muhuratResult.eventHindi}</b> - Found {muhuratResult.totalFound} auspicious dates between {muhuratResult.startDate} and {muhuratResult.endDate}
+                  </div>
+
+                  <div style={{ maxHeight: 500, overflow: 'auto' }}>
+                    {muhuratResult.muhurats?.slice(0, 10).map((m, idx) => (
+                      <div key={idx} style={{ padding: 10, marginBottom: 8, background: '#fff', border: '1px solid var(--s3)', borderRadius: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <b style={{ fontSize: 14, color: '#7c2d12' }}>{m.date}</b>
+                            <span style={{ marginLeft: 8, fontSize: 11, color: '#6b7280' }}>{m.day} ({m.dayHindi})</span>
+                          </div>
+                          <div style={{ fontSize: 12, fontWeight: 'bold', color: '#15803d' }}>Score: {m.score}/{m.maxScore}</div>
+                        </div>
+                        
+                        {m.auspiciousTimings && Object.keys(m.auspiciousTimings).length > 0 && (
+                          <div style={{ marginTop: 6, fontSize: 10 }}>
+                            <b style={{ color: '#15803d' }}>Auspicious:</b>
+                            {Object.entries(m.auspiciousTimings).map(([key, val], i) => (
+                              <span key={i} style={{ marginLeft: 8, background: '#f0fdf4', padding: '2px 6px', borderRadius: 4 }}>{key}: {val}</span>
+                            ))}
+                          </div>
+                        )}
+
+                        {m.inauspiciousTimings && Object.keys(m.inauspiciousTimings).length > 0 && (
+                          <div style={{ marginTop: 4, fontSize: 10 }}>
+                            <b style={{ color: '#dc2626' }}>Avoid:</b>
+                            {Object.entries(m.inauspiciousTimings).map(([key, val], i) => (
+                              <span key={i} style={{ marginLeft: 8, background: '#fef2f2', padding: '2px 6px', borderRadius: 4 }}>{key}: {val}</span>
+                            ))}
+                          </div>
+                        )}
+
+                        {m.recommendations?.slice(0, 2).map((rec, i) => (
+                          <div key={i} style={{ marginTop: 4, fontSize: 10, color: '#6b7280' }}>{rec.text}</div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Card>
+          </>
+        )}
+
+        {/* ═══════ TRANSIT/GOCHAR TAB ═══════ */}
+        {result && activeTab === 'transit' && transitResult && (
+          <>
+            <Card style={{ marginTop: 12, border: '2px solid #7c2d12' }}>
+              <div className="chead"><Icon n="trending" size={16} /> Gochar (Transit) Predictions - {transitResult.date} - Punjabi Khatri Sharma Pandit Tradition</div>
+              <div className="dim sm">Based on BPHS, Phaladeepika, Jataka Parijata, Uttara Kalamrita - Moon sign and Ascendant based predictions - Sade Sati, Dhaiya, Guru Bala analysis</div>
+
+              {/* Overall Prediction */}
+              <div style={{ marginTop: 12, padding: 12, background: '#fffbeb', borderRadius: 8, borderLeft: '4px solid #7c2d12', fontSize: 12, lineHeight: 1.6 }}>
+                <b>Overall Prediction:</b> {transitResult.overallPrediction}
+              </div>
+
+              {/* Sade Sati */}
+              {transitResult.sadeSati?.active && (
+                <Card style={{ marginTop: 12, background: '#fef2f2', border: '2px solid #dc2626' }}>
+                  <div className="chead" style={{ color: '#dc2626' }}>Sade Sati Active - {transitResult.sadeSati.phaseName}</div>
+                  <div style={{ fontSize: 12, marginTop: 8 }}>{transitResult.sadeSati.description}</div>
+                  <div style={{ marginTop: 8, fontSize: 11 }}>
+                    <b>Effects:</b> {transitResult.sadeSati.effects?.description}<br/>
+                    <b>Intensity:</b> {transitResult.sadeSati.effects?.intensity}<br/>
+                    <b>Areas:</b> {transitResult.sadeSati.effects?.areas?.join(', ')}
+                  </div>
+                  {transitResult.sadeSati.remedies?.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <b style={{ fontSize: 11 }}>Remedies (Punjabi Tradition):</b>
+                      {transitResult.sadeSati.remedies.map((r, i) => (
+                        <div key={i} style={{ fontSize: 10, marginTop: 4, padding: 4, background: '#fff', borderRadius: 4 }}>
+                          <b>{r.name}:</b> {r.description} ({r.frequency})
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              )}
+
+              {/* Dhaiya */}
+              {transitResult.dhaiya?.active && (
+                <Card style={{ marginTop: 12, background: '#fef3c7', border: '1px solid #f59e0b' }}>
+                  <div className="chead" style={{ color: '#f59e0b' }}>Dhaiya (Small Panoti) Active - {transitResult.dhaiya.type}</div>
+                  <div style={{ fontSize: 12, marginTop: 8 }}>{transitResult.dhaiya.description}</div>
+                  <div style={{ marginTop: 4, fontSize: 11 }}><b>Effects:</b> {transitResult.dhaiya.effects}</div>
+                </Card>
+              )}
+
+              {/* Guru Bala */}
+              {transitResult.guruBala && (
+                <Card style={{ marginTop: 12, background: '#eff6ff' }}>
+                  <div className="chead" style={{ color: '#1e40af' }}>Guru Bala - Jupiter Transit ({transitResult.guruBala.bala})</div>
+                  <div style={{ fontSize: 12, marginTop: 8 }}>{transitResult.guruBala.description}</div>
+                  <div style={{ marginTop: 4, fontSize: 11 }}><b>Effects:</b> {transitResult.guruBala.effects}</div>
+                  <div style={{ marginTop: 4, fontSize: 10, color: '#6b7280' }}><b>Remedy:</b> {transitResult.guruBala.remedy}</div>
+                </Card>
+              )}
+
+              {/* Planet Transits */}
+              <div style={{ marginTop: 12 }}>
+                <h4 style={{ color: '#7c2d12', marginBottom: 8 }}>Planet-wise Transit Effects (from Moon Sign: {transitResult.moonSign})</h4>
+                <div style={{ maxHeight: 400, overflow: 'auto' }}>
+                  {transitResult.planetTransits?.map((transit, idx) => (
+                    <div key={idx} style={{ 
+                      padding: 10, marginBottom: 6, 
+                      background: transit.effect === 'good' ? '#f0fdf4' : transit.effect === 'bad' ? '#fef2f2' : '#f9fafb',
+                      borderRadius: 6, fontSize: 11,
+                      border: `1px solid ${transit.effect === 'good' ? '#86efac' : transit.effect === 'bad' ? '#fca5a5' : '#e5e7eb'}`
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
+                        <span>{transit.planetHindi} ({transit.planet}) in {transit.signHindi} ({transit.sign})</span>
+                        <span style={{ 
+                          color: transit.effect === 'good' ? '#15803d' : transit.effect === 'bad' ? '#dc2626' : '#6b7280',
+                          textTransform: 'uppercase', fontSize: 9
+                        }}>{transit.effect}</span>
+                      </div>
+                      <div style={{ marginTop: 4, color: '#1c1917' }}>{transit.description}</div>
+                      <div style={{ marginTop: 2, color: '#6b7280', fontSize: 10 }}>
+                        House from Moon: {transit.houseFromMoon} | Areas: {transit.areas?.join(', ')}
+                      </div>
+                      {transit.remedy && (
+                        <div style={{ marginTop: 4, padding: 4, background: '#fef3c7', borderRadius: 4, fontSize: 10 }}>
+                          <b>Remedy:</b> {transit.remedy}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Card>
           </>
         )}
       </Card>
