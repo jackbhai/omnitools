@@ -19,10 +19,18 @@ import { Card, Empty, Spin } from '../ui/kit';
 import { StationBuses } from './metro-planner';
 import { Icon } from '../ui/icons';
 import { trackOfCombo, stepsOf } from '../core/trip';
+import { clockOf, departures, latestFor, fmt as clock } from '../core/journey-clock';
 import { TripKit } from './trip-ui.jsx';
 
 const WALK_KMH = 5;
 const walkMin = (km) => Math.round((km / WALK_KMH) * 60);
+
+/** `<input type="time">` speaks "HH:MM"; the planner speaks minutes of the day. */
+const toHHMM = (m) => (m == null ? '' : `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`);
+const fromHHMM = (s) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s || '');
+  return m ? Math.min(1439, Math.max(0, (+m[1]) * 60 + (+m[2]))) : null;
+};
 const MAX_WALK_KM = 1.6;   // ~20 min; beyond this an interchange is unrealistic
 
 /* Search across BOTH datasets so the user can type any landmark. */
@@ -77,7 +85,10 @@ function TimingNote({ o }) {
     </Card>);
 }
 
-function buildOptions(a, b) {
+function buildOptions(a, b, atMin = null) {
+  // `atMin` (minutes of day, IST) makes the metro planner answer for THAT hour:
+  // headways, the last train and whether the line is open at all. Nothing else
+  // changes — the same published data, read at a different minute.
   const pa = coordOf(a), pb = coordOf(b);
   if (!pa || !pb) return [];
   const out = [];
@@ -87,7 +98,7 @@ function buildOptions(a, b) {
     const sA = M.nearestStations(pa.lat, pa.lon, 1)[0];
     const sB = M.nearestStations(pb.lat, pb.lon, 1)[0];
     if (sA && sB && sA.n !== sB.n && sA.km <= MAX_WALK_KM && sB.km <= MAX_WALK_KM) {
-      const r = M.planRoutes(sA.n, sB.n, { k: 1 })[0];
+      const r = M.planRoutes(sA.n, sB.n, atMin == null ? { k: 1 } : { k: 1, atMin })[0];
       if (r) {
         const w = walkMin(sA.km) + walkMin(sB.km);
         out.push({
@@ -137,7 +148,7 @@ function buildOptions(a, b) {
     const startFar = mA[0] && mA[0].km > 0.8;
     const endFar = mB[0] && mB[0].km > 0.8;
     if ((startFar || endFar) && mA[0] && mB[0] && mA[0].n !== mB[0].n) {
-      const core = M.planRoutes(mA[0].n, mB[0].n, { k: 1 })[0];
+      const core = M.planRoutes(mA[0].n, mB[0].n, atMin == null ? { k: 1 } : { k: 1, atMin })[0];
       if (core) {
         const legs = [];
         let mins = core.minutes, fare = core.fare, km = core.km, changes = core.changes;
@@ -214,12 +225,22 @@ export function MultiModal() {
   const [to, setTo] = useState(null);
   const [sort, setSort] = useState('fast');
   const [sel, setSel] = useState(0);
+  /* When. 'now' is what the other tools answer; 'leave at' and 'arrive by' are
+     what a person actually has to decide. Both are answered from the same
+     published data — the metro line's headway and last train at that hour, the
+     bus direction's own departure list — never from a guessed schedule. */
+  const [when, setWhen] = useState('now');              // 'now' | 'leave' | 'arrive'
+  const [leaveAt, setLeaveAt] = useState(null);          // minutes of day, IST
+  const [arriveBy, setArriveBy] = useState(null);
+
+  const nowMin = B.minutesOfDay();
+  const asked = when === 'leave' && leaveAt != null ? leaveAt : nowMin;
 
   const options = useMemo(() => {
     if (!from || !to || from.n === to.n) return null;
-    const o = buildOptions(from, to);
+    const o = buildOptions(from, to, when === 'now' ? null : asked);
     return o.length ? o : [];
-  }, [from, to]);
+  }, [from, to, when, asked]);
 
   const ranked = useMemo(() => {
     if (!options?.length) return [];
@@ -231,6 +252,12 @@ export function MultiModal() {
   }, [options, sort]);
 
   const o = ranked[sel] || ranked[0];
+  /* "Arrive by" is solved backwards: the latest departure that still makes it,
+     then the whole card is re-clocked at the minute the solver chose. */
+  const solve = when === 'arrive' && arriveBy != null && o ? latestFor(o, arriveBy) : null;
+  const runMin = solve ? solve.departMin : asked;
+  const clk = o ? clockOf(o, runMin) : null;
+  const grid = o ? departures(o, runMin, 5, 15) : [];
   const near = (setter, isMetro) => {
     const m = M.nearestStations(loc.lat, loc.lon, 1)[0];
     const bs = B.nearestStops(loc.lat, loc.lon, 1)[0];
@@ -250,12 +277,87 @@ export function MultiModal() {
         {[['fast', ' Fastest'], ['cheap', ' Cheapest'], ['easy', ' Fewest changes']].map(([v, l]) => (
           <button key={v} className={`cat ${sort === v ? 'on' : ''}`}
             onClick={() => { setSort(v); setSel(0); }}>{l}</button>))}
+      </div><div className="btnrow trow">
+        {[['now', 'Now'], ['leave', 'Leave at'], ['arrive', 'Arrive by']].map(([v, l]) => (
+          <button key={v} className={`cat ${when === v ? 'on' : ''}`} onClick={() => {
+            setWhen(v); setSel(0);
+            if (v === 'leave' && leaveAt == null) setLeaveAt(Math.ceil((nowMin + 5) / 5) * 5 % 1440);
+            if (v === 'arrive' && arriveBy == null) setArriveBy(Math.ceil((nowMin + 45) / 5) * 5 % 1440);
+          }}>{l}</button>))}
+        {when === 'leave' && <input className="tinp" type="time" aria-label="Departure time"
+          value={toHHMM(leaveAt)} onChange={(e) => setLeaveAt(fromHHMM(e.target.value))} />}
+        {when === 'arrive' && <input className="tinp" type="time" aria-label="Arrival time"
+          value={toHHMM(arriveBy)} onChange={(e) => setArriveBy(fromHHMM(e.target.value))} />}
       </div><div className="cats" style={{ marginTop: 10 }}>
         {ranked.map((x, i) => (
           <button key={i} className={`cat ${sel === i ? 'on' : ''}`} onClick={() => setSel(i)}>
             {x.icon} {x.minutes}m · ₹{x.fare}
           </button>))}
       </div><Card><div className="chead">{o.icon} {o.mode} · {from.n} → {to.n}</div><div className="g3"><div className="stat"><div className="v">{o.minutes}</div><div className="l">Minutes</div></div><div className="stat"><div className="v">₹{o.fare}</div><div className="l">Fare</div></div><div className="stat"><div className="v">{o.changes}</div><div className="l">Changes</div></div></div><div className="g2" style={{ marginTop: 8 }}><div className="stat"><div className="v">{o.km}</div><div className="l">km total</div></div><div className="stat"><div className="v">{o.walkMin}</div><div className="l">min walking</div></div></div></Card>
+
+      {o && clk && clk.legs.length > 0 && (
+        <Card>
+          <div className="chead"><Icon n="clock" size={16} /> {when === 'arrive' ? 'Leave by' : 'Your clock'}
+            {' '}{clock(clk.departMin)} → {clock(clk.arriveMin)}{clk.afterMidnight ? ' next day' : ''}</div>
+          <div className="g3">
+            <div className="stat"><div className="v">{clock(clk.departMin)}</div>
+              <div className="l">{when === 'arrive' ? 'Leave by' : 'You leave'}</div></div>
+            <div className="stat"><div className="v">{clock(clk.arriveMin)}</div>
+              <div className="l">Arrive</div></div>
+            <div className="stat"><div className="v">{clk.minutes}</div>
+              <div className="l">min, {clk.waitMin} of it waiting</div></div>
+          </div>
+
+          <div className="tl" role="img"
+            aria-label={clk.legs.map((l) => `${l.label} ${l.mins == null ? 'unknown' : l.mins + ' min'}`).join(', ')}>
+            {clk.legs.map((l, i) => (
+              <div key={i} className={`tlseg ${l.kind}${l.mode ? ' ' + l.mode : ''}`}
+                style={{ flexGrow: Math.max(0.7, l.mins || 0.7), flexBasis: 0,
+                  background: l.kind === 'ride' && l.colour ? l.colour : undefined }}
+                title={`${l.label} · ${l.mins == null ? 'no published time' : l.mins + ' min'} · ${clock(l.from)}`
+                  + (l.why ? ` · ${l.why}` : '')}>
+                <b>{l.mins == null ? '?' : l.mins}</b>
+              </div>))}
+          </div>
+          <div className="tlkeys">
+            {clk.legs.map((l, i) => (
+              <span key={i} className="tlkey">
+                <i style={{ background: l.kind === 'ride' && l.colour ? l.colour
+                  : l.kind === 'allowance' ? 'var(--fg3)'
+                  : l.kind === 'wait' ? 'var(--warn)' : l.kind === 'walk' ? 'var(--fg3)' : 'var(--green)' }} />
+                {l.kind === 'walk' ? 'walk'
+                  : l.kind === 'allowance' ? l.label
+                  : l.kind === 'wait' ? l.label
+                  : l.mode === 'metro' ? `ride ${l.line}` : `bus ${l.label}`}
+                <span className="dim sm">{clock(l.from)}</span>
+              </span>))}
+          </div>
+
+          {clk.risk.map((r, i) => <div key={i} className={`note ${r.kind === 'closed' || r.kind === 'over' ? 'warn' : ''}`}>
+            {r.text}</div>)}
+
+          <div className="dim sm" style={{ marginTop: 8 }}>
+            Bus legs use that direction's published departures — the {clk.waitMin} min waiting here is a printed
+            time, not an estimate. Metro waits use the line's published headway for this hour. Walking is
+            5 km/h. Nothing here is a live vehicle position.
+          </div>
+
+          {grid.length > 1 && (<>
+            <div className="chead" style={{ marginTop: 12 }}>Other departures from now</div>
+            <div className="btnrow tight">
+              {grid.map((g) => (
+                <button key={g.departMin} className={`cat ${g.departMin === runMin ? 'on' : ''}`}
+                  onClick={() => { setWhen('leave'); setLeaveAt(g.departMin); }}>
+                  {clock(g.departMin)} → {clock(g.arriveMin)}
+                  <span className="dim sm"> {g.minutes}m{g.blocked ? ', no service then' : ''}</span>
+                </button>))}
+            </div>
+          </>)}
+        </Card>)}
+
+      {when === 'arrive' && o && arriveBy != null && !solve && (
+        <div className="note">Nothing in these options reaches {to.n} by {clock(arriveBy)} — leaving now,
+          the earliest arrival is {clock(clk ? clockOf(o, nowMin).arriveMin : null)}.</div>)}
 
       <TimingNote o={o} />
 
@@ -265,16 +367,18 @@ export function MultiModal() {
             {ranked.map((x, i) => (
               <button key={i} className="row" style={{ background: i === sel ? 'rgba(0,255,156,.07)' : 'none',
                 border: 0, width: '100%', textAlign: 'left', cursor: 'pointer' }}
-                onClick={() => setSel(i)}><span style={{ fontSize: 17 }}>{x.icon}</span><div className="main"><b style={{ fontSize: 13 }}>{x.mode}</b><span className="dim sm">{x.changes} change{x.changes !== 1 ? 's' : ''} · {x.km} km · {x.walkMin} min walk</span></div><div className="end"><b>{x.minutes} min</b><br /><span style={{ color: 'var(--green)', fontSize: 12 }}>₹{x.fare}</span></div></button>))}
+                onClick={() => setSel(i)}><span style={{ fontSize: 17 }}>{x.icon}</span><div className="main"><b style={{ fontSize: 13 }}>{x.mode}</b><span className="dim sm">{x.changes} change{x.changes !== 1 ? 's' : ''} · {x.km} km · {x.walkMin} min walk</span></div><div className="end"><b>{clock(clockOf(x, runMin).arriveMin)}</b><br />
+                  <span className="dim sm">{x.minutes} min</span><br /><span style={{ color: 'var(--green)', fontSize: 12 }}>₹{x.fare}</span></div></button>))}
           </div></>)}
 
       {o.mode === 'Metro' && <StationBuses station={from.n} />}
 
       {o && (() => {
-        const track = trackOfCombo(o);
+        const track = trackOfCombo(o, { boardMin: clk?.boardMin ?? null });
         return track.points.length > 1 ? (
           <Card>
-            <TripKit track={track} steps={stepsOf(track)} stepsToggle={false} />
+            <TripKit track={track} steps={stepsOf(track)} stepsToggle={false}
+              boardMin={clk?.boardMin ?? null} />
             <div className="dim sm" style={{ marginTop: 8 }}>
               The alert watches every published stop of every leg in this order, so it also
               knows when you have reached the metro station the bus leaves you at.

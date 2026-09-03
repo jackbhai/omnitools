@@ -18,6 +18,7 @@ import {
   ARRIVE_M, NEAR_M, MISSED_M, ACCURACY_MAX,
 } from '../src/core/trip.js';
 import { armTrip, getTripState, gateCheck, resumeTrip, subscribe, tick } from '../src/core/trip-state.js';
+import { clockOf, departures, latestFor, dateFor, fmt as cfmt, walkMin, METRO_KMPM, ACCESS_MIN, CHANGE_MIN } from '../src/core/journey-clock.js';
 
 let pass = 0, fail = 0;
 const chk = (n, c, d = '') => { c ? pass++ : fail++; console.log(`  ${c ? 'PASS' : 'FAIL'}  ${n}${d ? '  — ' + d : ''}`); };
@@ -254,7 +255,143 @@ console.log('\n=== 7. the store keeps its promises without a browser ===');
   chk('an unsubscribe is idempotent', (() => { const off = subscribe(() => {}); off(); off(); return true; })());
 }
 
-console.log('\n=== 8. the map stays behind its button ===');
+console.log('\n=== 8. the journey clock: wall times, from published data only ===');
+{
+  const pad = (n) => String(n).padStart(2, '0');
+  chk('the clock prints 24-hour IST', cfmt(0) === '00:00' && cfmt(750) === '12:30' && cfmt(1439) === '23:59',
+    `${cfmt(750)} · ${cfmt(1439)}`);
+  chk('a minute of day survives the trip into a Date and back',
+    minutesOfDay(dateFor(750)) === 12 * 60 + 30 && minutesOfDay(dateFor(0)) === 0,
+    `${minutesOfDay(dateFor(750))}`);
+
+  /* ---- the metro side has to agree with the metro planner's own number ---- */
+  // The third pair changes lines twice, so it also proves what a change costs.
+  const pairs = [['Rajiv Chowk', 'Hauz Khas'], ['Kashmere Gate', 'AIIMS'], ['Samaypur Badli', 'Huda City Centre'],
+    ['AIIMS', 'Noida Sector 52']];
+  let worst = 0, checked = 0;
+  for (const [a, b] of pairs) {
+    let r = null;
+    try { r = planRoutes(a, b, { k: 1, atMin: 8 * 60 + 15 })[0]; } catch { /* pair not in data */ }
+    if (!r) continue;
+    const opt = { mode: 'Metro', minutes: r.minutes, km: r.km, fare: r.fare, changes: r.changes, detail: r,
+      legs: r.legs.map((l) => (l.walk
+        ? { kind: 'walk', text: `Walk ${l.from} to ${l.to}`, km: l.km, min: walkMin(l.km) }
+        : { kind: 'metro', line: l.line, colour: l.colour, from: l.from, to: l.to, stops: l.stops,
+          count: l.count, km: l.km })) };
+    const c = clockOf(opt, 8 * 60 + 15);
+    checked++;
+    worst = Math.max(worst, Math.abs(c.noWaitMin - r.minutes));
+    chk(`the ${a} → ${b} bar adds up to the headline plus the waiting it excludes`,
+      c.agrees === true && c.noWaitMin + (c.allowanceMin || 0) === c.publishedMinutes,
+      `rides+walk ${c.noWaitMin} + allowance ${c.allowanceMin} = ${c.publishedMinutes}; with waits ${c.minutes}`);
+    const rides = c.legs.filter((l) => l.kind === 'ride');
+    if (rides.length > 1) {
+      const allow = c.legs.find((l) => l.kind === 'allowance');
+      chk(`and the ${a} → ${b} change is drawn as allowance, never a second wait`,
+        allow != null && allow.mins >= CHANGE_MIN && !c.legs.some((l) => l.kind === 'wait' && /Change to/.test(l.label)),
+        allow ? `allowance ${allow.mins}m for ${rides.length - 1} change${rides.length - 1 === 1 ? '' : 's'}` : 'no allowance segment');
+    }
+    if (r.minutesWithWait != null) {
+      chk(`and the same total the metro tool prints for ${a} → ${b} (${r.minutesWithWait} min with the wait)`,
+        c.minutes === r.minutesWithWait, `${c.minutes} min · waits ${c.waitMin}m`);
+    }
+    chk('its waits are headway and platform time, not a guess',
+      c.legs.filter((l) => l.kind === 'wait').every((l) => /headway|platform|opens|min at this hour/.test(l.why || '')),
+      c.legs.filter((l) => l.kind === 'wait').map((l) => l.why).join(' | ').slice(0, 70));
+    chk('the clock is monotone and ends where the journey ends',
+      c.legs.every((l, i) => i === 0 || l.from >= c.legs[i - 1].to) && c.legs.at(-1)?.to === c.arriveMin,
+      `${c.legs.length} legs · arrive ${cfmt(c.arriveMin)}`);
+  }
+  chk('every metro pair was checked', checked >= 2, `${checked} pairs · worst drift ${worst} min`);
+
+  /* ---- a closed line waits for its published first train, it does not start ---- */
+  {
+    let r = null;
+    try { r = planRoutes('Rajiv Chowk', 'Hauz Khas', { k: 1, atMin: 60 })[0]; } catch {}
+    const opt = { mode: 'Metro', minutes: r?.minutes ?? 0, detail: r, legs: (r?.legs || []).map((l) => ({
+      kind: 'metro', line: l.line, colour: l.colour, from: l.from, to: l.to, stops: l.stops, count: l.count, km: l.km })) };
+    const c = clockOf(opt, 60);
+    const closed = c.risk.find((x) => x.kind === 'closed');
+    chk('at 01:00 it says the line is closed instead of inventing a train', !!closed, closed?.text?.slice(0, 70));
+    const info = (await import('../src/core/metro-route.js')).lineInfo('Yellow Line', 60);
+    chk('and the ride is placed at the line’s published first minute',
+      !info || c.boardMin === info.first, `board ${cfmt(c.boardMin)} · first train ${pad(Math.floor(info.first / 60))}:${pad(info.first % 60)}`);
+  }
+
+  /* ---- the bus side may only ever use a printed departure ---- */
+  {
+    let o = null;
+    try { o = planBus('Savda JJ Colony', 'Ghevra Village')[0]; } catch {}
+    if (!o) chk('a bus pair could be clocked', false, 'fixture pair missing');
+    else {
+      const opt = { mode: 'Bus', minutes: o.minutes, km: o.km, fare: o.fare, changes: o.changes, detail: o,
+        legs: o.legs.map((l, i) => ({ kind: 'bus', ref: l.ref, from: l.from, to: l.to, count: l.stops,
+          km: l.km, bus: o, busIndex: i })) };
+      const ask = 8 * 60 + 3;
+      const c = clockOf(opt, ask);
+      const w = c.legs.find((l) => l.kind === 'wait');
+      const bl = o.legs[0];
+      const real = nextAtStop(ROUTES[bl.ri], bl.i0, dateFor(ask), 1)[0];
+      chk('the wait at a bus stop is exactly the published departure',
+        real ? (w && w.mins === real.at - ask && w.to === real.at) : !w,
+        real ? `asked ${cfmt(ask)} · bus at ${cfmt(real.at)} · wait ${w?.mins}m` : 'no departure that late');
+      chk('the ride minutes are the direction’s own', c.legs.some((l) => l.mins === bl.minutes),
+        `ride ${c.legs.find((l) => l.kind === 'ride')?.mins}m vs ${bl.minutes}m`);
+      chk('and a bus-only bar is the published ride plus that printed wait',
+        c.legs.reduce((s, l) => s + (l.mins || 0), 0) === o.minutes + c.waitMin,
+        `Σ ${c.legs.reduce((s, l) => s + (l.mins || 0), 0)} = ${o.minutes} + ${c.waitMin}m waited`);
+      chk('so the alert can be armed against that minute', c.boardMin === (real ? real.at : ask),
+        cfmt(c.boardMin));
+      // a departure grid must never wrap into tomorrow's timetable
+      const g = departures(opt, 1400, 6, 15);
+      chk('the departure grid stops at midnight', g.length > 0 && g.every((x) => x.departMin <= 1439),
+        g.map((x) => cfmt(x.departMin)).join(' '));
+    }
+  }
+
+  /* ---- arriving by a time is solved backwards or refused ---- */
+  {
+    let r = null;
+    try { r = planRoutes('Rajiv Chowk', 'Hauz Khas', { k: 1, atMin: 9 * 60 })[0]; } catch {}
+    const opt = { mode: 'Metro', minutes: r?.minutes ?? 0, detail: r, legs: (r?.legs || []).map((l) => ({
+      kind: 'metro', line: l.line, colour: l.colour, from: l.from, to: l.to, stops: l.stops, count: l.count, km: l.km })) };
+    const target = 9 * 60 + 40;
+    const s = latestFor(opt, target);
+    chk('an arrive-by request finds a departure that makes it', !!s && s.arriveMin <= target,
+      s ? `leave ${cfmt(s.departMin)} arrive ${cfmt(s.arriveMin)} slack ${s.slack}m` : 'nothing found');
+    chk('and it really does: the clock for that minute agrees', s ? clockOf(opt, s.departMin).arriveMin <= target : true);
+    chk('a request that cannot be met is refused, not rounded down',
+      latestFor(opt, 5) === null || latestFor(opt, 5).arriveMin <= 5, '00:05 target');
+  }
+
+  /* ---- a combo carries every leg’s wait ---- */
+  {
+    const bus = (() => { try { return planBus(nameOf(ROUTES[0].s[0]), nameOf(ROUTES[0].s[6]))[0]; } catch { return null; } })();
+    const met = (() => { try { return planRoutes('Rajiv Chowk', 'Hauz Khas', { k: 1, atMin: 8 * 60 + 30 })[0]; } catch { return null; } })();
+    if (bus && met) {
+      const opt = { mode: 'Bus + Metro', minutes: bus.minutes + met.minutes, detail: met, legs: [
+        { kind: 'walk', text: `Walk to ${bus.legs[0].from}`, km: 0.4, min: 5 },
+        { kind: 'bus', ref: bus.legs[0].ref, from: bus.legs[0].from, to: bus.legs[0].to,
+          count: bus.legs[0].stops, km: bus.legs[0].km, bus, busIndex: 0 },
+        { kind: 'metro', line: met.legs[0].line, colour: met.legs[0].colour, from: 'Rajiv Chowk',
+          to: 'Hauz Khas', stops: met.legs[0].stops, count: met.legs[0].count, km: met.legs[0].km },
+      ] };
+      const c = clockOf(opt, 8 * 60 + 30);
+      const metroIdx = c.legs.findIndex((l) => l.kind === 'ride' && l.mode === 'metro');
+      chk('a metro leg after a bus leg is preceded by a wait, never a free transfer',
+        metroIdx > 0 && c.legs[metroIdx - 1]?.kind === 'wait', c.legs.map((l) => `${l.kind}:${l.mins}`).join(' '));
+      chk('and the whole thing lands after every leg started', c.arriveMin > c.departMin && c.minutes > 0,
+        `${cfmt(c.departMin)} → ${cfmt(c.arriveMin)} · ${c.minutes}m`);
+      chk('the combined planner hands that minute to the alert',
+        /boardMin: clk\?\.boardMin/.test(src('src/tools/multimodal.jsx'))
+        && /trackOfCombo\(o, \{ boardMin: clk\?\.boardMin/.test(src('src/tools/multimodal.jsx')));
+      chk('the clock is on screen for every option, not just the selected one',
+        /clock\(clockOf\(x, runMin\)\.arriveMin\)/.test(src('src/tools/multimodal.jsx')));
+    } else chk('a combo clock could be built from the shipped data', false, 'fixture missing');
+  }
+}
+
+console.log('\n=== 9. the map stays behind its button ===');
 {
   const files = ['src/tools/trip-ui.jsx', 'src/tools/trip-map.jsx', 'src/core/trip-state.js',
                  'src/core/trip.js', 'src/core/alerts.js', 'src/tools/transit-live.jsx',
@@ -316,7 +453,7 @@ console.log('\n=== 8. the map stays behind its button ===');
     && /how it knows/.test(src('src/tools/trip-ui.jsx')));
   }
   const css = src('src/styles/theme.css');
-  const used = ['mapbox', 'mapleaf', 'mapnote', 'mapswap', 'mapsketchwrap', 'sketch', 'steps2', 'stp', 'tripbar', 'tbmeta', 'tbwhy', 'tripctl', 'armwrap', 'mapslot', 'act'];
+  const used = ['mapbox', 'mapleaf', 'mapnote', 'mapswap', 'mapsketchwrap', 'sketch', 'steps2', 'stp', 'tripbar', 'tbmeta', 'tbwhy', 'tripctl', 'armwrap', 'mapslot', 'act', 'trow', 'tinp', 'tl', 'tlseg', 'tlkeys', 'tlkey'];
   const missing = used.filter((c) => !new RegExp('\\.' + c + '[\\s{.,:]').test(css));
   chk('every class the new UI uses exists in theme.css', !missing.length, missing.length ? missing.join(', ') : `${used.length} classes`);
   chk('no emoji crept into the new UI', !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(all));
@@ -337,7 +474,7 @@ console.log('\n=== 8. the map stays behind its button ===');
   }
 }
 
-console.log('\n=== 9. what actually ships ===');
+console.log('\n=== 10. what actually ships ===');
 {
   const dist = path.join(ROOT, 'dist/assets');
   if (!fs.existsSync(dist)) console.log('  SKIP  dist not built yet — run npx vite build first');

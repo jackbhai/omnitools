@@ -443,3 +443,37 @@ curl -s "https://omni-proxy.omni-jackbhai.workers.dev/song-health?offset=0&n=16"
 
 Read this file, tell me in one or two lines what you understood and what
 you're starting on, then start. Don't summarise it back to me — I wrote it.
+
+---
+
+## Travel layer: map, get-off alerts, journey clock (shipped in code, **not yet on Pages**)
+
+Everything below is committed on `main` in this repo and every gate is green —
+but the live site at `jackbhai.github.io/omnitools/` still serves the pre-map
+build (`index-DtDIxHKb.js`; `assets/trip-map-*.js` returns 404 there). That is
+the whole reason the map is "not visible" on the phone: it is not deployed.
+
+| what | where |
+|---|---|
+| OSM map behind a `Map · N points` button, 4 key-free tile sources, SVG `Sketch` offline fallback | `src/tools/trip-map.jsx`, `src/tools/trip-ui.jsx` |
+| trip model + turn-by-turn + get-off states (`no-signal → to-stop → at-board → riding → alight → done`) | `src/core/trip.js`, `src/core/trip-state.js` |
+| real notifications (service-worker channel, page-level fallback) | `src/core/alerts.js`, `public/sw.js` |
+| leave-at / arrive-by clock + timeline bar | `src/core/journey-clock.js`, wired in `src/tools/multimodal.jsx` |
+
+| gate | result |
+|---|---|
+| `npm run verify` | data PASS 24 · bus 78/0 · metro 69/0 · trip 103/0 · render 20 ✓ |
+| `python3 tests/qa_transit.py http://localhost:4173/` | 94 passed · 0 failed |
+| `npx vite build`, `debrand.py --check`, `deemoji.py` | clean |
+
+**To deploy (needs a GitHub token this sandbox does not have — verified four times, `$GH` is unset and there is no credential file):**
+
+```bash
+cd omnitools
+git push "https://jackbhai:${GH}@github.com/jackbhai/omnitools.git" main
+# ~90 s later: gh api repos/jackbhai/omnitools/actions/runs?per_page=1 → conclusion == success
+# then confirm the shipped chunk actually exists:
+curl -sI https://jackbhai.github.io/omnitools/assets/$(curl -s https://jackbhai.github.io/omnitools/ | grep -o 'index-[A-Za-z0-9_-]*\.js' | head -1) | head -1
+```
+
+Do not "fix" the missing map by rewriting the panel — rebuild and push, then re-measure the 404 above.

@@ -89,9 +89,9 @@ are real long sections between IAS stations — they are published, not invented
 | `verify:data` → `scripts/verify_transit_data.py` | structural invariants, timetable sanity, `rv` symmetry, stop-index integrity, and length re-measured against an independent router (median built/OSRM ratio 1.001) | PASS 24 · WARN 0 · FAIL 0 |
 | `verify:bus` → `scripts/verify_bus.mjs` | 78 assertions on the bus core, generated from the data itself (fare slabs, `nextAtStop`, `planBus`, `statusNow`, `headwayNow`) | 78 passed · 0 failed |
 | `verify:metro` → `scripts/verify_metro.mjs` | 69 assertions on the metro core incl. the bus↔metro join, last-train estimates, transfers, the 2025 fare chart | 69 passed · 0 failed |
-| `verify:trip` → `scripts/verify_trip.mjs` | the journey model (geometry, every `judge` state, the dense-stop regressions, step wording) plus assertions on what actually ships: leaflet and the bus JSON must stay out of the start shell, and every tile source must be key-free | 73 passed · 0 failed |
+| `verify:trip` → `scripts/verify_trip.mjs` | the journey model (geometry, every `judge` state, the dense-stop regressions, step wording) plus assertions on what actually ships: leaflet and the bus JSON must stay out of the start shell, and every tile source must be key-free; §8 clocks three real pairs and asserts the timeline sums to the headline | 103 passed · 0 failed |
 | `verify:render` → `vite build --ssr scripts/ssr-smoke.jsx` + `node .ssr-smoke/ssr-smoke.js` | all 10 travel components render to HTML, and 10 real journeys/stops answer from the shipped data | 20 passed · 0 failed |
-| `python3 tests/qa_transit.py <url>` | a real chromium: shell paints through the lazy boundary, both hubs, both planners, the combined planner, the map behind its button on all three, a `set_geolocation` walk down a 71-stop route, resume after reload, console hygiene | 76 passed · 0 failed |
+| `python3 tests/qa_transit.py <url>` | a real chromium: shell paints through the lazy boundary, both hubs, both planners, the combined planner, the map behind its button on all three, a `set_geolocation` walk down a 71-stop route, resume after reload, console hygiene | 94 passed · 0 failed |
 | `python3 scripts/healthcheck.py all` | the rest of the app's network sources | 93/96 (3 unrelated third-party flakes) |
 
 Run the browser suite against `npx vite preview` (a built `dist`), never against
@@ -195,3 +195,33 @@ folded under `how it knows` — one press, never deleted.
 **States.** `no-signal → to-stop → at-board → riding → alight → done`. The last two highlight the bar in
 amber, the most recent alert line folds itself away after 18 s (90 s when urgent) so the bar stays about
 90 px tall, and `End` clears storage so a finished trip cannot come back stale.
+
+## 8. The journey clock (`src/core/journey-clock.js`)
+
+The combined planner used to answer *how long*. It now answers *when*, and every
+minute it prints is traceable to something already in the two payloads.
+
+**Inputs.** `now`, `leave-at` (a wall time the user picks, or a departure chip from
+`departures()`), `arrive-by` (inverted with `latestFor()`, a forward search that returns
+`null` rather than a rounded-down lie when the target cannot be met).
+
+**Where each minute comes from.**
+
+| leg | minutes | source |
+|---|---|---|
+| walk | `km / 5 km/h` | distance in the payload, fixed speed (labelled as such) |
+| metro wait | `detail.nextIn`, else mid-band headway | DMRC headway table for that hour; `lineInfo` is queried at the *wrapped* minute, never the raw accumulator |
+| metro ride | `km / 0.55 km·min⁻¹` | the planner's own speed constant, so the bar cannot drift from the headline |
+| change + platform | `publishedMinutes − Σ(rides+walks)` | the planner already charges `(legs−1)×7 + 2`; it is drawn as its own segment instead of being hidden inside a ride or double-counted as a second wait |
+| bus wait | printed departure − now | `nextAtStop()` on that direction's `trips`; if no departure exists in the window the leg is labelled `no service then`, never an invented headway |
+
+Two invariants are asserted in `verify:trip` for three real pairs (2-leg, 2-leg, 3-leg):
+`Σrides + Σwalks + allowance === publishedMinutes` and
+`Σall legs === publishedMinutes + waitMin` — i.e. the picture equals the number, and the number
+equals what the metro panel prints. `agrees` is the same test the UI can call at runtime.
+
+**Honesty rules.** Closed line → the ride is placed at the published first-train minute and
+`risk.kind = 'closed'` says so; a bus gap → `over`/`long-wait`; an impossible `arrive by` →
+the earliest real arrival, not a fudge. The card prints one line saying that bus minutes are
+published, metro waits are headway-derived, walking is a flat 5 km/h, and that nothing in the
+panel is a live vehicle position.

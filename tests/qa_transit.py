@@ -21,6 +21,7 @@ plain localhost Vite raises its error overlay, which then swallows every click.
 """
 import json
 import os
+import re
 import sys
 
 from playwright.sync_api import sync_playwright
@@ -384,7 +385,72 @@ def main():
             check("End clears storage, so it cannot come back stale",
                   page.evaluate("() => localStorage.getItem('omni:trip-v1')") is None)
 
-        print("\n=== 8. console hygiene ===")
+        print("\n=== 8. the journey clock: leave at, arrive by, and what the bar adds up to ===")
+        home(page)
+        open_tile(page, "Plan Journey")
+        pick_suggestion(page, "input >> nth=0", "Rajiv Chowk", "Rajiv Chowk")
+        pick_suggestion(page, "input >> nth=1", "Hauz Khas", "Hauz Khas")
+        page.wait_for_timeout(1800)
+        body = page.locator("body").inner_text()
+        check("the planner asks WHEN, not only how long",
+              "Leave at" in body and "Arrive by" in body and "Now" in body)
+        m = re.search(r"(\d{2}:\d{2}) . (\d{2}:\d{2})", body)
+        check("and answers in clock times", m is not None, m.group(0) if m else body[:60])
+        segs = page.locator(".tlseg")
+        check("the journey is drawn as a bar of legs", segs.count() >= 1, f"{segs.count()} segments")
+        tips = [segs.nth(i).get_attribute("title") or "" for i in range(segs.count())]
+        keys = page.locator(".tlkey").all_inner_texts()
+        check("the bar has a key naming each leg, with its start time",
+              len(keys) >= 1 and all(re.search(r"\d{2}:\d{2}", k) for k in keys)
+              and not any("undefined" in k.lower() for k in keys), " / ".join(k[:22] for k in keys[:3]))
+        check("every segment says what its minutes are made of",
+              all("min" in (x or "") for x in tips) or not tips, " | ".join(t[:44] for t in tips[:2]))
+        check("and the honesty line is on the card",
+              "live vehicle" in body.lower() and "published departures" in body.lower(),
+              [l for l in body.split("\n") if "5 km/h" in l][:1])
+
+        page.locator("button:has-text('Leave at')").first.click(timeout=8000)
+        page.wait_for_timeout(900)
+        tinp = page.locator("input[type='time']")
+        check("choosing it opens a time field", tinp.count() > 0)
+        tinp.first.fill("08:15")
+        tinp.first.dispatch_event("change")
+        page.wait_for_timeout(1400)
+        t2 = page.locator("body").inner_text()
+        check("a fixed departure is honoured", "08:15" in t2, [l for l in t2.split("\n") if "08:15" in l][:1])
+        mm = re.search(r"08:15 . (\d{2}):(\d{2})", t2)
+        later = mm is not None and (int(mm.group(1)) * 60 + int(mm.group(2))) > 8 * 60 + 15
+        check("and the arrival is a later clock time than it", later,
+              mm.group(0) if mm else [l for l in t2.split("\n") if "→" in l][:1])
+        chips = page.locator(".btnrow.tight .cat")
+        check("other departures are offered as choices", chips.count() >= 2, f"{chips.count()} chips")
+        before = [l for l in page.locator("body").inner_text().split("\n") if "→" in l and ":" in l][:1]
+        if chips.count() >= 3:
+            chips.nth(2).click(timeout=8000)
+            page.wait_for_timeout(1400)
+            after = [l for l in page.locator("body").inner_text().split("\n") if "→" in l and ":" in l][:1]
+            check("picking one re-clocks the whole journey", after != before, f"{before} -> {after}")
+            t3 = page.locator("body").inner_text()
+            check("the wait at a bus stop is a printed time or none at all",
+                  "no service" in t3.lower() or "published departure" in t3.lower()
+                  or "min at this hour" in t3.lower(), [l for l in t3.split("\n") if "wait" in l.lower()][:1])
+
+        page.locator("button:has-text('Arrive by')").first.click(timeout=8000)
+        page.wait_for_timeout(900)
+        page.locator("input[type='time']").first.fill("00:05")
+        page.locator("input[type='time']").first.dispatch_event("change")
+        page.wait_for_timeout(1400)
+        t4 = page.locator("body").inner_text()
+        check("an arrival nobody can meet is refused in words",
+              "Nothing in these options reaches" in t4,
+              [l for l in t4.split("\n") if "Nothing in these options" in l][:1])
+        check("and it says what the earliest arrival really is",
+              "earliest arrival is" in t4.lower(), [l for l in t4.split("\n") if "earliest" in l.lower()][:1])
+        t5 = page.locator("body").inner_text()
+        check("no label in this panel is a blank or an undefined", "undefined" not in t5.lower()
+              and "₹" in t5 and "NaN" not in t5, [l for l in t5.split("\n") if "undefined" in l.lower()][:1])
+
+        print("\n=== 9. console hygiene ===")
         quiet = ("favicon", "geolocation", "net::ERR", "Failed to load resource",
                  "Permission", "WebSocket", "vite")
         noise = [e for e in errs if not any(k in e for k in quiet)]
