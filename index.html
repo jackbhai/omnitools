@@ -57,31 +57,61 @@
 </head>
 <body>
 <div id="error-display">
-  <h2>⚠️ Error Detected</h2>
+  <h2>Something went wrong</h2>
   <p id="error-message"></p>
   <pre id="error-stack"></pre>
   <button onclick="location.reload()">Reload Page</button>
 </div>
 <div id="root"></div>
 <script>
-// Global error handler - shows errors on screen for mobile users
-window.onerror = function(msg, url, line, col, error) {
-  var display = document.getElementById('error-display');
-  var msgEl = document.getElementById('error-message');
-  var stackEl = document.getElementById('error-stack');
-  display.style.display = 'block';
-  msgEl.textContent = msg;
-  stackEl.textContent = error ? error.stack : 'Error at ' + url + ':' + line + ':' + col;
-  return false;
-};
-window.onunhandledrejection = function(event) {
-  var display = document.getElementById('error-display');
-  var msgEl = document.getElementById('error-message');
-  var stackEl = document.getElementById('error-stack');
-  display.style.display = 'block';
-  msgEl.textContent = 'Unhandled Promise Rejection';
-  stackEl.textContent = event.reason ? (event.reason.stack || event.reason.toString()) : 'Unknown error';
-};
+// Last-resort error screen, for one situation only: the app never renders and
+// a phone user is left staring at blank white with no console to check.
+//
+// It must NOT appear for anything else. The panel covers the whole viewport at
+// z-index 9999, so putting it up over a working app makes every control
+// untappable. That is exactly what was happening: any stray error - a dropped
+// dev websocket, one unhandled rejection from a background fetch - raised the
+// panel while the app was mounted and running fine underneath it. Measured: a
+// tab click timed out after 30s because the stack-trace element was swallowing
+// the pointer events.
+//
+// Two guards. First, an error that arrives before React mounts is normal, so
+// the decision is deferred rather than taken immediately - by the time the
+// timer fires the app has usually rendered and there is nothing to report.
+// Second, it only ever shows if #root is still empty at that point.
+(function () {
+  var reported = false;
+
+  function rendered() {
+    var root = document.getElementById('root');
+    return !!(root && root.children.length);
+  }
+
+  function report(title, detail) {
+    if (reported) return;
+    reported = true;
+    setTimeout(function () {
+      if (rendered()) return;          // it recovered - stay out of the way
+      var display = document.getElementById('error-display');
+      if (!display) return;
+      display.style.display = 'block';
+      document.getElementById('error-message').textContent = title;
+      document.getElementById('error-stack').textContent = detail || '';
+    }, 4000);
+  }
+
+  window.onerror = function (msg, url, line, col, error) {
+    report(String(msg),
+           error && error.stack ? error.stack : url + ':' + line + ':' + col);
+    return false;
+  };
+
+  window.onunhandledrejection = function (event) {
+    var reason = event.reason;
+    report('Could not finish loading',
+           reason ? (reason.stack || String(reason)) : '');
+  };
+})();
 </script>
 <script type="module" src="/src/main.jsx"></script>
 </body>
