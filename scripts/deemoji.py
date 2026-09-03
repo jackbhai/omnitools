@@ -74,19 +74,44 @@ EMOJI_RE = re.compile(
 # Only high-range emoji flagged - arrows, checkmarks, misc symbols allowed as typography
 # Arrows → ↔ etc allowed - not emoji, used in transit routes
 
-def main(check_only=False):
-    root = os.path.join(os.path.dirname(__file__), '..', 'src')
-    changed, leftover = [], {}
-    for dirpath, _, files in os.walk(root):
+def _file_groups(root):
+    """Every shipped file that can carry visible text.
+
+    index.html used to sit outside this walk, so the warning-sign emoji in its
+    error overlay survived every run while the check reported clean. The entry
+    HTML is shipped UI exactly like anything under src/, so it is scanned too.
+    """
+    src_files = []
+    for dirpath, _, files in os.walk(os.path.join(root, 'src')):
         for f in files:
-            if not f.endswith(('.jsx', '.js')):
-                continue
-            p = os.path.join(dirpath, f)
+            if f.endswith(('.jsx', '.js')):
+                src_files.append(os.path.join(dirpath, f))
+    html = os.path.join(root, 'index.html')
+    return [src_files, [html] if os.path.isfile(html) else []]
+
+
+def _split_comments(path, src):
+    """Split into [code, comment, code, ...] so comments are never rewritten.
+
+    HTML needs its own pattern. Reusing the JavaScript one would treat the //
+    in every https:// URL as the start of a line comment and blind the scanner
+    to anything after it on that line.
+    """
+    if path.endswith('.html'):
+        return re.split(r'(<!--[\s\S]*?-->)', src)
+    return re.split(r'(/\*[\s\S]*?\*/|//[^\n]*)', src)
+
+
+def main(check_only=False):
+    root = os.path.join(os.path.dirname(__file__), '..')
+    changed, leftover = [], {}
+    for group in _file_groups(root):
+        for p in group:
             src = open(p, encoding='utf-8').read()
             orig = src
 
-            # only touch JSX text, never comments — split off block comments
-            parts = re.split(r'(/\*[\s\S]*?\*/|//[^\n]*)', src)
+            # only touch real text, never comments
+            parts = _split_comments(p, src)
             for i in range(0, len(parts), 2):          # even = real code
                 for e, rep in MAP.items():
                     if e in parts[i]:
@@ -110,7 +135,7 @@ def main(check_only=False):
                 changed.append(os.path.relpath(p, root))
 
             # report anything still left, ignoring comments
-            code = ''.join(re.split(r'(/\*[\s\S]*?\*/|//[^\n]*)', src)[::2])
+            code = ''.join(_split_comments(p, src)[::2])
             found = sorted(set(EMOJI_RE.findall(code)))
             if found:
                 leftover[os.path.relpath(p, root)] = found
