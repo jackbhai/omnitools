@@ -18,6 +18,8 @@ import * as B from '../core/bus-route';
 import { Card, Empty, Spin } from '../ui/kit';
 import { StationBuses } from './metro-planner';
 import { Icon } from '../ui/icons';
+import { trackOfCombo, stepsOf } from '../core/trip';
+import { TripKit } from './trip-ui.jsx';
 
 const WALK_KMH = 5;
 const walkMin = (km) => Math.round((km / WALK_KMH) * 60);
@@ -95,7 +97,7 @@ function buildOptions(a, b) {
           legs: [
             ...(sA.km > 0.05 ? [{ kind: 'walk', text: `Walk to ${sA.n}`, km: +sA.km.toFixed(2), min: walkMin(sA.km) }] : []),
             ...r.legs.map((l) => ({ kind: 'metro', line: l.line, colour: l.colour,
-              from: l.from, to: l.to, count: l.count, km: l.km })),
+              from: l.from, to: l.to, stops: l.stops, count: l.count, km: l.km })),
             ...(sB.km > 0.05 ? [{ kind: 'walk', text: `Walk to ${b.n}`, km: +sB.km.toFixed(2), min: walkMin(sB.km) }] : []),
           ],
           detail: r,
@@ -150,7 +152,7 @@ function buildOptions(a, b) {
               if (f && f.changes === 0) {
                 legs.push({ kind: 'walk', text: `Walk to ${bs.n}`, km: +bs.km.toFixed(2), min: walkMin(bs.km) });
                 legs.push({ kind: 'bus', ref: f.legs[0].ref, from: f.legs[0].from, to: f.legs[0].to,
-                  count: f.legs[0].stops, km: f.legs[0].km });
+                  count: f.legs[0].stops, km: f.legs[0].km, bus: f });
                 mins += f.minutes; fare += f.fare; km += f.km; changes += 1;
               }
             } catch {}
@@ -167,7 +169,7 @@ function buildOptions(a, b) {
               const f = B.planBus(bm.n, be.n)[0];
               if (f && f.changes === 0) {
                 legs.push({ kind: 'bus', ref: f.legs[0].ref, from: f.legs[0].from, to: f.legs[0].to,
-                  count: f.legs[0].stops, km: f.legs[0].km });
+                  count: f.legs[0].stops, km: f.legs[0].km, bus: f });
                 mins += f.minutes; fare += f.fare; km += f.km; changes += 1;
               }
             } catch {}
@@ -268,11 +270,23 @@ export function MultiModal() {
 
       {o.mode === 'Metro' && <StationBuses station={from.n} />}
 
+      {o && (() => {
+        const track = trackOfCombo(o);
+        return track.points.length > 1 ? (
+          <Card>
+            <TripKit track={track} steps={stepsOf(track)} stepsToggle={false} />
+            <div className="dim sm" style={{ marginTop: 8 }}>
+              The alert watches every published stop of every leg in this order, so it also
+              knows when you have reached the metro station the bus leaves you at.
+            </div>
+          </Card>) : null;
+      })()}
+
       <div className="chead" style={{ marginTop: 14 }}>Step by step</div><div className="list">
         {o.legs.map((l, i) => (
           <div className="col" key={i}>
             {l.kind === 'walk' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span style={{ fontSize: 17 }}></span><div className="main"><b style={{ fontSize: 13 }}>{l.text}</b><span className="dim sm">{l.km} km · about {l.min} min</span></div></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><Icon n="walk" size={16} /><div className="main"><b style={{ fontSize: 13 }}>{l.text}</b><span className="dim sm">{l.km} km · about {l.min} min</span></div></div>
             ) : l.kind === 'metro' ? (
               <><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span style={{ width: 12, height: 12, borderRadius: 3, flex: '0 0 auto',
                     background: l.colour || 'var(--green)' }} /><b style={{ flex: 1 }}><Icon n="metro" size={17} /> {l.line}</b><span className="tag">{l.count} stops</span></div><span className="dim sm" style={{ paddingLeft: 21 }}>{l.from} → {l.to} · {l.km} km</span></>

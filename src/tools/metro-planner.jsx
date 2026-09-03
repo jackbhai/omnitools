@@ -7,6 +7,8 @@ import { useLoc } from '../core/geo';
 import { planRoutes, searchStations, nearestStations, isStation, STATIONS, LINES, BUILT,
          lineInfo, minutesOfDay, fmtTime, headwayText, lineRecord } from '../core/metro-route';
 import { busAtStation } from '../core/transit-link';
+import { trackOfMetro, stepsOf } from '../core/trip';
+import { TripKit } from './trip-ui.jsx';
 import { Card, Empty } from '../ui/kit';
 import { Icon } from '../ui/icons';
 
@@ -166,6 +168,20 @@ export function MetroPlanner() {
       </div>
 
       <div style={{ marginTop: 12 }}><StationBuses station={r.from} /></div>
+
+      {r && (() => {
+        // wait for the next train, then every station on the ride is a point to watch
+        const boardMin = minutesOfDay() + (r.nextIn || 0);
+        const track = trackOfMetro(r, { boardMin });
+        return track.points.length > 1 ? (
+          <Card>
+            <TripKit track={track} steps={stepsOf(track)} boardMin={boardMin} />
+            <div className="dim sm" style={{ marginTop: 8 }}>
+              The wait uses the published headway and the ride uses the published station
+              order — no live train position is published, so none is implied.
+            </div>
+          </Card>) : null;
+      })()}
 
       {/* every station */}
       <button className="btn ghost" style={{ width: '100%', marginTop: 12 }}

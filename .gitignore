@@ -49,3 +49,6 @@ android/app/src/main/assets/public/
 scrape
 
 .ssr-smoke
+
+__pycache__/
+*.pyc

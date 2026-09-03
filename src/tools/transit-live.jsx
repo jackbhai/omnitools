@@ -28,6 +28,8 @@ import * as M from '../core/metro-route';
 import { busAtStation } from '../core/transit-link';
 import { Card, Empty } from '../ui/kit';
 import { Icon } from '../ui/icons';
+import { trackOfRoute, trackOfLine, stepsOf } from '../core/trip';
+import { TripKit, MapPanel, AlertStatus } from './trip-ui.jsx';
 
 const pad = (n) => String(n).padStart(2, '0');
 const hhmm = (m) => {
@@ -79,7 +81,8 @@ export function BusLive() {
   const [q, setQ] = useState('');
   const [pos, setPos] = useState(null);          // index into ROUTES
   const [flip, setFlip] = useState(false);
-  const [mode, setMode] = useState('timeline');  // timeline | stops
+  const [mode, setMode] = useState('timeline');
+  const [alight, setAlight] = useState(null);   // index on the picked direction  // timeline | stops
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30000);
@@ -252,16 +255,39 @@ export function BusLive() {
           <Icon n="list" size={15} /> Every stop</button>
       </div>
 
+      {rec && (() => {
+        const upTo = alight > 0 && alight < rec.s.length - 1 ? alight : null;
+        const track = trackOfRoute(rec, { boardMin: dep, upTo });
+        return (
+          <Card>
+            <div className="chead sm" style={{ marginBottom: 4 }}>
+              {upTo ? 'Map and get-off alert · ' + B.nameOf(rec.s[upTo]) : 'This direction, end to end'}
+            </div>
+            <TripKit track={track} steps={stepsOf(track)} boardMin={dep} />
+            <div className="dim sm" style={{ marginTop: 8 }}>
+              {dep != null
+                ? 'Per-stop minutes are the published departure plus this route\u2019s own running time.'
+                : 'No departure is published for this hour, so an alert counts stops, not minutes.'}
+              {' '}Tap a stop below to say where you get off.
+            </div>
+            <AlertStatus />
+          </Card>);
+      })()}
+
       <div className="list" style={{ maxHeight: 430, overflowY: 'auto' }}>
         {mode === 'timeline' && timeline.map((t) => (
-          <div className="row" key={t.i} style={{ padding: '7px 14px' }}>
+          <button className={`row${alight === t.i ? ' act' : ''}`} key={t.i}
+            style={{ padding: '7px 14px', background: 'none', border: 0, width: '100%',
+                     textAlign: 'left', cursor: 'pointer' }}
+            onClick={() => setAlight(t.i > 0 ? t.i : null)}>
             <span style={{ width: 20, textAlign: 'center', flex: '0 0 auto', fontSize: 11,
               color: t.i === 0 || t.i === timeline.length - 1 ? 'var(--green)' : 'var(--fg3)' }}>{t.i + 1}</span>
             <div className="main"><b style={{ fontSize: 12.5 }}>{t.name}</b></div>
             <span className="dim sm" style={{ marginRight: 8 }}>{t.km.toFixed(1)} km</span>
             <span className="tag">{t.i === 0 ? 'starts here' : `+${t.run ?? '-'} min`}</span>
-            <span className="tag c" style={{ marginLeft: 6 }}>{hhmm(t.at)}</span>
-          </div>))}
+            <span className={`tag ${t.i === alight ? 'g' : 'c'}`} style={{ marginLeft: 6 }}>
+              {t.i === alight ? 'get off here' : hhmm(t.at)}</span>
+          </button>))}
         {mode === 'stops' && B.routeStops(rec).map((n, i) => (
           <div className="row" key={i} style={{ padding: '7px 14px' }}>
             <span style={{ width: 20, textAlign: 'center', flex: '0 0 auto', fontSize: 11, color: 'var(--fg3)' }}>{i + 1}</span>
@@ -355,6 +381,12 @@ export function MetroTimings() {
             : `No trains run at this hour. Service window ${hhmm(info.first)}-${hhmm(info.last)}.`}
         </span></div>
       </>)}
+    </Card>
+
+    <Card>
+      <div className="chead sm" style={{ marginBottom: 4 }}>The line on a map</div>
+      <MapPanel track={trackOfLine(pick, { upToName: station })} height={230}
+        hint="Published station order; not a train position." />
     </Card>
 
     <Card>

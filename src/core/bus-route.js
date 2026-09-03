@@ -490,6 +490,12 @@ export function routesAtIndex(i) {
   return [...(AT.get(i) || [])].map((j) => ROUTES[j]);
 }
 
+/** Coordinates of a published stop by name (first occurrence wins). */
+export const stopAt = (n) => {
+  const s = BY_NAME.get(n)?.[0];
+  return s && s.lat != null ? { lat: s.lat, lon: s.lon, n: s.n } : null;
+};
+
 export function nearestStops(lat, lon, n = 5) {
   const best = new Map();
   for (const s of AT_IDX) {

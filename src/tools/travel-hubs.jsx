@@ -14,9 +14,18 @@ import * as MP from './metro-planner';
 import * as TL from './transit-live';
 import * as T from './transit';
 import { Hub } from './travel-hub';
+import { TripBar } from './trip-ui.jsx';
+
+/**
+ * The floating get-off bar lives here rather than inside the shared Hub shell:
+ * Hub is also used by the train tools, which are part of the start bundle, and
+ * the trip store pulls in the transit data.  Mounting it from this module keeps
+ * 2.4 MB of JSON behind the same lazy boundary it was already behind.
+ */
+const withTripBar = (node) => (<>{node}<TripBar /></>);
 
 export function BusHub() {
-  return (
+  return withTripBar(
     <Hub icon="bus" title="Delhi Bus" sub="Plan a trip · what is due right now · fares"
       tabs={[
         { id: 'plan',   n: 'Plan trip',   i: 'route',  C: BP.BusPlanner },
@@ -27,7 +36,7 @@ export function BusHub() {
 }
 
 export function MetroHub() {
-  return (
+  return withTripBar(
     <Hub icon="metro" title="Delhi Metro" sub="Plan a trip · line status, last train & fares"
       tabs={[
         { id: 'plan',  n: 'Plan route',   i: 'route', C: MP.MetroPlanner },

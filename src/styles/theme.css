@@ -880,3 +880,57 @@ input[type="color"] {
   color: var(--bad);
   background: rgba(255,92,122,0.1);
 }
+
+/* ------------------------------------------------- trip map, steps, alerts
+   The map is collapsed by default everywhere it appears, so these rules only
+   style a panel the user opened.  Leaflet brings its own class names; they are
+   re-skinned here rather than in a second stylesheet so theme.css stays the only
+   file that decides what this app looks like. */
+.mapslot{margin-top:2px}
+.mapbox{margin-top:10px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--s1)}
+.mapleaf{width:100%}
+.mapnote{display:flex;align-items:center;gap:8px;padding:9px 12px;font-size:11.5px;color:var(--fg2)}
+.mapswap{margin-left:6px;background:none;border:0;padding:0;color:var(--green);
+  font:inherit;font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;
+  text-underline-offset:2px}
+.mapswap:active{opacity:.6}
+.mapnote.sm{border-top:1px solid var(--line);line-height:1.45}
+.mapsketchwrap{padding:8px 8px 0}
+.sketch{display:block;border-radius:10px}
+.leaflet-container{background:#05100D;font-family:var(--font-body);font-size:12px}
+.leaflet-control-attribution{background:rgba(8,11,10,.78)!important;color:var(--fg3)!important;font-size:9.5px!important}
+.leaflet-control-attribution a{color:var(--cyan-dim)!important}
+.leaflet-bar a,.leaflet-bar a:hover{background:var(--s2)!important;color:var(--fg)!important;border-color:var(--line2)!important}
+.leaflet-bar a:hover{background:var(--s3)!important}
+.leaflet-tooltip{background:var(--s2)!important;color:var(--fg)!important;border:1px solid var(--line2)!important;box-shadow:none!important;font-size:11px!important;border-radius:7px!important}
+.leaflet-tooltip-top:before{border-top-color:var(--line2)!important}
+/* turn-by-turn: one row per action, the current one lit */
+.steps2{display:flex;flex-direction:column;margin-top:10px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.stp{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;background:var(--s1);border-bottom:1px solid var(--line)}
+.stp:last-child{border-bottom:0}
+.stp .sp{flex:0 0 auto;width:25px;height:25px;border-radius:8px;display:grid;place-items:center;background:var(--s2);border:1px solid var(--line2);color:var(--green)}
+.stp.walk .sp{color:var(--fg2)}
+.stp.alight .sp{color:var(--warn)}
+.stp.now{background:linear-gradient(180deg,rgba(0,229,255,.09),transparent)}
+.stp.now .sp{border-color:var(--cyan);color:var(--cyan)}
+.stp b{font-size:12.5px;font-weight:600}
+/* one compact row for map / steps / alert, so three buttons stay on one line */
+.btnrow.tripctl{gap:6px}
+.btnrow.tripctl .cat{padding:8px 11px;font-size:12px;letter-spacing:.1px}
+/* the floating trip bar: one per hub, above the tab bar */
+.tripbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(60px + var(--safe-b));
+  width:min(440px,calc(100% - 20px));z-index:70;background:rgba(8,11,10,.93);backdrop-filter:blur(14px);
+  border:1px solid var(--line2);border-radius:16px;padding:9px 11px;box-shadow:0 14px 40px rgba(0,0,0,.6)}
+.tripbar.hot{border-color:var(--warn);box-shadow:0 0 0 1px rgba(255,209,102,.3),0 14px 40px rgba(0,0,0,.6)}
+.tripbar .tb1{display:flex;align-items:center;gap:8px}
+.tripbar .tb1 .grow{flex:1 1 auto;min-width:0}
+.tripbar .tbmeta{margin-top:3px;font-size:11.5px;line-height:1.4;color:var(--dim);
+  display:flex;flex-wrap:wrap;gap:0 6px;align-items:baseline}
+.tripbar .tbmeta b{color:var(--fg2);font-weight:700}
+.tripbar .tb2{display:flex;gap:6px;align-items:center;margin-top:6px;font-size:11.5px;color:var(--warn)}
+.tripbar .tb2 .ico{color:var(--warn)}
+.tripbar .tb3{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;margin-top:5px;line-height:1.45}
+.tripbar .tbwhy{background:none;border:0;padding:0;margin:0;color:var(--green);font:inherit;
+  font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.armwrap{display:inline-flex;align-items:center;flex-wrap:wrap}
+.list .row.act{background:rgba(0,255,156,.09);box-shadow:inset 2px 0 0 var(--green)}

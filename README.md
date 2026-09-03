@@ -114,7 +114,10 @@ labelled, never silently hidden.
 
 **News** — 52 country editions, 49 publisher feeds, topic search.
 
-**India** — trains, metro, buses, medicines (253,802), names (5,695).
+**India** — trains, metro, buses, medicines (253,802), names (5,695). A bus or metro
+journey brings its own map behind a button, turn-by-turn steps and a get-off alert that
+watches your position against the published stops — free tiles, no key, no ads, and the
+alert says in words when it has to fall back to the timetable clock.
 
 **Everyday** — weather, air quality, currency, recipes, converters,
 generators, encoders, and around forty more.
@@ -147,7 +150,7 @@ npx vite --host 0.0.0.0 --port 5190
 Before committing:
 
 ```bash
-npm run verify                       # transit data + bus + metro + render gates
+npm run verify                       # transit data + bus + metro + trip engine + render gates
 npx vite build
 python3 scripts/debrand.py --check
 python3 scripts/deemoji.py

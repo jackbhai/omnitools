@@ -89,8 +89,9 @@ are real long sections between IAS stations — they are published, not invented
 | `verify:data` → `scripts/verify_transit_data.py` | structural invariants, timetable sanity, `rv` symmetry, stop-index integrity, and length re-measured against an independent router (median built/OSRM ratio 1.001) | PASS 24 · WARN 0 · FAIL 0 |
 | `verify:bus` → `scripts/verify_bus.mjs` | 78 assertions on the bus core, generated from the data itself (fare slabs, `nextAtStop`, `planBus`, `statusNow`, `headwayNow`) | 78 passed · 0 failed |
 | `verify:metro` → `scripts/verify_metro.mjs` | 69 assertions on the metro core incl. the bus↔metro join, last-train estimates, transfers, the 2025 fare chart | 69 passed · 0 failed |
+| `verify:trip` → `scripts/verify_trip.mjs` | the journey model (geometry, every `judge` state, the dense-stop regressions, step wording) plus assertions on what actually ships: leaflet and the bus JSON must stay out of the start shell, and every tile source must be key-free | 73 passed · 0 failed |
 | `verify:render` → `vite build --ssr scripts/ssr-smoke.jsx` + `node .ssr-smoke/ssr-smoke.js` | all 10 travel components render to HTML, and 10 real journeys/stops answer from the shipped data | 20 passed · 0 failed |
-| `python3 tests/qa_transit.py <url>` | a real chromium: shell paints through the lazy boundary, both hubs, both planners, the combined planner, and console hygiene | 38 passed · 0 failed |
+| `python3 tests/qa_transit.py <url>` | a real chromium: shell paints through the lazy boundary, both hubs, both planners, the combined planner, the map behind its button on all three, a `set_geolocation` walk down a 71-stop route, resume after reload, console hygiene | 76 passed · 0 failed |
 | `python3 scripts/healthcheck.py all` | the rest of the app's network sources | 93/96 (3 unrelated third-party flakes) |
 
 Run the browser suite against `npx vite preview` (a built `dist`), never against
@@ -112,6 +113,13 @@ resulting error overlay swallows every click.
   crosses into them is priced per ticket, and says so.
 * `0184`, `184`, `238`, `27B` and similar numbers people expect do not exist in either
   source. They were not silently invented.
+* **There is no live vehicle position.** Everything that publishes one (DTC's OTD GTFS-RT, `dtcmonitrix`, the scrape site's own
+  `/api/live/buses/` endpoint, OpenMove) is key-gated, CORS-blocked or 401 from a browser. "Right now" is therefore the published
+  timetable read against the device clock, and the trip bar prints `Timetable clock:` whenever it is doing exactly that. The UI
+  never claims a live bus, and no screen should be cropped to imply one.
+* **Map tiles are somebody else's servers.** Free and key-free today (`osm.fr`, Esri grey, OpenTopoMap, `openstreetmap.org`), but any
+  of them can throttle a static site without notice. Two consequences: the map is a button rather than a permanent panel, and tiles
+  are never cached by the service worker, so an offline trip draws the built-in SVG sketch instead of a grey box.
 
 ## 6. Notes for the next session
 
@@ -120,11 +128,70 @@ resulting error overlay swallows every click.
   ("Nehru Place" gave 52 routes instead of 28). Do not go back to names.
 * `BusHub` / `MetroHub` / `MultiModal` live in `src/tools/travel-hubs.jsx` and are
   `React.lazy`-imported in `App.jsx` on purpose: the 2.4 MB of JSON must stay out of the
-  start shell. Measured on `dist` with `gzip -9`: shell 1,457,821 B (411 kB gz) against
-  1,634,587 B before the split, transit chunk 2,266,251 B (639 kB gz) fetched on demand,
-  `travel-hubs` 34,415 B, and the service worker caches them so the next visit is offline.
+  start shell. Measured on the current `dist` with `gzip -9`: start shell 1,450,461 B
+  (418 kB gz), transit chunk 2,288,342 B (663 kB gz — it carries the trip engine as well),
+  `travel-hubs` 36,300 B (9.6 kB gz). A map costs nothing until its button is pressed:
+  `trip-map` 6,616 B (3.0 kB gz) and `leaflet-src` 149,034 B (42.8 kB gz) plus 15 kB of
+  Leaflet CSS, all on demand. `public/sw.js` caches the app's own files so a repeat visit
+  works offline; it deliberately never caches tiles.
 * Node ESM needs explicit `.js` in `src/core/*` imports even though Vite does not.
 * `minutesOfDay()` returns IST clock minutes, so a fixture like `new Date(2026, 0, 5, 1, 30)`
   is shifted by +330 minutes. Build test times as `Date.UTC(...) - 330 * 60000`.
 * Do not move the JSON into `public/` behind a `fetch()` to shrink the bundle: it would make
   the core modules async and ripple through four tools and both hubs.
+
+For the trip layer specifically:
+
+* `judge()` may only advance to a stop that is **no farther than every stop before it**. 264 published
+  directions have adjacent stops 0-100 m apart (duplicate halts, loops), so a plain "nearest stop within
+  130 m" walk runs to the end of the line in one tick, `tick()` finishes the trip inside `armTrip`, and the
+  symptom is a Get-off alert button that seems to do nothing — the bar and its `omni:trip-v1` key are gone
+  20 ms after being written.
+* Any ancestor with a `backdrop-filter`, `filter` or `transform` silently traps a `position: fixed` child.
+  The trip bar is portalled to `<body>` for that reason, and `verify:trip` asserts no hook sits below its
+  early `return null` — a `useState` after `return null` throws on the first armed render, no bar appears.
+* Leaflet must be `await import('leaflet')` inside an effect, never a static import: the stylesheet and the
+  43 kB gzipped library belong in the map's own chunk, and a static import breaks `scripts/ssr-smoke.jsx`
+  (`window is not defined`).
+* A hung `Notification.requestPermission()` is normal in headless Chromium (permission is `denied`, no
+  prompt ever shown). Arm the trip first, ask for permission second, and race the ask with a timeout —
+  `alerts.js` uses 4 s.
+* Playwright's `context.set_geolocation()` takes a dict positional, not `latitude=` kwargs. And a fixture
+  must pick a route number that ships as exactly **one** direction: most numbers here also have a return
+  direction, and arming the wrong one puts the fake GPS at the far end of the ride — the app then
+  correctly reports arrival before boarding, and the test blames the app.
+* CARTO's `basemaps.cartocdn.com` is not usable: it paints "API KEY REQUIRED" across a keyless app's tiles
+  and answers HTTP 200, so the tile-error fallback never fires. 200 is not health — look at the pixels.
+
+---
+
+## 7. The trip layer: map button, turn-by-turn, get-off alert
+
+Built on top of the two payloads. It changed no data file, no crawler and no fare table.
+
+| file | what it is |
+|---|---|
+| `src/core/trip.js` | the pure journey model: `trackOfBus` / `trackOfRoute` / `trackOfMetro` / `trackOfLine` / `trackOfCombo`, `stepsOf`, `judge`, `metresBetween`, `bearing`, `compass`. No React, no DOM, no timers. |
+| `src/core/trip-state.js` | the single armed trip for the whole app (`omni:trip-v1` in localStorage), a 4 s ticker, GPS fixes in, state out, resumed on load |
+| `src/core/alerts.js` | notifications (service worker first, `new Notification` second), vibration, wake lock, visibility |
+| `src/tools/trip-map.jsx` | the map: `PROVIDERS`, the Leaflet mount, the tile fallback chain, `Sketch` + `project` for when there is no network at all |
+| `src/tools/trip-ui.jsx` | the only surface a planner imports: `TripKit` (map toggle, turn-by-turn toggle, arm button), `TripBar`, `StepList`, `ArmButton`, `AlertStatus`, `useTrip` |
+
+**The map is asked for, never imposed.** A journey card carries one `Map · N points` button; until it is
+pressed nothing map-related is mounted or fetched. Pressing it lazily loads Leaflet, centres the panel in
+the screen (unless the OS asked for reduced motion), and prints which tile source is live with a ▸ button
+to move to the next one.
+
+**Four tile sources, four operators, zero keys.** osm.fr, then Esri World_Light_Gray, then OpenTopoMap,
+then openstreetmap.org — each with its own attribution, and each tried only after the previous one fails on
+four tiles. No network at all draws `Sketch`: the same points projected into SVG, still tappable, zero
+requests. The service worker never caches tiles, so nothing about offline behaviour got worse.
+
+**An alert that cannot fire says why.** The bar prints the clock it is using (`Position ±9 m, matched
+against 71 published stops`, or `Timetable clock: …`), where the alert went (`notifications go to your
+shade` / `page-level` / `this bar only`) and whether the screen is being kept awake. That fine print is
+folded under `how it knows` — one press, never deleted.
+
+**States.** `no-signal → to-stop → at-board → riding → alight → done`. The last two highlight the bar in
+amber, the most recent alert line folds itself away after 18 s (90 s when urgent) so the bar stays about
+90 px tall, and `End` clears storage so a finished trip cannot come back stale.

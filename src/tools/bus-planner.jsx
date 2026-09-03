@@ -25,6 +25,8 @@ import { planBus, searchStops, isStop, routesAt, nearestStops, refineFare,
          ROUTES, STOPS, BUILT, STATS, nameOf, routeStops,
          nextAtStop, statusNow, headwayNow, minutesOfDay, fmtTime, routeLength } from '../core/bus-route';
 import { metroNearStop } from '../core/transit-link';
+import { trackOfBus, stepsOf } from '../core/trip';
+import { TripKit } from './trip-ui.jsx';
 import { Card, Empty } from '../ui/kit';
 import { Icon } from '../ui/icons';
 
@@ -151,6 +153,17 @@ export function BusPlanner() {
   const km = o ? (o.roadKm ?? o.estKm ?? o.km ?? 0) : 0;
   const slab = o ? fareSlab(km, ac) : null;
 
+  /* the trip the alert engine will watch: first leg's next published arrival at
+     the boarding stop is its start minute, every later stop is derived off it */
+  const trip = useMemo(() => {
+    if (!o?.legs?.length) return null;
+    const leg = o.legs[0];
+    const rec = ROUTES[leg.ri];
+    const due = rec && leg.i0 != null ? nextAtStop(rec, leg.i0, new Date(), 1)[0] : null;
+    const track = trackOfBus(o, { boardMin: due ? due.at : null });
+    return { track, steps: stepsOf(track), boardMin: due ? due.at : null, due };
+  }, [o]);
+
   return (<>
     <StopPicker label="From" value={from} onPick={(v) => { setFrom(v); setSel(0); }}
       onNear={() => useNear(setFrom)} />
@@ -239,6 +252,16 @@ export function BusPlanner() {
               </div>)}
           </div>))}
       </div>
+
+      {trip?.track && (
+        <Card>
+          <TripKit track={trip.track} steps={trip.steps} boardMin={trip.boardMin} />
+          <div className="dim sm" style={{ marginTop: 8 }}>
+            {trip.due
+              ? `Counting from ${fmtTime(trip.due.at)} at ${o.legs[0].from}${o.legs[0].timed ? '' : ' (no published timetable, using the service window)'}.`
+              : 'No departure is published for this hour, so an alert would be timing guesswork — the map still shows the ride.'}
+          </div>
+        </Card>)}
 
       <MetroForStop stop={from} />
       <MetroForStop stop={to} />

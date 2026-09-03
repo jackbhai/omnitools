@@ -150,6 +150,14 @@ export const Trash = (p) => <S {...p}><path d="M4 6.5h16M9.5 6.5V4.2h5v2.3M6.5 6
 export const Queue = (p) => <S {...p}><path d="M3 6h11M3 11h11M3 16h7" /><path d="M17.5 20V11.5l4-1.2V19" /><circle cx="16" cy="20" r="1.6" /><circle cx="20" cy="18.8" r="1.6" /></S>;
 export const Mic = (p) => <S {...p}><rect x="9" y="2.5" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5" /></S>;
 
+/* ------------------------------------------------------------- travel / trips */
+export const MapIcon = (p) => <S {...p}><path d="M9.2 4 3.4 6.3v13.4L9.2 17.4l5.6 2.6 5.8-2.3V4.3l-5.8 2.3L9.2 4z" /><path d="M9.2 4v13.4M14.8 6.6V20" /></S>;
+export const Bell = (p) => <S {...p}><path d="M6.4 16.2v-4.6a5.6 5.6 0 0 1 11.2 0v4.6l1.6 2.4H4.8l1.6-2.4z" /><path d="M10.2 21a1.9 1.9 0 0 0 3.6 0" /></S>;
+export const Flag = (p) => <S {...p}><path d="M6.4 20.4V4.2h10.8l-1.9 3.6 1.9 3.6H6.4" /></S>;
+export const Walk = (p) => <S {...p}><circle cx="13.4" cy="4.4" r="1.5" /><path d="M12.6 8 9.8 9.9l-.8 3.3M12.6 8l1.3 4-1.4 3.7-2.8 4.2M13.9 12l2.6 1.4.8 4.7M9.8 9.9 6.6 12.4" /></S>;
+export const Navigation = (p) => <S {...p}><path d="M12 3.2 19.6 20.4 12 16.6l-7.6 3.8L12 3.2z" /></S>;
+export const BellOff = (p) => <S {...p}><path d="M6.4 16.2v-4.6a5.6 5.6 0 0 1 8.2-5M17.6 11.6v-0.1M17.6 11.6v4.6l1.6 2.4H7.2M4.8 18.6l1.6-2.4M3 3l18 18" /></S>;
+
 /** Registry so tools can be declared with a plain string name. */
 export const ICONS = {
   sun: Sun, cloud: Cloud, drop: Drop, wind: Wind,
@@ -172,6 +180,7 @@ export const ICONS = {
   repeat: Repeat, repeatone: RepeatOne, shuffle: Shuffle,
   volume: Volume, volumeoff: VolumeOff, wave: Wave, bolt: Bolt, moon: Moon,
   cast: Cast, expand: Expand, max: Max, min: Min, down: Down, up: Up, plus: Plus, trash: Trash, queue: Queue, mic: Mic,
+  map: MapIcon, bell: Bell, bellof: BellOff, flag: Flag, walk: Walk, navigation: Navigation,
 };
 
 /** <Icon n="bus" size={22} /> */

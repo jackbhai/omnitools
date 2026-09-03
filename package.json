@@ -7,10 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "verify": "npm run verify:data && npm run verify:bus && npm run verify:metro && npm run verify:render",
+    "verify": "npm run verify:data && npm run verify:bus && npm run verify:metro && npm run verify:trip && npm run verify:render",
     "verify:data": "python3 scripts/verify_transit_data.py --pages 8 --osrm 6",
     "verify:bus": "node --experimental-loader ./scripts/_json_loader.mjs scripts/verify_bus.mjs",
     "verify:metro": "node --experimental-loader ./scripts/_json_loader.mjs scripts/verify_metro.mjs",
+    "verify:trip": "node --experimental-loader ./scripts/_json_loader.mjs scripts/verify_trip.mjs",
     "verify:render": "vite build --ssr scripts/ssr-smoke.jsx --outDir .ssr-smoke --emptyOutDir && node .ssr-smoke/ssr-smoke.js"
   },
   "engines": {
@@ -25,6 +26,7 @@
     "@capacitor/status-bar": "^8.0.3",
     "@vitejs/plugin-react": "^6.1.0",
     "astronomy-engine": "^2.1.19",
+    "leaflet": "^1.9.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "vite": "^8.2.2"
