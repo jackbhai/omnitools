@@ -147,9 +147,13 @@ npx vite --host 0.0.0.0 --port 5190
 Before committing:
 
 ```bash
+npm run verify                       # transit data + bus + metro + render gates
 npx vite build
 python3 scripts/debrand.py --check
 python3 scripts/deemoji.py
 python3 scripts/healthcheck.py all
 python3 tests/qa_new.py
 ```
+
+The bus and metro tiles read from generated JSON — see **TRANSIT-DATA.md** for how to
+refresh the scrape and what is measured versus derived.

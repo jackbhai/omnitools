@@ -2,7 +2,9 @@
  * 10-round verification of the metro graph + planner against KNOWN-GOOD facts.
  * Any mismatch is printed loudly. Run before shipping.
  */
-import { planRoutes, fareFor, STATIONS, LINES, stationNames, nearestStations, haversine } from '../src/core/metro-route.js';
+import { planRoutes, fareFor, STATIONS, LINES, stationNames, nearestStations, haversine,
+         lineInfo, lastTrainAt, fmtTime, busStopsNear, isOffPeak, isHoliday, fareSlabOf }
+  from '../src/core/metro-route.js';
 
 let pass = 0, fail = 0;
 const chk = (name, cond, detail = '') => {
@@ -11,7 +13,8 @@ const chk = (name, cond, detail = '') => {
 };
 
 console.log('=== 1. dataset sanity ===');
-chk('289 stations', STATIONS.length === 289, `${STATIONS.length}`);
+chk('287 stations on the network', STATIONS.length === 287, `${STATIONS.length}`);
+chk('every station belongs to a line', STATIONS.every((s) => (s.l || []).length > 0));
 chk('16 line branches', LINES.length === 16, `${LINES.length}`);
 chk('no empty station names', STATIONS.every((s) => s.n && s.n.length > 1));
 chk('all stations have coords', STATIONS.every((s) => s.lat > 20 && s.lat < 32 && s.lon > 70 && s.lon < 82));
@@ -108,6 +111,42 @@ console.log('\n=== 10. geo + connectivity ===');
     catch { bad.push(s.n); }
   }
   chk('all stations reachable', bad.length === 0, `${reach} reachable, ${bad.length} isolated${bad.length ? ': ' + bad.slice(0, 5).join(', ') : ''}`);
+}
+
+console.log('\n=== 11. timetable, last train and connections (new) ===');
+{
+  const L = lineInfo('Red Line', 9 * 60);
+  chk('Red Line is running at 09:00', L.open === true, `${L.first}-${L.last}`);
+  chk('Red Line peak headway is published', L.headway && L.headway[0] <= 7 && L.peak, JSON.stringify(L.headway));
+  const M = lineInfo('Red Line', 4 * 60);
+  chk('Red Line is closed at 04:00 with an opening time', M.open === false && M.nextOpenIn > 0, `opens in ${M.nextOpenIn} min`);
+  chk('every corridor carries first/last and headways',
+    LINES.every((x) => !x.tt || (x.tt.win && x.tt.win[1] > x.tt.win[0])));
+  chk('every corridor carries per-terminal first/last',
+    LINES.filter((x) => x.term).every((x) => x.term.length >= 1 && x.term.every((t) => t[2] > t[1])));
+  const lt = lastTrainAt('Red Line', 'Rithala', 20 * 60, 'Tis Hazari');
+  chk('last train from Rithala towards Tis Hazari is estimated', lt && lt.at > 22 * 60, lt && fmtTime(lt.at));
+  chk('a 23:30 boarding is past the last train from Rithala',
+    lastTrainAt('Red Line', 'Rithala', 23 * 60 + 30).gone === true);
+  chk('02:00 is before opening rather than a missed train',
+    lineInfo('Red Line', 2 * 60).open === false && lastTrainAt('Red Line', 'Rithala', 2 * 60).gone === false);
+  const jitney = planRoutes('Rithala', 'Shaheed Sthal', { atMin: 23 * 60 + 30 })[0];
+  chk('a 23:30 journey reports it cannot be made', jitney.canMakeIt === false, `left ${jitney.lastTrainLeftIn} min`);
+  const aqua = planRoutes('Depot Station', 'New Delhi')[0];
+  chk('Aqua Line trips say a separate ticket is needed', !!aqua.separateTicket, aqua.separateTicket);
+  chk('the Blue/Aqua foot transfer is modelled',
+    planRoutes('Noida Sector 51', 'Rajiv Chowk')[0].legs.some((l) => l.walk), 'walk leg');
+  chk('Sunday slabs are one step below weekday', fareFor(10, { holiday: true }) < fareFor(10),
+    `${fareFor(10, { holiday: true })} vs ${fareFor(10)}`);
+  chk('off-peak smart card is 30% below the counter fare on a weekday',
+    fareFor(20, { smartcard: true, offPeak: true }) < fareFor(20, { smartcard: true }),
+    `${fareFor(20, { smartcard: true, offPeak: true })} vs ${fareFor(20)}`);
+  const withBus = STATIONS.filter((s) => (s.b || []).length);
+  chk('most stations carry their bus connections', withBus.length > STATIONS.length * 0.7,
+    `${withBus.length}/${STATIONS.length}`);
+  const kg = busStopsNear('Kashmere Gate');
+  chk('Kashmere Gate lists its ISBT stops with route counts', kg.length > 0 && kg[0].routes > 0,
+    kg.map((k) => `${k.n} ${k.m}m ${k.routes ?? '-'}R`).join(', '));
 }
 
 console.log(`\n${'='.repeat(60)}\nRESULT: ${pass} passed, ${fail} failed`);

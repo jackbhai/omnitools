@@ -44,3 +44,8 @@ android/app/src/main/assets/public/
 *.apk
 *.aab
 *.jks
+
+.ssr-smoke.cjs
+scrape
+
+.ssr-smoke

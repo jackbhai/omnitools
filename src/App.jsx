@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import * as O from './tools/offline';
 import * as L from './tools/live';
 import { Music } from './tools/music2';
@@ -10,14 +10,18 @@ import { MiniPlayer, FullPlayer } from './ui/PlayerUI';
 import { Downloader } from './tools/downloader';
 import * as U from './tools/utils';
 import * as R from './tools/reader';
-import * as MP from './tools/metro-planner';
-import * as BP from './tools/bus-planner';
+/* The bus and metro tools carry the transit datasets (2.4 MB of JSON) behind a
+   lazy boundary, so the app shell paints at its original size and a traveller
+   who never opens Travel never downloads them. */
+const BusHub = lazy(() => import('./tools/travel-hubs').then((m) => ({ default: m.BusHub })));
+const MetroHub = lazy(() => import('./tools/travel-hubs').then((m) => ({ default: m.MetroHub })));
+const MultiModal = lazy(() => import('./tools/multimodal').then((m) => ({ default: m.MultiModal })));
 import * as TR from './tools/trains2';
-import { MultiModal } from './tools/multimodal';
 import { TrainJourney } from './tools/train-journey';
 import { Medicine as MedicineDeep } from './tools/medicine';
 import { Handwriting } from './tools/handwriting';
 import { Hub } from './tools/travel-hub';
+import { Spin } from './ui/kit';
 import * as W from './tools/world';
 import { News } from './tools/news';
 import { Screen } from './tools/screen';
@@ -34,14 +38,6 @@ import { Icon } from './ui/icons';
 /* ------------------------------------------------------------ travel hubs
    Eleven separate Travel tiles were impossible to tell apart. They are now
    three mode hubs — Bus, Train, Metro — each keeping every feature as a tab. */
-const BusHub = () => (
-  <Hub icon="bus" title="Delhi Bus" sub="Plan a trip · browse routes · check fares"
-    tabs={[
-      { id: 'plan',  n: 'Plan trip', i: 'route',  C: BP.BusPlanner },
-      { id: 'routes',n: 'Routes',    i: 'list',   C: BP.BusRoutesList },
-      { id: 'fare',  n: 'Fares',     i: 'fare',   C: BP.BusFares },
-    ]} />);
-
 const TrainHub = () => (
   <Hub icon="train" title="Indian Railways" sub="Live status · schedule · trains between stations"
     tabs={[
@@ -51,23 +47,14 @@ const TrainHub = () => (
       { id: 'journey', n: 'Long journey',i: 'luggage', C: TrainJourney },
     ]} />);
 
-const MetroHub = () => (
-  <Hub icon="metro" title="Delhi Metro" sub="Route & fare · network map · line status"
-    tabs={[
-      { id: 'plan',  n: 'Plan route', i: 'route', C: MP.MetroPlanner },
-      { id: 'net',   n: 'Network',    i: 'grid',  C: MP.MetroNetwork },
-      { id: 'lines', n: 'Lines',      i: 'metro', C: T.MetroLines },
-      { id: 'city',  n: 'Other cities', i: 'globe', C: T.Metro },
-    ]} />);
-
 /* ------------------------------------------------------------------ registry
    type: 'off' = pure browser (never fails) · 'live' = pooled network tool
    i    = icon name from src/ui/icons.jsx (real SVG, never an emoji)          */
 const TOOLS = [
   // ---------- Travel (grouped by mode) ----------
-  { id:'bus',       n:'Bus',           i:'bus',      c:'Travel', t:'off',  d:'Route, fare & every stop', C:BusHub },
+  { id:'bus',       n:'Bus',           i:'bus',      c:'Travel', t:'off',  d:'2,564 directions, timetables, fares', C:BusHub },
   { id:'train',     n:'Train',         i:'train',    c:'Travel', t:'live', d:'Live status & schedules',  C:TrainHub },
-  { id:'metro',     n:'Metro',         i:'metro',    c:'Travel', t:'off',  d:'Route, fare & network',    C:MetroHub },
+  { id:'metro',     n:'Metro',         i:'metro',    c:'Travel', t:'off',  d:'287 stations, fares, last train', C:MetroHub },
   { id:'journey',   n:'Plan Journey',  i:'compass',  c:'Travel', t:'off',  d:'Metro + bus combined',     C:MultiModal },
   { id:'nearby',    n:'Near Me',       i:'pin',      c:'Travel', t:'live', d:'ATM, food, fuel…',         C:T.Nearby },
   { id:'guide',     n:'Travel Guide',  i:'globe',    c:'Travel', t:'live', d:'City info + SOS',          C:T.TravelGuide },
@@ -295,7 +282,7 @@ export default function App() {
           </p>
         </>)}
 
-        {tool && <div style={{ paddingTop: 14 }}><tool.C /></div>}
+        {tool && <div style={{ paddingTop: 14 }}><Suspense fallback={<Spin />}><tool.C /></Suspense></div>}
       </div>
 
       <nav className="nav">

@@ -16,6 +16,7 @@ import { useLoc } from '../core/geo';
 import * as M from '../core/metro-route';
 import * as B from '../core/bus-route';
 import { Card, Empty, Spin } from '../ui/kit';
+import { StationBuses } from './metro-planner';
 import { Icon } from '../ui/icons';
 
 const WALK_KMH = 5;
@@ -46,6 +47,33 @@ const coordOf = (p) => {
   const s = B.STOPS.find((x) => x.n === p.n);
   return s ? { lat: s.lat, lon: s.lon } : null;
 };
+
+/** What the timetable says about this option at this minute. */
+function TimingNote({ o }) {
+  const d = o?.detail;
+  if (!d) return null;
+  const metro = o.mode === 'Metro' || o.mode === 'Bus + Metro';
+  const lastGone = metro && d.canMakeIt === false;
+  const tight = metro && d.lastTrainLeftIn != null && d.lastTrainLeftIn >= 0 && d.lastTrainLeftIn < 30;
+  const busStopped = !metro && d.running === false;
+  return (
+    <Card>
+      <div className="chead"><Icon n="clock" size={16} /> This option right now</div>
+      <div className="dim sm">
+        {metro
+          ? <>Trains on the {d.legs?.[0]?.line} run every {d.wait?.[0] ? `${d.wait[0].lo}-${d.wait[0].hi}` : '—'} min{' '}
+              {d.wait?.[0]?.peak ? 'at this hour (peak)' : 'at this hour'}, so expect to wait about {d.nextIn} min —
+              about {d.minutesWithWait} min for the trip including that wait.</>
+          : <>Distance measured along the route each bus drives; {d.changes ? 'two tickets, one per bus.' : 'one ticket.'}</>}
+      </div>
+      {lastGone && <div className="note">The last train from {d.lastTrainAt} towards {d.lastTrainFrom} has already
+        left ({M.fmtTime(d.lastTrain)}). Take a bus or an auto for this one.</div>}
+      {tight && <div className="note">Only {d.lastTrainLeftIn} min before the last train leaves {d.lastTrainAt}
+        — leave now.</div>}
+      {busStopped && <div className="note">One of these buses is outside its published service window right now;
+        the first departure is shown in the bus tool.</div>}
+    </Card>);
+}
 
 function buildOptions(a, b) {
   const pa = coordOf(a), pb = coordOf(b);
@@ -227,6 +255,8 @@ export function MultiModal() {
           </button>))}
       </div><Card><div className="chead">{o.icon} {o.mode} · {from.n} → {to.n}</div><div className="g3"><div className="stat"><div className="v">{o.minutes}</div><div className="l">Minutes</div></div><div className="stat"><div className="v">₹{o.fare}</div><div className="l">Fare</div></div><div className="stat"><div className="v">{o.changes}</div><div className="l">Changes</div></div></div><div className="g2" style={{ marginTop: 8 }}><div className="stat"><div className="v">{o.km}</div><div className="l">km total</div></div><div className="stat"><div className="v">{o.walkMin}</div><div className="l">min walking</div></div></div></Card>
 
+      <TimingNote o={o} />
+
       {/* comparison table */}
       {ranked.length > 1 && (
         <><div className="chead" style={{ marginTop: 14 }}>Compare all options</div><div className="list">
@@ -235,6 +265,8 @@ export function MultiModal() {
                 border: 0, width: '100%', textAlign: 'left', cursor: 'pointer' }}
                 onClick={() => setSel(i)}><span style={{ fontSize: 17 }}>{x.icon}</span><div className="main"><b style={{ fontSize: 13 }}>{x.mode}</b><span className="dim sm">{x.changes} change{x.changes !== 1 ? 's' : ''} · {x.km} km · {x.walkMin} min walk</span></div><div className="end"><b>{x.minutes} min</b><br /><span style={{ color: 'var(--green)', fontSize: 12 }}>₹{x.fare}</span></div></button>))}
           </div></>)}
+
+      {o.mode === 'Metro' && <StationBuses station={from.n} />}
 
       <div className="chead" style={{ marginTop: 14 }}>Step by step</div><div className="list">
         {o.legs.map((l, i) => (
@@ -248,7 +280,10 @@ export function MultiModal() {
               <><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span style={{ padding: '3px 9px', borderRadius: 8, background: 'var(--s3)',
                     color: 'var(--green)', fontWeight: 800, fontSize: 12.5 }}>{l.ref}</span><b style={{ flex: 1, fontSize: 13 }}><Icon n="bus" size={17} /> Bus</b><span className="tag">{l.count} stops</span></div><span className="dim sm" style={{ paddingLeft: 4 }}>{l.from} → {l.to} · {l.km} km</span></>)}
           </div>))}
-      </div><div className="src"><span className="dot" /><span>Metro: {M.STATIONS.length} stations, DMRC fares. Bus: {B.ROUTES.length} routes, DTC fares.
-          Walking estimated at {WALK_KMH} km/h.</span></div></>)}
+      </div><div className="src"><span className="dot" /><span>
+          Metro: {M.STATIONS.length} stations on {M.LINES.length} line records, DMRC slabs and published headways.
+          Bus: {B.ROUTES.length} published directions over {B.STOPS.length} physical stops, DTC slabs.
+          Walking estimated at {WALK_KMH} km/h. Nothing here is a live vehicle position: the wait is the
+          published headway and the bus time is the published timetable.</span></div></>)}
   </>);
 }

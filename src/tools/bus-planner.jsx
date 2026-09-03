@@ -1,23 +1,57 @@
 /**
- * Delhi bus: journey planner, route explorer and fare table.
+ * Delhi bus: journey planner, live timetable panel, route explorer, fares.
  *
- * FARE CORRECTNESS (the user reported the fares looked wrong — they were):
- *   · Distance now uses the ROAD distance, not the crow-flies sum of stops.
- *     Offline it is the straight line x 1.28 (the median ratio measured
- *     against OSRM on real Delhi journeys); online the exact figure is
- *     fetched from OSRM and the fare is recomputed.
- *   · A journey with a change is TWO tickets, so the fares are added. The
- *     old code charged a single fare for the whole trip, which was too low.
- *   · The underlying stop data was rebuilt: stops that merely share a name
- *     are no longer merged into one point, which had inflated distances.
+ * DISTANCE AND FARE CORRECTNESS
+ *   · Every direction now carries the operator's own polyline, and each of its
+ *     stops is projected onto it. The journey length is |m[b] - m[a]| — the
+ *     distance the bus actually drives — measured against OSRM on whole routes
+ *     to a median ratio of 1.00 (see scripts/verify_transit_data.py). Only the
+ *     few routes whose page had no polyline fall back to straight line x 1.28,
+ *     and for those the exact road distance is fetched live and the fare is
+ *     recomputed from it.
+ *   · A journey with a change is TWO tickets, so leg fares are added.
+ *   · Stops that merely share a name are separate physical places, keyed by
+ *     name AND position, which is what stopped distances inflating.
+ *
+ * "RIGHT NOW" comes from the published timetable of that exact direction: the
+ * next departure from the terminal, and the leg's boarding stop reached at the
+ * published running time after it. No live vehicle feed is publicly available
+ * for DTC, so no vehicle position is invented or implied.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLoc } from '../core/geo';
 import { planBus, searchStops, isStop, routesAt, nearestStops, refineFare,
-         fareSlab, busFare, childFare, feederFare, PASSES, ROAD_FACTOR,
-         ROUTES, STOPS, BUILT, nameOf, routeStops } from '../core/bus-route';
+         fareSlab, busFare, childFare, feederFare, PASSES, ROAD_FACTOR, FARE_TABLE,
+         ROUTES, STOPS, BUILT, STATS, nameOf, routeStops,
+         nextAtStop, statusNow, headwayNow, minutesOfDay, fmtTime, routeLength } from '../core/bus-route';
+import { metroNearStop } from '../core/transit-link';
 import { Card, Empty } from '../ui/kit';
 import { Icon } from '../ui/icons';
+
+/** When the next bus on this leg reaches the boarding stop, from its timetable. */
+function LegDue({ leg }) {
+  const [now] = useState(() => new Date());
+  const rec = ROUTES[leg.ri];
+  if (!rec || leg.i0 == null) return null;
+  const due = nextAtStop(rec, leg.i0, now, 2);
+  const st = statusNow(rec, now);
+  const hw = headwayNow(rec, minutesOfDay(now));
+  if (!due.length) {
+    return (
+      <div className="dim sm" style={{ marginTop: 6 }}>
+        {st.state === 'closed' || st.state === 'before'
+          ? `No bus left on this direction right now; service starts ${fmtTime(st.opens)}.`
+          : 'The last bus on this direction has already left.'}
+      </div>);
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 6, flexWrap: 'wrap' }}>
+      <span className="dim sm">Next at {leg.from}:</span>
+      {due.map((d, i) => <span key={i} className="tag c" style={{ fontSize: 11 }}>{fmtTime(d.at)}</span>)}
+      <span className="tag g">{due[0].mins} min</span>
+      {hw.lo && <span className="dim sm">{hw.peak ? 'peak' : 'then'} {hw.lo}-{hw.hi} min</span>}
+    </div>);
+}
 
 function StopPicker({ label, value, onPick, onNear }) {
   const [q, setQ] = useState('');
@@ -51,6 +85,23 @@ function StopPicker({ label, value, onPick, onNear }) {
     </div>);
 }
 
+/** Nearest metro station to a bus stop, with the lines — the datasets joined. */
+function MetroForStop({ stop }) {
+  const near = useMemo(() => metroNearStop(stop, 1.2), [stop]);
+  if (!near.length) return null;
+  return (
+    <Card>
+      <div className="chead"><Icon n="metro" size={16} /> Metro from {stop}</div>
+      {near.map((s) => (
+        <div className="kv" key={s.n}>
+          <span>{s.n} <span className="dim sm">{s.lines.join(' · ')}</span></span>
+          <b style={{ color: 'var(--cyan)' }}>{(s.km * 1000).toFixed(0)} m</b>
+        </div>))}
+      <div className="dim sm" style={{ marginTop: 6 }}>Within a 15-minute walk. The Metro tool plans the ride
+        from there with the same data.</div>
+    </Card>);
+}
+
 export function BusPlanner() {
   const { loc } = useLoc();
   const [from, setFrom] = useState('');
@@ -71,13 +122,19 @@ export function BusPlanner() {
   useEffect(() => {
     setExact(null);
     if (!base?.length) return;
+    // options whose length already came from the driven polyline need no
+    // network round trip — measuring them again would only add an excuse to fail
+    const need = base.slice(0, 3).map((o, i) => (!o.exact ? i : -1)).filter((i) => i >= 0);
+    if (!need.length) return;
     let live = true;
     setRefining(true);
     (async () => {
-      const copies = base.slice(0, 3).map((o) => JSON.parse(JSON.stringify(o)));
+      const copies = need.map((i) => JSON.parse(JSON.stringify(base[i])));
       const done = await Promise.all(copies.map((o) => refineFare(o).catch(() => null)));
       if (!live) return;
-      setExact(done.map((d, i) => d || base[i]));
+      const map = new Map();
+      need.forEach((idx, k) => map.set(idx, done[k]));
+      setExact(base.slice(0, 3).map((o, i) => map.get(i) || o));
       setRefining(false);
     })();
     return () => { live = false; };
@@ -89,7 +146,9 @@ export function BusPlanner() {
     const n = nearestStops(loc.lat, loc.lon, 1)[0];
     if (n) setter(n.n);
   };
-  const km = o ? (o.exact ? o.roadKm : o.estKm) : 0;
+  // roadKm only exists when OSRM refined the estimate; otherwise the offline
+  // figure is the one to show (shape distance or straight line, per o.src)
+  const km = o ? (o.roadKm ?? o.estKm ?? o.km ?? 0) : 0;
   const slab = o ? fareSlab(km, ac) : null;
 
   return (<>
@@ -168,16 +227,21 @@ export function BusPlanner() {
             <div style={{ marginTop: 6, paddingLeft: 4 }}>
               <div style={{ fontSize: 13.5 }}><b>{leg.from}</b></div>
               <div className="dim sm" style={{ margin: '3px 0' }}>
-                ↓ {(leg.roadKm ?? leg.estKm).toFixed(1)} km · {leg.stops} stops
+                ↓ {(leg.roadKm ?? leg.km ?? 0).toFixed(1)} km · {leg.stops} stops
+                {leg.timed ? ` · first ${fmtTime(leg.first)} · last ${fmtTime(leg.last)}` : ''}
               </div>
               <div style={{ fontSize: 13.5 }}><b>{leg.to}</b></div>
             </div>
+            <LegDue leg={leg} />
             {i < o.legs.length - 1 && (
               <div className="changebar">
                 <Icon n="swap" size={15} /> Change at {leg.to} — buy a new ticket
               </div>)}
           </div>))}
       </div>
+
+      <MetroForStop stop={from} />
+      <MetroForStop stop={to} />
 
       <button className="btn ghost" style={{ width: '100%', marginTop: 12 }}
         onClick={() => setExpand(!expand)}>
@@ -199,7 +263,9 @@ export function BusPlanner() {
         </div>))}
 
       <div className="src"><span className="dot" />
-        <span>{ROUTES.length} routes · {STOPS.length} physical stops from OpenStreetMap (built {BUILT}).</span></div>
+        <span>{STATS.route_records || ROUTES.length} route directions · {STOPS.length} physical stops ·{' '}
+        {STATS.with_timetable || 0} with a published timetable (built {BUILT}).{' '}
+        {o.exact ? 'Distance is measured along the route the bus drives.' : 'Distance refined against the actual road network.'}</span></div>
     </>)}
   </>);
 }
@@ -212,10 +278,18 @@ export function BusRoutesList() {
   const near = useMemo(() => nearestStops(loc.lat, loc.lon, 4), [loc.lat, loc.lon]);
   const list = useMemo(() => {
     const s = q.toLowerCase().trim();
-    if (!s) return ROUTES.slice(0, 60);
-    return ROUTES.filter((r) =>
-      r.r.toLowerCase().includes(s) || r.f.toLowerCase().includes(s) ||
-      r.t.toLowerCase().includes(s)).slice(0, 60);
+    const out = [];
+    const seen = new Set();
+    for (const r of ROUTES) {
+      if (s && !(r.r.toLowerCase().includes(s) || r.f.toLowerCase().includes(s) ||
+                 r.t.toLowerCase().includes(s) || (r.o || '').toLowerCase().includes(s))) continue;
+      const k = r.r + '|' + r.f;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(r);
+      if (out.length >= 50) break;
+    }
+    return out;
   }, [q]);
 
   return (<>
@@ -251,8 +325,12 @@ export function BusRoutesList() {
               <span className="busref">{r.r}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <b style={{ fontSize: 12.5, display: 'block' }}>{r.f} → {r.t}</b>
-                <span className="dim sm">{r.s.length} stops{r.o ? ` · ${r.o}` : ''}</span>
+                <span className="dim sm">{r.s.length} stops · {routeLength(r)} km
+                  {r.o ? ` · ${r.o}` : ''}{r.mins ? ` · ${r.mins} min` : ''}</span>
               </div>
+              {(() => { const s = statusNow(r); return s.next?.[0] != null
+                ? <span className="tag g">{fmtTime(s.next[0])}</span>
+                : <span className="tag w">between buses</span>; })()}
               <Icon n="chevron" size={15} style={{ opacity: .5, transform: open === i ? 'rotate(90deg)' : '' }} />
             </div>
           </button>
@@ -292,18 +370,20 @@ export function BusFares() {
 
     <Card>
       <div className="chead">Official slabs</div>
-      <div className="chead sm" style={{ marginTop: 4 }}>Ordinary (green / orange)</div>
-      <div className="kv"><span>Up to 4 km</span><b>₹5</b></div>
-      <div className="kv"><span>4 – 10 km</span><b>₹10</b></div>
-      <div className="kv"><span>Above 10 km</span><b>₹15</b></div>
-      <div className="chead sm" style={{ marginTop: 12 }}>Air-conditioned (red)</div>
-      <div className="kv"><span>Up to 4 km</span><b>₹10</b></div>
-      <div className="kv"><span>4 – 8 km</span><b>₹15</b></div>
-      <div className="kv"><span>8 – 12 km</span><b>₹20</b></div>
-      <div className="kv"><span>Above 12 km / night</span><b>₹25</b></div>
-      <div className="chead sm" style={{ marginTop: 12 }}>DMRC metro feeder</div>
-      <div className="kv"><span>Up to 8 km</span><b>₹7</b></div>
-      <div className="kv"><span>Above 8 km</span><b>₹10</b></div>
+      {[['Ordinary (green / orange)', FARE_TABLE.ordinary],
+        ['Air-conditioned (red)', FARE_TABLE.ac],
+        ['Child 5-12, ordinary', FARE_TABLE.child_ordinary],
+        ['Metro feeder', FARE_TABLE.feeder]].map(([name, rows]) => (
+        <div key={name}>
+          <div className="chead sm" style={{ marginTop: 10 }}>{name}</div>
+          {(rows || []).map(([hi, amt], i, arr) => (
+            <div className="kv" key={i}>
+              <span>{i === 0 ? `up to ${hi} km`
+                : hi == null ? `above ${arr[i - 1][0]} km` : `${arr[i - 1][0] + 1} - ${hi} km`}</span>
+              <b>₹{amt}</b>
+            </div>))}
+        </div>))}
+      <div className="note">{FARE_TABLE.note}</div>
     </Card>
 
     <Card>

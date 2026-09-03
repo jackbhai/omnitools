@@ -1,4 +1,14 @@
 /**
+ * SUPERSEDED — do not run.
+ *
+ * scripts/build_transit_data.py is now the single builder for BOTH datasets and
+ * writes src/data/bus-delhi.json + metro-delhi.json in the v2 schema (published
+ * timetables, per-stop distances along the driven polyline, metro line timings).
+ * Running this older script would overwrite that with the smaller OSM-only
+ * build.  It is kept only because it contains the OpenStreetMap fetch, which
+ * build_transit_data.py needs as scripts/osm-sources/{bus,metro}-osm.json.
+ */
+/**
  * Build a REAL Delhi bus network graph from OpenStreetMap.
  *
  * KEY DISCOVERY (found by probing, not assumed):

@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify": "npm run verify:data && npm run verify:bus && npm run verify:metro && npm run verify:render",
+    "verify:data": "python3 scripts/verify_transit_data.py --pages 8 --osrm 6",
+    "verify:bus": "node --experimental-loader ./scripts/_json_loader.mjs scripts/verify_bus.mjs",
+    "verify:metro": "node --experimental-loader ./scripts/_json_loader.mjs scripts/verify_metro.mjs",
+    "verify:render": "vite build --ssr scripts/ssr-smoke.jsx --outDir .ssr-smoke --emptyOutDir && node .ssr-smoke/ssr-smoke.js"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -2,10 +2,11 @@
  * Delhi Metro journey planner UI — "kahan se kahan jana hai" with fare,
  * every interchange, all stations en route, and multiple route options.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLoc } from '../core/geo';
-import { planRoutes, searchStations, nearestStations, isStation, STATIONS, LINES, BUILT }
-  from '../core/metro-route';
+import { planRoutes, searchStations, nearestStations, isStation, STATIONS, LINES, BUILT,
+         lineInfo, minutesOfDay, fmtTime, headwayText, lineRecord } from '../core/metro-route';
+import { busAtStation } from '../core/transit-link';
 import { Card, Empty } from '../ui/kit';
 import { Icon } from '../ui/icons';
 
@@ -36,6 +37,77 @@ function Picker({ label, value, onPick, placeholder, nearBtn, onNear }) {
           })}
         </div>)}
     </div>);
+}
+
+/** "trains every 4-7 min · next in ~5" for one leg, from the published headway. */
+function legWait(leg, r) {
+  if (leg.line === 'Foot transfer') return <span className="tag w">walk</span>;
+  const w = (r.wait || []).find((x) => x.line === leg.line);
+  if (!w) return null;
+  return <span className="tag" style={{ marginLeft: 6 }}>every {w.lo}-{w.hi} min{w.peak ? ' (peak)' : ''}</span>;
+}
+
+/** Whether the plan still works at this minute, straight from the timetable. */
+function NowBand({ r }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  const at = minutesOfDay(now);
+  const info = lineInfo(r.legs[0].line === 'Foot transfer' ? r.legs[1]?.line : r.legs[0].line, at);
+  const lt = r.lastTrain != null ? r.lastTrain : null;
+  const left = r.lastTrainLeftIn ?? null;
+  return (<Card>
+    <div className="chead"><Icon n="signal" size={16} /> Right now · {fmtTime(at)}
+      {info && <span className="tag g" style={{ marginLeft: 7 }}>{info.open ? 'running' : 'closed now'}</span>}
+      {info?.headway && <span className="dim sm" style={{ marginLeft: 6 }}>
+        {info.peak ? 'peak' : 'off-peak'} headway {headwayText(info.headway)}</span>}</div>
+    {r.lineOpen === false && (
+      <div className="note">The {r.legs[0].line} is outside its service window ({fmtTime(info?.first)}-
+        {fmtTime(info?.last)}). These are the times it runs when the network opens.</div>)}
+    {lt != null && (
+      <div className={left != null && left < 0 ? 'note' : 'dim sm'} style={{ marginTop: 6 }}>
+        {left != null && left < 0
+          ? <>No train is left from {r.lastTrainAt} tonight — the last one towards {r.lastTrainFrom} left at{' '}
+            <b>{fmtTime(lt)}</b>. Take a bus, an auto or the night-line service.</>
+          : <>Last train from <b>{r.lastTrainAt}</b> towards {r.lastTrainFrom}: <b>{fmtTime(lt)}</b>
+            {left != null ? ` — ${left} min left` : ''}.
+            <span className="dim sm"> (estimated from the terminal's published time less {r.lastRunMin} min running)</span></>}
+      </div>)}
+    <div className="dim sm" style={{ marginTop: 6 }}>
+      Journey time assumes you walk onto the platform in 2 min; the wait for the next train (~{r.nextIn} min)
+      makes it about {r.minutesWithWait} min door to platform.
+    </div>
+  </Card>);
+}
+
+/** Bus stand board for a metro station, from the same two datasets. */
+export function StationBuses({ station }) {
+  const [open, setOpen] = useState(false);
+  const links = useMemo(() => busAtStation(station, open ? 8 : 3), [station, open]);
+  if (!links.length) return null;
+  const total = links.reduce((s, l) => s + l.count, 0);
+  return (<Card>
+    <div className="chead"><Icon n="bus" size={16} /> Buses at {station}
+      <span className="dim sm" style={{ marginLeft: 6, fontWeight: 400 }}>{links.length} stops within a walk · {total} route directions</span></div>
+    <div className="list" style={{ marginTop: 8 }}>
+      {links.map((b, i) => (
+        <div className="col" key={i} style={{ padding: '9px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <b style={{ fontSize: 12.5, flex: 1 }}>{b.name}</b>
+            {b.m != null && <span className="dim sm">{b.m} m</span>}
+            <span className="tag">{b.count}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 5 }}>
+            {b.numbers.map((n) => <span key={n} className="busref" style={{ fontSize: 10.5, padding: '1px 6px' }}>{n}</span>)}
+            {b.count > b.numbers.length && <span className="dim sm">+{b.count - b.numbers.length} more</span>}
+          </div>
+        </div>))}
+    </div>
+    <button className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => setOpen(!open)}>
+      {open ? 'Fewer stops' : 'Show more stops'}</button>
+  </Card>);
 }
 
 export function MetroPlanner() {
@@ -79,16 +151,21 @@ export function MetroPlanner() {
           {smart && <span className="dim sm">smart-card price</span>}
         </div><div className="g3" style={{ marginTop: 12 }}><div className="stat"><div className="v">{r.minutes}</div><div className="l">Minutes</div></div><div className="stat"><div className="v">{r.stations}</div><div className="l">Stations</div></div><div className="stat"><div className="v">{r.changes}</div><div className="l">Changes</div></div></div><div className="g2" style={{ marginTop: 8 }}><div className="stat"><div className="v">{r.km}</div><div className="l">km</div></div><div className="stat"><div className="v">₹{r.fareSmart}</div><div className="l">With smart card</div></div></div></Card>
 
+      {/* what the network is doing while you read this */}
+      <NowBand r={r} />
+
       {/* journey legs */}
       <div className="chead" style={{ marginTop: 16 }}>Your journey</div><div className="list">
         {r.legs.map((leg, i) => (
           <div className="col" key={i}><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span style={{ width: 12, height: 12, borderRadius: 3, flex: '0 0 auto',
-                background: leg.colour || 'var(--green)' }} /><b style={{ flex: 1 }}>{leg.line}</b><span className="tag">{leg.count} stops</span></div><div style={{ marginTop: 6, paddingLeft: 21 }}><div style={{ fontSize: 13.5 }}><b>{leg.from}</b></div><div className="dim sm" style={{ margin: '3px 0' }}>↓ {leg.km} km</div><div style={{ fontSize: 13.5 }}><b>{leg.to}</b></div></div>
+                background: leg.colour || 'var(--green)' }} /><b style={{ flex: 1 }}>{leg.line}</b><span className="tag">{leg.count} stops</span>{legWait(leg, r)}</div><div style={{ marginTop: 6, paddingLeft: 21 }}><div style={{ fontSize: 13.5 }}><b>{leg.from}</b></div><div className="dim sm" style={{ margin: '3px 0' }}>↓ {leg.km} km</div><div style={{ fontSize: 13.5 }}><b>{leg.to}</b></div></div>
             {i < r.legs.length - 1 && (
               <div style={{ marginTop: 8, padding: '7px 10px', borderRadius: 9,
                 background: 'rgba(255,209,102,.1)', border: '1px solid rgba(255,209,102,.28)' }}><span style={{ color: 'var(--warn)', fontSize: 12.5, fontWeight: 600 }}><Icon n="refresh" size={15} /> Change at {leg.to}</span></div>)}
           </div>))}
       </div>
+
+      <div style={{ marginTop: 12 }}><StationBuses station={r.from} /></div>
 
       {/* every station */}
       <button className="btn ghost" style={{ width: '100%', marginTop: 12 }}
@@ -110,8 +187,11 @@ export function MetroPlanner() {
           })}
         </div>)}
 
-      <div className="src"><span className="dot" /><span>Route from OpenStreetMap DMRC data ({STATIONS.length} stations, {LINES.length} line
-          branches, built {BUILT}). Fares are the official DMRC slabs effective 25 Aug 2025.</span></div></>)}
+      <div className="src"><span className="dot" /><span>
+        {STATIONS.length} stations on {LINES.length} line records · {lineRecord(r.legs[0].line)?.l || r.legs[0].line} geometry from the
+        published line pages (built {BUILT}). Fares are the official DMRC slabs effective 25 Aug 2025,
+        cross-checked against the corporation's own announcement. Timings are the published first/last train
+        per terminal and the published headway; no live train position exists publicly, so none is shown.</span></div></>)}
   </>);
 }
 
@@ -129,8 +209,19 @@ export function MetroNetwork() {
       {near.map((s) => (
         <div className="kv" key={s.n}><span>{s.n}</span><b style={{ color: 'var(--green)' }}>{s.km < 1 ? `${Math.round(s.km * 1000)} m` : `${s.km.toFixed(1)} km`}</b></div>))}
     </Card><div className="chead" style={{ marginTop: 14 }}>Lines ({LINES.length})</div><div className="list">
-      {LINES.map((L, i) => (
-        <div className="row" key={i}><span style={{ width: 12, height: 12, borderRadius: 3, background: L.c, flex: '0 0 auto' }} /><div className="main"><b>{L.n}</b><span className="dim sm">{L.s[0]} → {L.s[L.s.length - 1]}</span></div><span className="tag">{L.s.length}</span></div>))}
+      {LINES.map((L, i) => {
+        const info = lineInfo(L.l);
+        return (
+          <div className="row" key={i}>
+            <span style={{ width: 12, height: 12, borderRadius: 3, background: L.c, flex: '0 0 auto',
+              opacity: info && !info.open ? 0.35 : 1 }} />
+            <div className="main"><b>{L.n}</b>
+              <span className="dim sm">{L.s[0]} → {L.s[L.s.length - 1]}</span></div>
+            {L.km ? <span className="dim sm">{L.km} km</span> : null}
+            {info && <span className={`tag ${info.open ? 'g' : 'w'}`}>{info.open ? `${info.headway ? info.headway[0] + '-' + info.headway[1] + ' min' : 'open'}` : 'closed'}</span>}
+            <span className="tag" style={{ marginLeft: 6 }}>{L.s.length}</span>
+          </div>);
+      })}
     </div><div className="fld" style={{ marginTop: 14 }}><label>All {STATIONS.length} stations</label><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search station…" /></div><div className="list">
       {list.slice(0, 80).map((s) => (
         <a className="row" key={s.n} target="_blank" rel="noreferrer"
