@@ -11,16 +11,18 @@ web pages  ──►  scrape/*.json  ──►  scripts/build_transit_data.py  �
 ## 1. What is in the two payloads
 
 `src/data/bus-delhi.json` — 2.2 MB
-* `routes[]`: **2,564 directions** (1,367 distinct numbers) with `r` (number), `f`/`t`
+* `routes[]`: **2,564 directions** with `r` (number), `f`/`t`
   (from/to terminal), `o` (operator), `s` (stop indices), `m` (cumulative metres along
   the published polyline), `km`, `mins`, `rv` (index of the return direction, 2,394 of them),
   `sm` (0 = straight-line length, i.e. the source published no geometry), `src: 'osm'`
-  for the 76 directions that only OpenStreetMap had.
-* `tt` on 2,478 of them: `{a, b}` first/last bus in minutes-midnight, `k` trips a day,
-  `pk` peak headway `[lo, hi]`, `pw` peak window, `d` the **departure list** (5,324 stop
-  entries; median 33 departures per direction), plus `op` off-peak headway.
-* `stops[]`: 5,324 names with coordinates (5,096 distinct), used for near-me and for the
-  metro↔bus join.
+  for the 76 directions that only OpenStreetMap had. That is **1,335 distinct route numbers**
+  once leading zeros fold (`0184` = `184`); the source pages print 1,367 literal spellings.
+* `tt` on 2,488 of them: `{a, b}` first/last bus in minutes-midnight, `k` trips a day,
+  `pk` peak headway `[lo, hi]`, `pw` peak window, `op` off-peak headway, and `d` the
+  **departure list** — 113,547 departures across the 2,478 directions that publish one
+  (median 33 per direction, the longest 230).
+* `stops[]`: 5,324 stop entries with coordinates (5,096 distinct names) — these back
+  near-me and the metro↔bus join.
 * `fare`: the published ordinary / AC / feeder slabs and child fares.
 
 `src/data/metro-delhi.json` — 160 KB
@@ -58,11 +60,19 @@ the response must be readable cross-origin.
 ## 3. Rebuilding after the source changes
 
 ```bash
-python3 /home/user/scrape/fetch_routes.py      # re-crawl the route pages into /home/user/scrape/raw
-python3 /home/user/scrape/fetch_metro.py        # re-crawl the line + station pages
-python3 scripts/build_transit_data.py           # rebuild BOTH json files, print the report
-npm run verify                                  # every gate below, in one command
+python3 /home/user/scrape/fetch_routes.py    # re-crawl 2,490 route pages -> scrape/routes.ndjson
+python3 /home/user/scrape/fetch_metro.py     # re-crawl 9 line + 244 station pages -> *.ndjson
+python3 scripts/build_transit_data.py        # rebuild BOTH json files, print the report
+npm run verify                               # every gate below, in one command
 ```
+
+The crawler scripts and their NDJSON output live in `/home/user/scrape`, **outside this
+repo on purpose**: `routes.ndjson` alone is 32 MB of parsed HTML and the repo is a static
+site. If that directory is gone, `scripts/build_transit_data.py` can still rebuild the
+OpenStreetMap half (`scripts/osm-sources/`, vendored, 148 KB) but the timetable half needs
+a re-crawl — so copy `/home/user/scrape` somewhere durable before touching the builder.
+Line counts are the thing to check after a crawl: 2,490 routes, 5,163 stages,
+9 lines, 244 stations (the sitemap lists them, so a short number means a failed fetch).
 
 `scripts/build_transit_data.py` never reads its own output as a merge source, so re-running
 it is idempotent: identical bytes in, identical bytes out. It writes
@@ -91,8 +101,8 @@ resulting error overlay swallows every click.
 
 * Bus arrival times at intermediate stops are **derived**: departure + share of the route's
   published full-run minutes, weighted by the polyline. Traffic is not modelled.
-* Timetables are the source's published values. When a route publishes one trip only, its
-  first and last bus are the same minute — that is the data, not a bug (162 such records).
+* Timetables are the source's published values. 159 directions publish a single trip,
+  so their first and last bus are the same minute — that is the data, not a bug.
 * `nextAtStop` answers for stops that the source lists on that direction only; a stop
   served in the other direction is found via `rv`.
 * Metro last-train figures are per terminal in DMRC's own publication; the per-station
@@ -110,8 +120,9 @@ resulting error overlay swallows every click.
   ("Nehru Place" gave 52 routes instead of 28). Do not go back to names.
 * `BusHub` / `MetroHub` / `MultiModal` live in `src/tools/travel-hubs.jsx` and are
   `React.lazy`-imported in `App.jsx` on purpose: the 2.4 MB of JSON must stay out of the
-  start shell (431.79 kB gz shell now, 655 kB gz transit chunk on demand, cached by the
-  service worker so it works offline afterwards).
+  start shell. Measured on `dist` with `gzip -9`: shell 1,457,821 B (411 kB gz) against
+  1,634,587 B before the split, transit chunk 2,266,251 B (639 kB gz) fetched on demand,
+  `travel-hubs` 34,415 B, and the service worker caches them so the next visit is offline.
 * Node ESM needs explicit `.js` in `src/core/*` imports even though Vite does not.
 * `minutesOfDay()` returns IST clock minutes, so a fixture like `new Date(2026, 0, 5, 1, 30)`
   is shifted by +330 minutes. Build test times as `Date.UTC(...) - 330 * 60000`.
