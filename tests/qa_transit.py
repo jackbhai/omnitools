@@ -700,10 +700,13 @@ def main():
               f"cheapest {cheapest.strip()} vs fastest {fastest.strip()}")
         s6.locator("button:has-text('Metro + bus, both')").click(timeout=8000)
         s6.wait_for_timeout(2500)
-        body7 = s6.locator("body").inner_text()
+        body7 = s6.locator("body").inner_text().lower()
+        # compared in lower case on purpose: the card header is uppercased by CSS, and
+        # inner_text() returns what is rendered - a case-sensitive match here once
+        # failed on a screen that was showing the right answer
         check("asking for both modes either returns a journey that uses both or says it found none",
-              "Metro + Bus" in body7 or "no journey needs both a bus and the metro" in body7,
-              [x for x in body7.split("\n") if "both" in x.lower()][:1])
+              "metro + bus" in body7 or "no journey needs both a bus and the metro" in body7,
+              [x for x in body7.split("\n") if "both" in x][:1])
         s6.locator("button:has-text('Bus only')").click(timeout=8000)
         s6.wait_for_timeout(2000)
         modes6 = [x.strip() for x in s6.locator(".list b").all_inner_texts()]

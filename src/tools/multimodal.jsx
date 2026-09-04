@@ -106,7 +106,15 @@ const MODE_ICON = {
  */
 function buildOptions(a, b, atMin = null, { ac = false, only = 'all' } = {}) {
   const pa = coordOf(a), pb = coordOf(b);
-  if (!pa || !pb) return [];
+  if (!pa || !pb) {
+    /* an empty list still carries its reason: a panel that says nothing looks
+       exactly like a city with no buses */
+    const out = [];
+    out.meta = { tried: 0, dropped: 0, pops: 0, graphSize: null, ac, only,
+      note: `Neither "${a?.n}" nor "${b?.n}" has a position in the published data, `
+        + 'so no journey can be measured from it.' };
+    return out;
+  }
   const r = CR.plan({ ...a, ...pa }, { ...b, ...pb }, { atMin, ac, only });
   const out = (r.options || []).map((o) => ({
     ...o,
@@ -116,7 +124,13 @@ function buildOptions(a, b, atMin = null, { ac = false, only = 'all' } = {}) {
     to: b.n,
   }));
   out.meta = { tried: r.tried || 0, dropped: r.dropped || 0, pops: r.pops || 0,
-    graphSize: r.graphSize || null, note: r.note || null, ac, only };
+    graphSize: r.graphSize || null, note: r.note || null, ac, only,
+    /* what the searches cost, and whether any of them hit their ceiling - the
+       ceiling is the one case where "this is the cheapest way" has to be said as
+       "the cheapest way we got around to looking for" */
+    stats: r.stats || [], capped: (r.stats || []).filter((s) => s.capped).map((s) => `${s.mask}/${s.obj}`),
+    ms: (r.stats || []).reduce((x, s) => x + (s.ms || 0), 0),
+    anomalies: r.anomalies || [] };
   return out;
 }
 
@@ -368,7 +382,15 @@ export function MultiModal() {
           {options.meta.dropped} that {options.meta.dropped === 1 ? 'was' : 'were'} both slower and dearer —{' '}
           {options.meta.only === 'all' ? 'metro and bus searched together'
             : options.meta.only === 'mixed' ? 'only journeys using both modes'
-            : `only ${options.meta.only}`}, {options.meta.ac ? 'AC' : 'ordinary'} bus fares.</>}</span></div></>)}
+            : `only ${options.meta.only}`}, {options.meta.ac ? 'AC' : 'ordinary'} bus fares.
+          {(options.meta.ms || 0) > 0 && <> Searched in {options.meta.ms} ms
+            ({options.meta.stats.length} question{(options.meta.stats.length || 0) === 1 ? '' : 's'}
+            {options.meta.stats.length ? `: ${options.meta.stats.map((s) => `${s.obj} ${s.ms}ms`).join(', ')}` : ''}).</>}
+          {options.meta.capped?.length && <> The {options.meta.capped.join(' and ')} search ran out of
+            {' '}road before it had looked everywhere, so a cheaper way may exist that it never reached.</>}
+          {options.meta.anomalies?.length ? <> {options.meta.anomalies.length} candidate
+            {options.meta.anomalies.length === 1 ? ' was' : 's were'} left out because the walk it assumed
+            does not match the map{process.env.NODE_ENV === 'development' ? ` (${options.meta.anomalies[0]})` : ''}.</> : null}</>}</span></div></>)}
 
       {/* last, so a panel about journeys does not open with a settings row — but
           always present, so the sounds can be silenced before anything is searched */}

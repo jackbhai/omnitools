@@ -303,19 +303,37 @@ at by a feeder-bus heuristic.
   station early - Rajiv Chowk to Hauz Khas once came back as 38 min with 2 km of walking at
   each end instead of 23 min. And the sink is only offered to a journey that used a vehicle,
   otherwise "walk to a station, walk to a stop" beats everything and the metro never appears.
-- **Objectives**: `min` (minutes), `fare` (rupees, with walking priced at 50 paise a minute so
-  it cannot wander) and `value` (minutes + ₹2 per minute saved). Seven searches run - the three
-  objectives over both modes, then each mode alone for time and money - and every candidate
-  must be a finished journey, so `only: 'bus'` is the same engine, not a weaker one. Candidates
-  are deduped by their rides (which door the station was left by is not a different journey),
-  then anything both slower and dearer than something already shown is dropped.
+- **Objectives**: `min` (minutes), `fare` (rupees) and `value` (minutes + ₹2 per minute saved).
+  `fare` is priced per kilometre - `₹0.90/km` on bus (the slope of the DTC slab, 0.3-3 km ₹5 up
+  to 12-40 km ₹15) and `₹2.20/km` on the metro (the DMRC table's slope), with walking at
+  `₹0.25/min` - not per published slab *per hop*. Charging the slab at every hop made a 30-stop
+  ride cost ₹150, the search concluded that walking Delhi was cheaper, and uniform-cost
+  wandered into its own pop ceiling. A new ticket costs ₹5 at a gate; a metro line change costs
+  nothing (one ticket, one ride).
+- **How many searches**: five for `Both, whichever wins` (`all/min`, `all/fare`, `all/value`,
+  `metro/min`, `metro/fare`), three each for `Metro only`, `Bus only` and `Metro + bus, both`.
+  Not seven: `bus/min` and `bus/fare` are exactly what `all/min`/`all/fare` may already return
+  (the wider graph contains the bus sub-graph), so running them again bought nothing and cost
+  0.5-1.9 s. `all/value` exists because `value` weights minutes and rupees together; the
+  single-mode runs exist so "Metro only" can answer without the bus sub-graph in the way.
+  Every candidate must be a finished journey, so `only: 'bus'` is the same engine, not a weaker
+  one. Candidates are deduped by their rides (which door the station was left by is not a
+  different journey), then anything both slower and dearer than something already shown is
+  dropped.
 - **Caps**: `MAX_WALK_KM 2`, `MAX_WALK_MIN 20`, `MAX_LEGS 7`, `MAX_MINUTES 360`, six entries at
-  the origin and every published stop within 2 km of the destination as an exit, 260,000 pops
-  per search. A* with `haversine / 0.55 km per minute` toward the destination, and deliberately
-  no heuristic for the fare objective, whose costs are rupees.
-- **Measured**: 117-830 ms per answer, 2-4 options. The metro champion agrees with the metro
-  planner - Rajiv Chowk to Hauz Khas `23 min ₹32` (21 riding + 2 walking) against the metro
-  tool's `21 min ₹32`; AIIMS to Noida Sector 52 `59 min ₹54, 2 changes, 22.71 km` against
+  the origin and every published stop within 2 km of the destination as an exit, 260,000 pops per
+  search and 120,000 for a single-mode money search. A* with `haversine / 0.55 km per minute`
+  toward the destination for minutes, and for rupees `haversine x ₹0.90/km` - the cheapest fare
+  per kilometre anyone can buy, so it stays a lower bound and cannot cut an answer. A search
+  that hits its ceiling says so (`capped`) and the panel prints the sentence; `Bus only` is the
+  question most likely to say it, because a 82,408-edge sub-graph searched exhaustively for the
+  cheapest rupee total is genuinely slow.
+- **Measured** (`node --experimental-loader ./scripts/_json_loader.mjs scripts/_sweep_combo.mjs`,
+  18 named pairs, of which 12 are spelled the way the two datasets spell them): 28-909 ms per
+  answer, 1-5 options, no pair left empty, worst end walk 1.22 km, and the best answer is a
+  `Metro + Bus` journey on two of them. The metro champion agrees with the metro planner -
+  Rajiv Chowk to Hauz Khas `23 min ₹32` (21 riding + 2 walking) against the metro tool's
+  `21 min ₹32`; AIIMS to Noida Sector 52 `59 min ₹54, 2 changes, 22.71 km` against
   `57 min ₹54, 2 changes, 22.72 km`. Same fare because it is the same published slab; the
   minutes differ by exactly the two walks, and `verify:trip` asserts that relationship instead
   of a constant.
@@ -330,7 +348,34 @@ at by a feeder-bus heuristic.
   price toggle, the departure clock, and fine print that states how many journeys the search
   found and how many it discarded. The question rows stay on screen when a filter returns
   nothing, so an empty answer is a state the traveller can leave.
-- `verify:trip` §12 holds 22 checks over this file: the graph is built once, walk links exist
+### The two bugs the sweep found, and what they taught
+
+Both were found by printing legs and measuring, not by reading the code, and both are now
+gated in `verify:trip`.
+
+1. **A leg stitched from two route records.** Vehicle ids were keyed by route *number*
+   (`912`), while a leg's stops were read from a route *record* index. The DTC data lists a
+   number once per direction, so a chain that rode the first record's early hops and the
+   second record's later hops merged into one leg - and printed `i0` from one and `i1` from
+   the other. Vishwavidyalaya to Hauz Khas came back as `Bus 20 min ₹5` whose get-off stop was
+   14.4 km from the destination, and because that number dominated the Pareto list it **deleted
+   the correct metro answer**. Ids are per record now, and a bus span only merges while the hops
+   are contiguous. `gate: 35 ride legs name the stops their own route data holds`.
+2. **Settling a node instead of a state.** The search marks nodes settled, so the first state to
+   reach a destination node - often a walk - owned its chain. `only: 'metro'` answered *nothing*
+   for a pair with a direct ride, and the cost remembered for a candidate belonged to a
+   different journey than the legs being shown. Arrival on a vehicle is now recorded while edges
+   are relaxed (`rideAt`), the walk-only state is left alone, and the minutes on screen must
+   equal the minutes that were optimised (`gate: 19 options cost what they claim`).
+
+Two smaller things came out of the same pass: `endsAt` used to treat "the place is named after
+this station" as "the place is standing at this station", which invented a 0 km walk across
+4 km of city - it now measures the gap and lets the walk cap reject the entry; and `plan()` took
+place objects only, so a bare name lost its memo key (`undefined|undefined`) and shared one
+cached answer with every other named pair - it resolves names through a normalised index of
+both datasets now, and says so when a name belongs to neither.
+
+- `verify:trip` §12 holds 29 checks over this file: the graph is built once, walk links exist
   only where the published station exits say so, no edge is free, the shown options are
   Pareto-clean, the caps hold, both modes' champions agree with their own single-mode planner,
   a place given by name alone still answers, a repeat comes from the memo, and a journey whose

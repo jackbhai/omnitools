@@ -26,6 +26,15 @@ import {
   METRO_KMPM as CX_METRO_KMPM, WALK_KMH as CX_WALK_KMH,
 } from '../src/core/combo-route.js';
 
+/* Fixtures for the travel tools, with coordinates taken from the shipped tables.
+   They used to be typed by hand, and one of them sat 4 km from the station it was
+   named after - the planner then answered a journey nobody had asked about and
+   disagreed with the metro tool over it. A name that is not in the tables fails
+   loudly below rather than quietly planning the wrong city. */
+const mp = (n) => { const s = STATIONS.find((x) => x.n === n) || {}; return { n, kind: 'metro', lat: s.lat, lon: s.lon }; };
+const bp = (n) => { const s = STOPS.find((x) => x && x.n === n) || {}; return { n, kind: 'bus', lat: s.lat, lon: s.lon }; };
+const placed = (p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lon);
+
 let pass = 0, fail = 0;
 const chk = (n, c, d = '') => { c ? pass++ : fail++; console.log(`  ${c ? 'PASS' : 'FAIL'}  ${n}${d ? '  — ' + d : ''}`); };
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -194,8 +203,7 @@ console.log('\n=== 5. combined metro + bus legs stay one track ===');
     // Not a source grep any more: the combined planner is a real search now, so it
     // has to actually hand over the stations between the ends — that list is what
     // puts the get-off alert on a platform instead of on a street.
-    const handed = comboPlan({ n: 'Rajiv Chowk', kind: 'metro', lat: 28.6329, lon: 77.2197 },
-      { n: 'Hauz Khas', kind: 'metro', lat: 28.5499, lon: 77.2551 }, { atMin: 570 });
+    const handed = comboPlan(mp('Rajiv Chowk'), mp('Hauz Khas'), { atMin: 570 });
     const hLeg = (handed.options?.[0]?.legs || []).find((l) => l.kind === 'metro');
     chk('the combined planner hands the stations over, not just the ends',
       !!hLeg && hLeg.stops.length > 3 && hLeg.stops[1] !== hLeg.stops[0],
@@ -739,14 +747,11 @@ console.log('\n=== 12. core/combo-route: one search over buses and the metro tog
   chk('every bus edge costs at least a minute and moves somewhere',
     g.edges.every((e) => e.mode !== 'bus' || (e.min >= 1 && e.km > 0)), `${g.size.bus} bus edges`);
 
-  const pairs = [
-    [{ n: 'Rajiv Chowk', kind: 'metro', lat: 28.6329, lon: 77.2197 },
-      { n: 'Hauz Khas', kind: 'metro', lat: 28.5499, lon: 77.2551 }],
-    [{ n: 'Kashmere Gate', kind: 'metro', lat: 28.6678, lon: 77.2306 },
-      { n: 'AIIMS', kind: 'metro', lat: 28.5662, lon: 77.2098 }],
-    [{ n: 'Anand Vihar ISBT', kind: 'bus', lat: 28.6510, lon: 77.3145 },
-      { n: 'Nehru Place', kind: 'metro', lat: 28.5490, lon: 77.2509 }],
-  ];
+  const pairs = [[mp('Rajiv Chowk'), mp('Hauz Khas')], [mp('Kashmere Gate'), mp('AIIMS')],
+    [bp('Anand Vihar ISBT'), mp('Nehru Place')]];
+  chk('every combined fixture is a place the data actually has',
+    pairs.every(([a, b]) => placed(a) && placed(b)),
+    pairs.map(([a, b]) => `${a.n}${placed(a) ? '' : '(no coords)'}→${b.n}${placed(b) ? '' : '(no coords)'}`).join(' , '));
   let maxMs = 0, paretoOk = true, capsOk = true, wordsOk = true, pricedOk = true;
   const seen = [];
   for (const [a, b] of pairs) {
@@ -822,8 +827,7 @@ console.log('\n=== 12. core/combo-route: one search over buses and the metro tog
     comboPlan({ n: 'Rajiv Chowk', kind: 'metro' }, { n: 'Hauz Khas', kind: 'metro' }, { atMin: 570 })
       .options.length > 0);
   chk('the same journey asked twice is answered from the memo', (() => {
-    const a = { n: 'Samaypur Badli', kind: 'metro', lat: 28.7669, lon: 77.1369 };
-    const b = { n: 'Rajiv Chowk', kind: 'metro', lat: 28.6329, lon: 77.2197 };
+    const a = mp('Samaypur Badli'), b = mp('Rajiv Chowk');
     comboPlan(a, b, { atMin: 570 });
     const t2 = Date.now();
     const r = comboPlan(a, b, { atMin: 570 });
@@ -861,6 +865,49 @@ console.log('\n=== 12. core/combo-route: one search over buses and the metro tog
     o0.legs.every((l) => l.kind !== 'bus' || (l.ri != null && l.i0 != null && Number.isFinite(l.minutes)
       && l.names?.length > 1 && typeof l.from === 'string' && l.bus?.legs?.[0]?.ri === l.ri)),
     (o0.legs.find((l) => l.kind === 'bus') || {}).ref || 'no bus leg in the first option');
+
+  /* Two invariants that came out of real bugs, kept as permanent guards.
+
+     1. A ride leg must name the stops its own ROUTES record holds. When a vehicle
+        id was shared by two records of the same route number, a leg was stitched
+        from the first half of one ride and the last half of another: it printed a
+        get-off stop fourteen kilometres from where the journey actually ended, and
+        the option was fast enough to delete the correct answer from the list.
+
+     2. The minutes on screen must be the minutes the search paid for. A leg that is
+        not drawn - the walk from the last stop to the destination, say - makes an
+        option look quicker than it is, and the ranking is a lie. */
+  let misnamed = 0, rides = 0, offCost = 0, priced = 0;
+  const worst = [];
+  for (const [a, b] of pairs) {
+    for (const only of ['all', 'mixed', 'metro', 'bus']) {
+      const r = comboPlan(a, b, { atMin: 570, only });
+      for (const L of (r.anomalies || [])) worst.push(`${a}\u2192${b} ${L}`);
+      for (const o of r.options) {
+        priced++;
+        if (o.searchCost != null && Math.abs(o.minutes - o.searchCost) > 3) {
+          offCost++;
+          worst.push(`${only} ${o.mix} ${o.minutes} min shown, ${o.searchCost} paid`);
+        }
+        for (const L of o.legs) {
+          if (L.kind !== 'bus' && L.kind !== 'metro') continue;
+          rides++;
+          const ends = L.kind === 'bus'
+            ? [STOPS[ROUTES[L.ri]?.s?.[L.i0]]?.n, STOPS[ROUTES[L.ri]?.s?.[L.i1]]?.n]
+            : [L.stops?.[0], L.stops?.[L.stops.length - 1]];
+          if (ends[0] !== L.from || ends[1] !== L.to) {
+            misnamed++;
+            worst.push(`${L.kind} ${L.ref}: ${L.from}\u2192${L.to} vs data ${ends.join('\u2192')}`);
+          }
+        }
+      }
+    }
+  }
+  for (const w of worst.slice(0, 4)) console.log(`      ! ${w}`);
+  chk(`${rides} ride legs name the stops their own route data holds`, misnamed === 0);
+  chk(`${priced} options cost what they claim, within a rounding of the per-hop minutes`,
+    offCost === 0);
+  chk('no journey was dropped for geometry the map does not support', worst.length === 0);
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

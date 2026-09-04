@@ -121,7 +121,15 @@ export function graph() {
       const min = speed ? Math.max(1, Math.round((km / speed) * 60)) : Math.max(1, Math.round(km / BUS_KMPM));
       const from = idOf(BID(a)), to = idOf(BID(b));
       pos[from] = pos[from] || STOPS[a]; pos[to] = pos[to] || STOPS[b];
-      push(from, { to, from, mode: 'bus', veh: vehOf(`b${r.r}`, 1), ri, i0: k, i1: k + 1, km, min, ref: r.r });
+      /* A vehicle id per ROUTES record, not per route number: the DTC data lists a
+         number once per direction, and sharing an id across those two records let a
+         journey be stitched from the first half of one and the last half of the
+         other - a leg that printed stop names from two different rides. Staying on
+         a bus is free inside a record; hopping to its return direction is a new
+         ticket, which is the only honest reading of this data. Metro keeps its id
+         per line name (Blue Line's branches are the same line, and the metro
+         planner prices a line change, not a branch change). */
+      push(from, { to, from, mode: 'bus', veh: vehOf(`#${ri}`, 1), ri, i0: k, i1: k + 1, km, min, ref: r.r });
       size.bus++;
     }
   }
@@ -208,15 +216,31 @@ const busFareOf = (e) => (e.mode === 'bus' ? busFare(e.km) : 0);
  * enough to make a 9 km wander look free.
  */
 function edgeCost(obj, e) {
-  /* money: rides cost their ticket, and walking costs a token amount so the
-     search prefers to walk a short way rather than a long one — a search that
-     treats walking as free answers "₹32" with an hour on foot. */
-  if (obj === 'fare') return e.mode === 'walk' ? 0.05 * e.min : e.mode === 'bus' ? busFareOf(e) : 0.02;
+  /* Money. The fare that gets printed comes from price(), on the published slabs;
+     this is what the search ranks by, and it has to behave like a slab does.
+     Charging busFare(edge.km) per hop - which is what this used to do - charges a
+     30-stop ride thirty times, so the search concluded that walking was the cheap
+     option and spent 260,000 states proving it (up to a second per pair, and the
+     answer was a wander with a ₹10 ticket at the end of it). Per-kilometre rates
+     keep the ranking monotone in distance: ₹0.90/km on a bus and ₹2.20/km on the
+     metro are the slope of the real tables (bus ₹5 to 3 km, ₹10 to 8 km, ₹15 to
+     12+; metro ₹10 to 2 km rising to ₹54 at 25), ₹0.25 a minute on foot means a
+     20-minute walk costs what a ticket costs, which is exactly the trade a rider
+     is being asked to make, and the fixed ₹5 for starting another vehicle is the
+     floor of the DTC table. */
+  if (obj === 'fare') {
+    if (e.mode === 'walk') return 0.25 * e.min;
+    return e.mode === 'bus' ? 0.9 * e.km : 2.2 * e.km;
+  }
   if (obj === 'value') return e.min + (e.mode === 'bus' ? busFareOf(e) : 0) / VOT_RPM
     + (e.mode === 'metro' ? 0.02 : 0);
   return e.min;
 }
-const changeCost = (obj) => (obj === 'fare' ? 1 : obj === 'few' ? 8 : BOARD_MIN);
+/* Starting another vehicle costs another ticket on the bus network (₹5 is the
+   floor of the DTC table) and a gate on the metro (₹0.50 in the money ranking -
+   the metro's distance slab already prices the ride, and the 7-minute figure the
+   time ranking uses is the same gate seen in minutes). */
+const changeCost = (obj) => (obj === 'fare' ? 5 : obj === 'few' ? 8 : BOARD_MIN);
 const vehName = (e) => (e.mode === 'bus' ? `b${e.ri}` : e.mode === 'metro' ? `m${e.line}` : '');
 
 /**
@@ -236,15 +260,32 @@ const vehName = (e) => (e.mode === 'bus' ? `b${e.ri}` : e.mode === 'metro' ? `m$
  * real path can beat — so it prunes the map without ever cutting the answer. For
  * the money search the heuristic is 0, because rupees do not care about distance.
  */
-export function search(sources, { mask = 'all', obj = 'min', targets = null, exits = null, goal = null, slack = 0 } = {}) {
+export function search(sources, { mask = 'all', obj = 'min', targets = null, exits = null, goal = null,
+  slack = 0, cap = 260000 } = {}) {
   const g = graph();
-  const H = goal && goal.lat != null && obj !== 'fare'
-    ? (node) => { const p = g.pos[node]; return p ? haversine(p, goal) / METRO_KMPM : 0; }
+  /* The heuristic is the straight line to the goal priced at the cheapest thing
+     that could ever carry you: 0.55 km/min on the metro for a search in minutes,
+     and ₹0.90/km - the slope of the DTC slab, the lowest fare per kilometre on
+     the network - for the search in rupees. Both are lower bounds, so neither can
+     cut an answer; before the second one existed, the money search was plain
+     uniform-cost and answered "is there a ₹12 way?" by walking the entire city
+     within ₹12 of here (260,000 states, ~1.9 s on a cross-city pair). */
+  const HRATE = obj === 'fare' ? 0.9 : 1 / METRO_KMPM;
+  const H = goal && goal.lat != null
+    ? (node) => { const p = g.pos[node]; return p ? haversine(p, goal) * HRATE : 0; }
     : () => 0;
   const NV = g.vehCount;
   const dist = new Map();
   const par = new Map();
-  const settled = new Set();
+  /* `arrived` marks nodes whose cheapest state has been taken off the queue. A node
+     is reached on foot and by train, and those are different states that lead to
+     different places, so nothing is settled per node any more - `settled` used to be,
+     and a footpath arriving first is how a direct metro ride came back as "nothing
+     found". `rideAt` is written while edges are relaxed instead: the cheapest state
+     that reached this node *on a vehicle*, which is the only chain a rider can be
+     shown, and it has to be recorded before the queue runs out, not afterwards. */
+  const arrived = new Set();
+  const rideAt = new Map();
   const q = heap();
   const want = targets && targets.size ? new Set(targets) : null;
   const CC = changeCost(obj);
@@ -259,13 +300,13 @@ export function search(sources, { mask = 'all', obj = 'min', targets = null, exi
     q.push([s.min + H(node), s.min, key]);
   }
   let pops = 0;
-  const CAP = 260000;                        // a search that needs more than this found nothing good
+  const CAP = cap;                           // a search that needs more than this found nothing good
   while (q.size && pops++ < CAP) {
     const [f, d, key] = q.pop();
     if (dist.get(key) !== d) continue;
     const node = Math.floor(key / NV);
-    if (!settled.has(node)) {
-      settled.add(node);
+    if (!arrived.has(node) || node === VX) {
+      arrived.add(node);
       atKey.set(node, key);
       if (node === VX) {
         done = d;                                   // a whole journey, walks included
@@ -297,7 +338,13 @@ export function search(sources, { mask = 'all', obj = 'min', targets = null, exi
          the same is what made a two-change ride look worse than it is, and the
          search then never offered the route the metro tool itself would find. */
       if (nv && prevVeh && nv !== prevVeh) {
-        add += (KIND[nv] === 2 && KIND[prevVeh] === 2) ? (obj === 'fare' ? 0.05 : CHANGE_MIN) : CC;
+        add += (KIND[nv] === 2 && KIND[prevVeh] === 2) ? (obj === 'fare' ? 0.5 : CHANGE_MIN) : CC;
+      } else if (nv && !prevVeh && KIND[nv] === 2 && obj !== 'fare' && par.get(key)?.start) {
+        /* the first metro boarding of a journey: the walk to the station is priced,
+           what it costs to get through the gate and onto the platform is not, and
+           `price` charges ACCESS_MIN for exactly that - so the search does too,
+           rather than ranking journeys on a cheaper number than the one printed */
+        add += ACCESS_MIN;
       }
       const nk = e.to * NV + (nv || prevVeh);          // a walk keeps the vehicle on record
       const nd = d + add;
@@ -305,6 +352,13 @@ export function search(sources, { mask = 'all', obj = 'min', targets = null, exi
         dist.set(nk, nd);
         par.set(nk, { prev: key, ei, d: nd, veh: nv || prevVeh });
         q.push([nd + H(e.to), nd, nk]);
+      }
+      /* the cheapest arrival at this node that was made on something that moves.
+         Its cost is read back from `dist` when the chain is taken apart, so it does
+         not have to be final here - only the predecessor chain does. */
+      if (nv || prevVeh) {
+        const seen = rideAt.get(e.to);
+        if (!seen || nd < (dist.get(seen) ?? Infinity)) rideAt.set(e.to, nk);
       }
       /* Getting off is not free: the walk from the stop to the place you asked for
          belongs to the journey, so it is priced here and not hoped for afterwards.
@@ -316,7 +370,7 @@ export function search(sources, { mask = 'all', obj = 'min', targets = null, exi
       if (exits && exits.has(e.to) && (nv || prevVeh)) {
         const ex = exits.get(e.to);
         const vk = VX * NV;
-        const vd = nd + (obj === 'fare' ? 0.001 * ex.min : ex.min);
+        const vd = nd + (obj === 'fare' ? 0.25 * ex.min : ex.min);   // the same ₹/min as any other walk
         if (vd < (dist.get(vk) ?? Infinity)) {
           dist.set(vk, vd);
           par.set(vk, { prev: nk, ei: null, d: vd, veh: 0, exit: e.to });
@@ -325,12 +379,13 @@ export function search(sources, { mask = 'all', obj = 'min', targets = null, exi
       }
     }
   }
-  return { settled, atKey, par, dist, pops, g, states: dist.size };
+  return { arrived, rideAt, atKey, par, dist, pops, g, states: dist.size,
+    capped: pops >= CAP };
 }
 
 /** Hop indices that reached `node`, oldest first. */
-function chainTo(run, node) {
-  const key = run.atKey.get(node);
+/** The edge chain behind one state key, oldest edge first. */
+function chainToKey(run, key) {
   if (key == null) return null;
   const out = [];
   let cur = key;
@@ -342,6 +397,7 @@ function chainTo(run, node) {
   }
   return out.length ? out.reverse() : null;
 }
+
 
 /**
  * Turn hop indices into legs: consecutive hops of one vehicle become one leg,
@@ -378,8 +434,16 @@ export function legsFromChain(run, chain) {
       i = j + 1;
       continue;
     }
+    /* Merge only a genuinely continuous run: same vehicle id, and for a bus each
+       next hop starts where the previous one ended. */
     let j = i;
-    while (j + 1 < chain.length && E(chain[j + 1]).veh === e.veh) j++;
+    while (j + 1 < chain.length) {
+      const nx = E(chain[j + 1]);
+      if (nx.veh !== e.veh || nx.mode !== e.mode) break;
+      if (e.mode === 'bus' && nx.i0 !== E(chain[j]).i1) break;
+      if (e.mode === 'metro' && (nx.net !== e.net || nx.line !== e.line)) break;
+      j++;
+    }
     const span = chain.slice(i, j + 1).map(E);
     if (e.mode === 'bus') {
       const r = ROUTES[e.ri];
@@ -491,9 +555,23 @@ function endsAt(place, wantPos = false) {
     const cur = out.get(node);
     if (!cur || min < cur.min) out.set(node, { node, min, km: +km.toFixed(2), id: idStr });
   };
+  /* A place named after a station or a stop is treated as standing *at* it - but
+     only when nothing says otherwise. When the caller also handed over coordinates
+     that are 4 km from that station, calling the gap a 0 km walk invented a journey
+     (and the geometric check further down rightly threw it away, leaving the rider
+     with no answer at all). So the name shortcut measures the real gap and lets
+     `put` reject it if it is more than someone will walk. */
+  const named = (idStr) => {
+    const node = g.nid.get(idStr);
+    if (node == null) return;
+    const p = g.pos[node];
+    const km = p && place.lat != null && place.lon != null ? +haversine(p, place).toFixed(2) : 0;
+    put(idStr, km);
+  };
+  const isMetroName = place.kind === 'metro' || (place.kind == null && nameIndex().get(place.n)?.kind === 'metro');
   if (place.lat == null || place.lon == null) {
-    if (place.kind === 'metro' && M.isStation(place.n)) put(MID(place.n), 0);
-    else for (const i of (g.byName.get(place.n) || []).slice(0, 4)) put(BID(i), 0);
+    if (isMetroName) named(MID(place.n));
+    else for (const i of (g.byName.get(place.n) || []).slice(0, 4)) named(BID(i));
     return out;
   }
   for (const s of M.nearestStations(place.lat, place.lon, ENTRIES) || []) put(MID(s.n), s.km);
@@ -501,8 +579,8 @@ function endsAt(place, wantPos = false) {
     const i = s.i != null ? s.i : (g.byName.get(s.n) || [])[0];
     if (i != null) put(BID(i), s.km);
   }
-  if (place.kind === 'metro' && M.isStation(place.n)) put(MID(place.n), 0);
-  if (place.kind === 'bus') for (const i of (g.byName.get(place.n) || []).slice(0, 4)) put(BID(i), 0);
+  if (isMetroName) named(MID(place.n));
+  if (place.kind === 'bus') for (const i of (g.byName.get(place.n) || []).slice(0, 4)) named(BID(i));
   return out;
 }
 
@@ -532,7 +610,69 @@ const MEMO_MAX = 16;
  * @param opts.atMin     minutes of the day for the wait model (default: now)
  * @param opts.only      'all' | 'mixed' | 'metro' | 'bus'
  */
-export function plan(fromPlace, toPlace, opts = {}) {
+/**
+ * A place may be given as a name or as { n, kind, lat, lon }. A name is looked up in
+ * the metro stations first and then in the bus stops, the same order the panels use.
+ * Resolving here rather than in each caller matters: the cache key is built from the
+ * place, and a bare string has no `.n`, so every named pair used to collapse onto the
+ * same memo entry - one answer handed out for every origin and destination.
+ */
+/** Every name either dataset knows, once, in both spellings: exact and squashed.
+ *    Squashing (lowercase, no spaces or punctuation) is what lets a rider who typed
+ *    'Dwarka Sector-10' land on 'Dwarka Sector 10' instead of getting no answer.
+ *   `M.isStation` is not used: its index is built from the line records and does not
+ *    know every station in the station table. */
+let NAMES = null;
+const normName = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
+function nameIndex() {
+  if (NAMES) return NAMES;
+  const map = new Map();
+  const add = (name, rec) => {
+    if (!name) return;
+    if (!map.has(name)) map.set(name, rec);
+    const key = `~${normName(name)}`;
+    if (normName(name) && !map.has(key)) map.set(key, rec);
+  };
+  for (const s of M.STATIONS || []) add(s.n, { n: s.n, kind: 'metro', lat: s.lat, lon: s.lon });
+  for (let i = 0; i < STOPS.length; i++) {
+    const s = STOPS[i];
+    if (s && s.n) add(s.n, { n: s.n, kind: 'bus', lat: s.lat, lon: s.lon, i });
+  }
+  NAMES = map;
+  return map;
+}
+
+/**
+ * A place, from a string or from an object, with coordinates whenever we have them.
+ * An object that gives a name but no position is filled in from the tables too - a
+ * rider who picks 'Hauz Khas' out of the list knows the station, and answering as
+ * though its position were unknown would be a worse journey, not a safer one.
+ */
+function resolve(p) {
+  if (p == null) return p;
+  if (typeof p === 'object') {
+    if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) return p;
+    const hit = p.n ? (nameIndex().get(p.n) || nameIndex().get(`~${normName(p.n)}`)) : null;
+    if (hit && (!p.kind || p.kind === hit.kind)) return { ...hit, ...p, lat: hit.lat, lon: hit.lon };
+    return p;
+  }
+  if (typeof p !== 'string') return p;
+  const name = p.trim();
+  if (!name) return { n: name };
+  const hit = nameIndex().get(name) || nameIndex().get(`~${normName(name)}`);
+  if (hit) return { ...hit };
+  return { n: name };
+}
+
+export function plan(rawFrom, rawTo, opts = {}) {
+  const fromPlace = resolve(rawFrom), toPlace = resolve(rawTo);
+  const unknown = [fromPlace, toPlace].filter((q) => q && typeof q === 'object' && !Number.isFinite(q.lat));
+  if (unknown.length) {
+    const who = unknown.map((q) => `"${q.n}"`).join(' and ');
+    return { options: [], note: `${who} ${unknown.length > 1 ? 'are' : 'is'} not a place in the map `
+      + `we ship, so there is nothing to plan ${unknown.length > 1 ? 'between them' : 'from there'}. `
+      + `Pick a station or stop from the list instead.` };
+  }
   const key = [fromPlace?.n, toPlace?.n, fromPlace?.kind, toPlace?.kind, opts.only, opts.ac,
     opts.holiday, opts.smartcard, opts.atMin == null ? 'now' : Math.round(opts.atMin / 5) * 5].join('\u0001');
   const hit = MEMO.get(key);
@@ -543,6 +683,14 @@ export function plan(fromPlace, toPlace, opts = {}) {
   return made;
 }
 
+/* Anomalies are never swallowed: a candidate that fails a geometric check is
+   dropped and written down, so `verify:trip` can insist there are none and a
+   probe can print what the search actually tried to claim. */
+const ANOMALIES = [];
+const anomaly = (where, text) => {
+  if (ANOMALIES.length < 24) ANOMALIES.push(`${where}: ${text}`);
+};
+
 function planSearch(fromPlace, toPlace, opts) {
   const g = graph();
   const src = endsAt(fromPlace);
@@ -550,53 +698,127 @@ function planSearch(fromPlace, toPlace, opts) {
   if (!src.size || !dst.size) return { options: [], note: 'nothing is within a walk of one of those places' };
   if (fromPlace.n === toPlace.n) return { options: [], note: 'same place at both ends' };
   const targets = new Set(dst.keys());
-  /* Seven exact searches instead of a wide net: each is optimal for its own metric
-     and stops the moment its answer is settled (~30-200 ms each). Diversity of
-     *alternatives* comes from asking the graph different questions — minutes, money,
-     value, and the same for each mode alone — never from a loose bound, because a
-     bound of "within 6 minutes of the best" in a dense city is the whole graph. */
+  /* Exact searches, not a wide net: each is optimal for its own metric and stops
+     the moment its answer settles (~1-400 ms each). Diversity of alternatives comes
+     from asking the graph different questions - minutes, money, value - never from a
+     loose bound, because "within six minutes of the best" in a dense city is the
+     whole graph. A bus-network-only champion is left out of the combined view on
+     purpose: the bus sub-graph is 82,000 edges wide, that one search costs 0.5-1.9 s
+     on its own, and the two searches a rider is looking at in the combined view
+     (all/min and all/fare) already return a bus whenever a bus wins. 'Bus only' asks
+     the exhaustive question and gets it. */
   const runs = opts.only === 'metro' ? [['metro', 'min'], ['metro', 'fare'], ['metro', 'value']]
     : opts.only === 'bus' ? [['bus', 'min'], ['bus', 'fare'], ['bus', 'value']]
-      : [['all', 'min'], ['all', 'fare'], ['all', 'value'],
-        ['metro', 'min'], ['metro', 'fare'], ['bus', 'min'], ['bus', 'fare']];
+      : opts.only === 'mixed' ? [['all', 'min'], ['all', 'fare'], ['all', 'value']]
+        : [['all', 'min'], ['all', 'fare'], ['all', 'value'], ['metro', 'min'], ['metro', 'fare']];
 
   const found = new Map();
+  const stats = [];
   let pops = 0;
   for (const [mask, obj] of runs) {
     const slack = 0;
+    /* Every rejection is counted and published. A planner that quietly throws away
+       its own candidates is how a correct metro ride vanished behind a fast-looking
+       bus leg, so each reason a candidate was not shown rides along in `stats`,
+       which the panel prints in its fine print and verify:trip asserts on. */
+    const rej = { noArrival: 0, noChain: 0, noRide: 0, geometry: 0, budget: 0, legs: 0, walk: 0, kept: 0 };
+    const t0 = Date.now();
     const run = search(src, { mask, obj, targets, exits: dst, slack,
+      cap: obj === 'fare' && mask !== 'all' ? 120000 : 260000,
       goal: toPlace.lat != null ? toPlace : null });
     pops += run.pops;
+    const st = { mask, obj, ms: Date.now() - t0, pops: run.pops, capped: run.capped };
     for (const [node, end] of dst) {
-      if (!run.settled.has(node)) continue;
-      const chain = chainTo(run, node);
-      if (!chain) continue;
+      /* only an arrival on something that moves is a journey; the footpath state at
+         this node belongs to the walk from the origin, not to the answer */
+      const stateKey = run.rideAt.get(node);
+      if (stateKey == null) { rej.noArrival++; continue; }
+      /* the run has to have priced this node, or the chain is a rumour */
+      if (!run.arrived.has(node) && run.dist.get(stateKey) == null) { rej.noArrival++; continue; }
+      const chain = chainToKey(run, stateKey);
+      if (!chain) { rej.noChain++; continue; }
       const legs = legsFromChain(run, chain);
-      if (!legs.length || !legs.some((l) => l.kind === 'bus' || l.kind === 'metro')) continue;
+      if (!legs.length || !legs.some((l) => l.kind === 'bus' || l.kind === 'metro')) { rej.noRide++; continue; }
       /* the search starts where the rider can walk to, which is not where they
          stand: that first walk is the first leg of the journey, not a freebie */
-      const s0 = src.get(run.g.edges[chain[0]].from);
-      if (s0 && s0.min > 0 && legs[0].kind !== 'walk') {
+      /* Both ends of a journey are walks, and the chain carries part of them: the
+         edges that get from the entry point to the first vehicle, and from the last
+         vehicle to the exit point. They are folded into one leg on each side, so
+         the minutes on screen are the minutes the search paid - which is the whole
+         reason a rider can trust the number. */
+      const s0 = src.get(run.g.edges[chain[0]].from) || { min: 0, km: 0 };
+      let headKm = 0, headMin = 0;
+      while (legs.length && legs[0].kind === 'walk') { const w = legs.shift(); headKm += w.km || 0; headMin += w.min || 0; }
+      const entryMin = Math.round(s0.min) + headMin, entryKm = +((s0.km || 0) + headKm).toFixed(2);
+      if (entryMin > 0) {
         const lab = run.g.label[run.g.edges[chain[0]].from] ?? '';
         const boardAt = lab.startsWith('m#') ? lab.slice(2) : (STOPS[+lab.slice(2)]?.n ?? lab);
-        legs.unshift({ kind: 'walk', text: `Walk to ${boardAt}`, km: s0.km, min: s0.min,
-          from: fromPlace.n, to: boardAt, metres: Math.round(s0.km * 1000) });
+        legs.unshift({ kind: 'walk', text: `Walk to ${boardAt}`, km: entryKm, min: entryMin,
+          from: fromPlace.n, to: boardAt, metres: Math.round(entryKm * 1000) });
       }
-      if (end.min > 0 && legs[legs.length - 1].kind !== 'walk') {
-        legs.push({ kind: 'walk', text: `Walk to ${toPlace.n}`, km: end.km, min: end.min,
-          from: legs[legs.length - 1]?.to ?? null, to: toPlace.n, metres: Math.round(end.km * 1000) });
+      /* The walk from where the rider stepped off to the place they asked for is a
+         leg of the journey and always drawn as one. It used to be skipped when the
+         chain happened to end in a walk - but a walk between two platforms is not
+         the way home, and skipping it made the printed minutes smaller than the cost
+         the search ranked by. */
+      let tailKm = 0, tailMin = 0;
+      while (legs.length && legs[legs.length - 1].kind === 'walk') {
+        const w = legs.pop(); tailKm += w.km || 0; tailMin += w.min || 0;
+      }
+      const exitMin = Math.round(end.min) + tailMin, exitKm = +(end.km + tailKm).toFixed(2);
+      if (exitMin > 0) {
+        legs.push({ kind: 'walk', text: `Walk to ${toPlace.n}`, km: exitKm, min: exitMin,
+          from: legs[legs.length - 1]?.to ?? null, to: toPlace.n, metres: Math.round(exitKm * 1000) });
+      }
+      /* Geometry, on both ends. The walk legs are drawn from the entry and exit
+         points the search used, so if the chain's last stop is not where this
+         candidate believes it is, the walk would be a lie - a 0.5 km "walk"
+         between places fourteen kilometres apart is exactly what one such bug
+         looked like. A candidate whose arithmetic does not match the map is
+         dropped and named, never shown. */
+      const firstNode = run.g.edges[chain[0]].from;
+      if (s0 && fromPlace.lat != null) {
+        const true0 = run.g.pos[firstNode] ? haversine(run.g.pos[firstNode], fromPlace) : null;
+        if (true0 != null && Math.abs(true0 - s0.km) > 0.35) {
+          anomaly('origin walk', `${run.g.label[firstNode]} is ${true0.toFixed(2)} km from ${fromPlace.n}, `
+            + `the entry list said ${s0.km}`);
+          rej.geometry++;
+          continue;
+        }
+      }
+      if (end.min > 0 && toPlace.lat != null) {
+        const lastNode = run.g.edges[chain[chain.length - 1]].to;
+        const true1 = run.g.pos[lastNode] ? haversine(run.g.pos[lastNode], toPlace) : null;
+        if (true1 != null && Math.abs(true1 - end.km) > 0.35) {
+          anomaly('exit walk', `${run.g.label[lastNode]} is ${true1.toFixed(2)} km from ${toPlace.n}, `
+            + `the exit list said ${end.km}`);
+          rej.geometry++;
+          continue;
+        }
       }
       const p = price(legs, opts);
-      if (!(p.minutes > 0) || p.minutes > MAX_MINUTES) continue;
-      if (legs.length > MAX_LEGS || p.walkMin > MAX_WALK_MIN) continue;
+      if (!(p.minutes > 0) || p.minutes > MAX_MINUTES) { rej.budget++; continue; }
+      if (legs.length > MAX_LEGS) { rej.legs++; continue; }
+      if (p.walkMin > MAX_WALK_MIN) { rej.walk++; continue; }
       const sig = sigOf(legs);
-      const rec = { sig, legs, mask, obj, ...p, mix: KIND_OF(legs),
-        d: run.dist.get(node * g.vehCount) ?? 0 };
+      /* `stateKey`, never `node * NV`: the price to remember is the price of the
+         chain being shown, and the veh-0 state at a node is a different journey.
+         The exit walk is added because the state is priced up to the stop, while the
+         rider's journey ends at the place they asked for - the same thing the sink
+         transition charges. Only minute-denominated runs can be compared with the
+         minutes on screen, so a fare run keeps `searchCost` null. */
+      const ride = run.dist.get(stateKey);
+      const paid = ride == null || obj === 'fare' || obj === 'value'
+        ? null : Math.round(ride + end.min);
+      const rec = { sig, legs, mask, obj, ...p, mix: KIND_OF(legs), d: ride ?? 0, searchCost: paid };
       const prev = found.get(sig);
       if (!prev || rec.minutes < prev.minutes || (rec.minutes === prev.minutes && rec.fare < prev.fare)) {
         found.set(sig, rec);
       }
+      rej.kept++;
     }
+    st.ms = Date.now() - t0;            // timed over the whole run, extraction included
+    stats.push({ ...st, ...rej });
   }
 
   let list = [...found.values()];
@@ -626,9 +848,15 @@ function planSearch(fromPlace, toPlace, opts) {
     x.mode = x.mix;
   }
   kept.sort((a, b) => a.value - b.value);
+  /* A search that ran out of room is said so: the list is then "the best it saw",
+     which is a different claim from "the best there is", and the fine print on the
+     panel prints whichever of the two it is. */
+  const capped = stats.filter((s) => s.capped).map((s) => `${s.mask} ${s.obj}`);
   return {
-    options: kept, dropped: dropped.length, tried: found.size, pops,
+    options: kept, dropped: dropped.length, tried: found.size, pops, stats, capped,
+    anomalies: ANOMALIES.slice(),
     graphSize: g.size, graphMs: g.ms, ends: { from: src.size, to: dst.size },
+    note: capped.length ? `The ${capped.join(' and ')} search ran out of room, so this is the best it saw.` : null,
   };
 }
 
