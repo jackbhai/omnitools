@@ -1010,6 +1010,17 @@ console.log('\n=== 14. core/walkgeo: metres on footpaths, not on paper ===');
     Math.abs(rt.x - 120) < 1e-6 && Math.abs(rt.y - 64) < 1e-6, `${rt.x},${rt.y}`);
   chk('the centre of the frame is exactly where it was told to be',
     Math.abs(f14.project({ lat: 28.6129, lon: 77.2295 }).x - 170) < 1e-9);
+  /* anchoring the picker: an IP guess from another country never wins */
+  chk('a pin map opens on the other end of the journey when there is one',
+    (() => { const a = W.anchorFor({ lat: 28.688, lon: 77.350 }, { lat: 45.6, lon: -121.18 });
+      return Math.abs(a.lat - 28.688) < 1e-9 && Math.abs(a.lon - 77.35) < 1e-9; })());
+  chk('own position wins when it is inside the network\u2019s neighbourhood',
+    (() => { const a = W.anchorFor(null, { lat: 28.7, lon: 77.1 }); return Math.abs(a.lat - 28.7) < 1e-9; })());
+  chk('Oregon does not hijack a Delhi plan - and nothing throws',
+    (() => { const a = W.anchorFor(null, { lat: 45.6, lon: -121.18 });
+      return Math.abs(a.lat - 28.61) < 1e-9 && Math.abs(a.lon - 77.21) < 1e-9; })());
+  chk('no position at all still lands on the map\u2019s home city',
+    (() => { const a = W.anchorFor(null, null); return a.lat === 28.61 && a.lon === 77.21; })());
   /* the measuring pass, against a server we hand-build: the same shape FOSSGIS
      sends, so the parse is real and the network is not */
   let calls14 = 0;

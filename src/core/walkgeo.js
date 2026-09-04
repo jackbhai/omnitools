@@ -161,6 +161,26 @@ export async function nearPin(lat, lon, fetchImpl = globalThis.fetch) {
   } catch { return spot; }         // unnamed, not unhittable - the pin is still exact
 }
 
+/* ------------------------------------------------------------ anchoring -- */
+
+/**
+ * Where a picker should look before the rider says otherwise: the other end of
+ * the journey first, then the rider's own position - but only when that
+ * position is somewhere the published network actually covers. A phone
+ * guessing its owner into Oregon by IP must not fly the map 11,000 km away
+ * from the Delhi trip being planned; the home city of the network is the
+ * honest default in that case, and it is stated in the same open sentence.
+ */
+export const NETWORK_HOME = { lat: 28.61, lon: 77.21 };   // centre of Delhi NCR's transit map
+export function anchorFor(other, loc, home = NETWORK_HOME, radiusKm = 220) {
+  const near = (p) => !!p && Number.isFinite(p.lat) && Number.isFinite(p.lon)
+    && Math.hypot((p.lat - home.lat) * 111.32,
+                  (p.lon - home.lon) * 111.32 * Math.cos((home.lat * Math.PI) / 180)) <= radiusKm;
+  if (near(other)) return { lat: +other.lat, lon: +other.lon };
+  if (near(loc)) return { lat: +loc.lat, lon: +loc.lon };
+  return { ...home };
+}
+
 /* ----------------------------------------------------------- projection -- */
 
 /**

@@ -24,7 +24,7 @@ import * as CR from '../core/combo-route';
 import { TripKit, SoundToggle } from './trip-ui.jsx';
 import { play as sound } from '../core/sfx.js';
 import { searchMap, geoPlace } from '../core/mapsearch.js';
-import { osrmWalk, applyWalk, nearPin, pairKey } from '../core/walkgeo.js';
+import { osrmWalk, applyWalk, nearPin, pairKey, anchorFor } from '../core/walkgeo.js';
 import TripMap from './trip-map.jsx';
 
 const WALK_KMH = 5;
@@ -344,7 +344,10 @@ export function MultiModal() {
      The reverse lookup only decorates it; the coordinate is the promise. */
   const [pin, setPin] = useState(null);
   const openPin = (which) => {
-    const c = geoNear(which === 'from' ? to : from) || { lat: 28.61, lon: 77.21 };
+    /* anchored: other end first, own position only if it is in the network's
+       neighbourhood, else Delhi itself - an IP geolocate that lands the map in
+       another country is a bug the rider would pay for, not a fact to obey */
+    const c = anchorFor(which === 'from' ? coordOf(to) : coordOf(from), loc);
     setPin({ which, center: c, marker: null, name: '' });
   };
   useEffect(() => {
