@@ -1094,5 +1094,46 @@ console.log('\n=== 14. core/walkgeo: metres on footpaths, not on paper ===');
   } else chk('the bundle check needs a dist - run npx vite build first', false, 'no dist/');
 }
 
+console.log('\n=== 15. turn-by-turn: the stops a ride row folds away ===');
+{
+  const T = await import('../src/core/trip.js');
+  const from = { n: 'Rajiv Chowk', kind: 'metro' }, to = { n: 'Samaypur Badli', kind: 'metro' };
+  const r15 = comboPlan(from, to, { atMin: 570, only: 'metro' });
+  const o15 = (r15.options || [])[0];
+  chk('a metro journey to work the fold-out against', !!o15, o15 ? `${o15.mix} ${o15.minutes}m` : (r15.note || '').slice(0, 60));
+  if (o15) {
+    const trk = T.trackOfCombo(o15, {});
+    const st = T.stepsOf(trk);
+    const pts = trk.points || [];
+    const ride = st.find((s) => s.kind === 'ride');
+    chk('the ride row carries the stops it summarises, not just a count',
+      !!ride && Array.isArray(ride.via) && ride.via.length >= 3,
+      ride && `${ride.text} -> ${ride.via.length} via`);
+    chk('every via stop points at its real place on the drawn line',
+      ride && ride.via.every((v) => Number.isInteger(v.at) && pts[v.at] && v.n === pts[v.at].name));
+    /* the names must be exactly what the published line record holds between the
+       two ends - the fold-out cannot invent a station or lose one */
+    const MR = await import('../src/core/metro-route.js');
+    const rideLine = o15.legs.find((l) => l.kind === 'metro').line;
+    const rec = (MR.lineRecords(rideLine) || MR.lineRecords(String(rideLine).replace(/\s*\(.*\)\s*$/, '')) || [])
+      .find((L) => L.s && L.s.includes('Rajiv Chowk') && L.s.includes('Samaypur Badli'));
+    if (rec) {
+      const s = rec.s, i0 = s.indexOf(o15.legs.find((l) => l.kind === 'metro').from), i1 = s.indexOf('Samaypur Badli');
+      const between = (i0 <= i1 ? s.slice(i0 + 1, i1) : s.slice(i1 + 1, i0).reverse());
+      const shown = ride.via.map((v) => v.n);
+      chk('and they are the line\u2019s own stations, in order, nothing invented',
+        shown.length === between.length && shown.every((n, k) => n === between[k]),
+        `${shown.length}/${between.length}`);
+    } else chk('the line record exists to check against', false, `no ${rideLine} record`);
+    chk('every step knows which point it stands at, so the list and the map agree',
+      st.every((s) => Number.isInteger(s.pi) && s.pi >= 0 && s.pi < pts.length && (s.leg == null || pts[s.pi].leg === s.leg || s.kind === 'alight')),
+      st.map((s) => s.pi).join(','));
+    chk('the last ride row\u2019s point is the alighting stop itself',
+      ride && pts[ride.pi] && pts[ride.pi].name === o15.legs.filter((l) => l.kind === 'metro').at(-1).to);
+    /* walk rows carry no via - and must not grow a chevron out of nothing */
+    chk('walk rows stay chevron-free', st.filter((s) => s.kind === 'walk').every((s) => !s.via || !s.via.length));
+  }
+}
+
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

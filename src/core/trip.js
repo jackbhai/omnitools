@@ -428,6 +428,19 @@ const side = (a, b) => {
 export function stepsOf(track) {
   const out = [];
   const pts = track.points || [];
+  /* Which point on the line each step stands at, so the list and the map speak
+     the same index-space; and for a ride, the stops in between, so "4 stops to
+     ESI Hospital" can open into the four names it summarises. */
+  const legAt = (li, first) => {
+    let f = -1, l = -1;
+    pts.forEach((p, k) => { if (p.leg === li) { if (f < 0) f = k; l = k; } });
+    return first ? f : l;
+  };
+  const viaOf = (li) => {
+    const idx = [];
+    pts.forEach((p, k) => { if (p.leg === li) idx.push(k); });
+    return idx.slice(1, -1).map((k) => ({ n: pts[k].name || '', at: k, when: pts[k].whenMin != null ? pts[k].whenMin : null }));
+  };
   const alightOf = (li) => pts.filter((p) => p.leg === li && p.isAlight).at(-1);
   const boardOf = (li) => pts.find((p) => p.leg === li && p.isBoard);
   track.legs.forEach((leg, li) => {
@@ -438,27 +451,28 @@ export function stepsOf(track) {
                  metres: leg.km != null ? Math.round(leg.km * 1000) : null,
                  min: leg.km != null ? walkMins(leg.km * 1000) : null,
                  from: leg.from, to: leg.to, leg: li, measured: leg.measured || null,
+                 pi: legAt(li, false),
                  note: leg.note || 'no exit numbers are published for this station' });
       return;
     }
     if (leg.kind === 'bus') {
       out.push({ kind: 'board', text: `Board ${leg.ref} at ${leg.from}`, detail: leg.dir || '',
                  wait: leg.timed ? 'departure times published' : 'no published timetable for this route',
-                 window: leg.first != null ? [leg.first, leg.last] : null, leg: li, at: b || null });
+                 window: leg.first != null ? [leg.first, leg.last] : null, leg: li, at: b || null, pi: legAt(li, true) });
       out.push({ kind: 'ride', text: `${hops || leg.stops || '?'} stop${(hops || leg.stops) === 1 ? '' : 's'} to ${leg.to}`,
                  detail: [leg.km != null ? `${leg.km} km` : null, leg.minutes != null ? `about ${leg.minutes} min` : null,
                           leg.fare != null ? `Rs${leg.fare}` : null].filter(Boolean).join(' · '),
-                 leg: li, from: b, to: a, stops: hops });
+                 leg: li, from: b, to: a, stops: hops, pi: legAt(li, false), via: viaOf(li) });
       return;
     }
     const dir = lineDirection(leg.line, leg.from, leg.to);
     out.push({ kind: 'board', text: `Board the ${leg.line} at ${leg.from}`,
                detail: dir ? `towards ${dir}` : '', note: leg.note || '',
-               toward: dir, leg: li, at: b || null });
+               toward: dir, leg: li, at: b || null, pi: legAt(li, true) });
     out.push({ kind: 'ride', text: `${hops || leg.stops || '?'} stop${(hops || leg.stops) === 1 ? '' : 's'} to ${leg.to}`,
-               detail: leg.colour ? '' : '', leg: li, from: b, to: a, stops: hops, colour: leg.colour });
+               detail: leg.colour ? '' : '', leg: li, from: b, to: a, stops: hops, colour: leg.colour, pi: legAt(li, false), via: viaOf(li) });
   });
   out.push({ kind: 'alight', text: `Get off at ${track.to || pts.at(-1)?.name}`, leg: track.legs.length - 1,
-             at: alightOf(track.legs.length - 1) || pts.at(-1) || null });
+             pi: pts.length - 1, at: alightOf(track.legs.length - 1) || pts.at(-1) || null });
   return out;
 }

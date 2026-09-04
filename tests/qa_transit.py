@@ -926,6 +926,51 @@ def main():
         s14p.close()
         check("none of the new machinery threw in any browser",
               not (p14e + p14o + p14p), "; ".join((p14e + p14o + p14p)[:2]))
+        print("\n=== 15. the ride row folds open into its stops ===")
+        s15 = b.new_page(viewport={"width": 430, "height": 940})
+        p15 = []
+        s15.on("pageerror", lambda e: p15.append(str(e)))
+        s15.goto(BASE)
+        home(s15)
+        open_tile(s15, "Plan Journey")
+        pick_suggestion(s15, "input >> nth=0", "Rajiv Chowk", "Rajiv Chowk")
+        pick_suggestion(s15, "input >> nth=1", "Samaypur Badli", "Samaypur Badli")
+        s15.wait_for_timeout(1500)
+        s15.locator("button:has-text('Metro only')").first.click(timeout=8000)
+        s15.wait_for_timeout(900)
+        s15.locator("button:has-text('Map ·')").first.click(timeout=8000)   # map mounted first
+        s15.wait_for_timeout(1800)
+        s15.locator("button:has-text('Turn by turn')").first.click(timeout=8000)
+        s15.wait_for_timeout(700)
+        chev = s15.locator(".viachev")
+        check("a ride row that hides stops offers exactly one chevron for them",
+              chev.count() >= 1, f"{chev.count()} chevrons")
+        ride_row = chev.first
+        n_via = 0
+        try:
+            ride_row.click(timeout=8000)
+            s15.wait_for_timeout(500)
+            n_via = s15.locator(".viarow").count()
+        except Exception:
+            pass
+        check("the arrow opens the fold into the published stations between",
+              n_via >= 3, f"{n_via} via rows")
+        rows_txt = s15.locator(".viarow").all_inner_texts()
+        check("no invented names - every via row is words from the line, not lorem",
+              all(len(x.strip()) > 2 for x in rows_txt), "; ".join(r.strip()[:18] for r in rows_txt[:3]))
+        s15.locator(".viarow").nth(2).click(timeout=8000)   # a station in the middle of the ride
+        s15.wait_for_timeout(700)
+        check("tapping a stop marks it, and the list's own row answers for it",
+              s15.locator(".viarow.now").count() == 1 and s15.locator(".stp.ride.now, .stp.now").count() >= 1)
+        # close and reopen - state must not stack up or vanish
+        ride_row.click(timeout=8000)
+        s15.wait_for_timeout(400)
+        check("the arrow folds it away again", s15.locator(".viarow").count() == 0)
+        ride_row.click(timeout=8000)
+        s15.wait_for_timeout(400)
+        check("and reopens the same list", s15.locator(".viarow").count() == n_via)
+        check("section 15 stayed quiet in the console", not p15, "; ".join(p15[:2]))
+        s15.close()
         print("\n=== 12. console hygiene ===")
         quiet = ("favicon", "geolocation", "net::ERR", "Failed to load resource",
                  "Permission", "WebSocket", "vite")

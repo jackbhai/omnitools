@@ -64,23 +64,37 @@ export function MapPanel({ track, active = -1, fix = null, onSelect, height = 25
 }
 
 /* ------------------------------------------------------------- turn-by-turn */
-export function StepList({ steps, active = -1, onPick }) {
+export function StepList({ steps, active = -1, onPick, onPickPt }) {
   const glyph = { walk: 'walk', board: 'bus', ride: 'route', alight: 'flag' };
+  const [open, setOpen] = useState({});
   if (!steps?.length) return null;
   return (
     <div className="steps2">
       {steps.map((s, i) => (
-        <div key={i} className={`stp ${s.kind}${i === active ? ' now' : ''}`}
+        <div key={i} className={`stp ${s.kind}${(s.via && s.via.some((v) => v.at === active)) || (s.pi != null ? s.pi === active : i === active) ? ' now' : ''}`}
           onClick={() => onPick && onPick(i)} style={{ cursor: onPick ? 'pointer' : 'default' }}>
           <span className="sp"><Icon n={glyph[s.kind] || 'route'} size={14} /></span>
           <div className="main">
-            <b>{s.text}</b>
+            <b>{s.text}{s.via && s.via.length > 0 ? <> <button className={`viachev${open[i] ? ' up' : ''}`} aria-expanded={!!open[i]}
+                title={`Show the ${s.via.length} stop${s.via.length === 1 ? '' : 's'} in between`}
+                onClick={(e) => { e.stopPropagation(); setOpen((o) => ({ ...o, [i]: !o[i] })); }}>▾</button></> : null}</b>
             {(s.detail || s.note) && <div className="dim sm">{[s.detail, s.note].filter(Boolean).join(' · ')}</div>}
             {s.metres != null && (
               <div className="dim sm">
                 {s.metres < 950 ? `${s.metres} m` : `${(s.metres / 1000).toFixed(1)} km`}
                 {s.min != null ? ` · about ${s.min} min on foot` : ''}
                 {s.measured ? ' · measured on footpaths' : ''}
+              </div>)}
+            {open[i] && s.via && s.via.length > 0 && (
+              <div className="vialist">
+                {s.via.map((v) => (
+                  <button key={v.at} type="button" className={`viarow${v.at === active ? ' now' : ''}`}
+                    onClick={(e) => { e.stopPropagation(); if (onPickPt) onPickPt(v.at); }}>
+                    <span className="vdot" />{v.n || 'unnamed stop'}
+                    {v.when != null ? <span className="dim sm"> · {String(Math.floor(((v.when % 1440) + 1440) % 1440 / 60) % 24)
+                        .padStart(2, '0')}:{String(Math.abs(v.when) % 60).padStart(2, '0')}</span> : null}
+                  </button>))}
+                <div className="dim sm viahint">Tap a stop - it lights up on the map, and the map pans to it.</div>
               </div>)}
           </div>
         </div>))}
@@ -209,7 +223,8 @@ export function TripKit({ track, steps, boardMin = null, height = 250, active: a
         </Suspense>)}
       </div>
 
-      {list && <StepList steps={steps} active={active} onPick={setActive} />}
+      {list && (<StepList steps={steps} active={active} onPickPt={(k) => setActive(k)}
+        onPick={(i) => { const s = steps && steps[i]; setActive(s && s.pi != null ? s.pi : i); }} />)}
     </>);
 }
 

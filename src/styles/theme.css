@@ -914,6 +914,16 @@ input[type="color"] {
 .stp.now{background:linear-gradient(180deg,rgba(0,229,255,.09),transparent)}
 .stp.now .sp{border-color:var(--cyan);color:var(--cyan)}
 .stp b{font-size:12.5px;font-weight:600}
+.viachev{border:0;background:var(--s2);color:var(--text);width:17px;height:15px;border-radius:5px;font-size:9px;line-height:1;cursor:pointer;margin-left:5px;vertical-align:1px;transition:transform .18s}
+.viachev:hover{background:var(--s3,#132018);color:var(--green)}
+.viachev.up{transform:rotate(180deg);color:var(--green)}
+.vialist{margin:5px 0 2px;padding:2px 0 2px 10px;border-left:2px solid var(--line2)}
+.viarow{display:flex;align-items:center;gap:7px;width:100%;text-align:left;background:none;border:0;color:var(--text);font-size:12px;padding:3.5px 6px;border-radius:7px;cursor:pointer;font-family:inherit}
+.viarow:hover{background:rgba(0,255,156,.06)}
+.viarow.now{background:rgba(0,229,255,.10);color:#BFF7FF}
+.vdot{flex:0 0 auto;width:6px;height:6px;border-radius:50%;border:1.4px solid var(--green);background:none}
+.viarow.now .vdot{background:#00E5FF;border-color:#00E5FF}
+.viahint{padding:2px 6px 1px;font-size:10.5px}
 /* one compact row for map / steps / alert, so three buttons stay on one line */
 .btnrow.tripctl{gap:6px}
 .btnrow.tripctl .cat{padding:8px 11px;font-size:12px;letter-spacing:.1px}
