@@ -1,32 +1,18 @@
 /**
- * Music Super Aggregator - Best of GitHub + Cloudflare
- * 
- * WHAT THIS ADDS ON TOP OF EXISTING 10-TIER CHAIN:
- * 
- * GitHub scan of 444 repos, 268 candidate hosts, 175 distinct hosts tested:
- * - musicapi.x007.workers.dev - Cloudflare worker itself, 4 engines in one (Gaana, Hungama, Wynk, YT Music, Saavn) - 320kbps direct mp3 [mohd-baquir-qureshi/music-api]
- * - sumitkolhe/saavn.sumit.co - high-quality JioSaavn API
- * - shnwazdev-jiosaavn-api - Hono+TS, no rate limit, Vercel
- * - anxkhn/jiosaavn-api - Python FastAPI, pyDes decryption
- * - SpotifyScraper - no API key, no OAuth, public Spotify data + 30s previews + lyrics, anti-ban built-in [AliAkhtari78/SpotifyScraper]
- * - Deezer API - free, most read endpoints no auth, 30s previews [developers.deezer.com]
- * - Jamendo - already in Tier H but enhanced with better search + radio streams
- * - iTunes Search - already used but enhanced for previews
- * - SoundCloud, Audiomack, etc - from Awesome-APIs list
- * 
- * CLOUDFLARE ADVANTAGE:
- * - 100k req/day free tier [code-boost.com]
- * - Edge caching 300s TTL - same as Last.fm proxy example [tim-kleyersburg.de]
- * - Parallel fetch, first win, rest abandoned - rude to volunteers if all 30 at once, so waves of 4
- * - No CORS issues when called via worker
- * 
- * NEW TIERS ADDED:
- * K - Multi-engine Cloudflare (musicapi.x007) - Gaana+Hungama+Wynk+YT+Saavn in one, 320kbps
- * L - Spotify metadata + previews (no key, anti-ban)
- * M - Deezer + iTunes previews (30s, free no auth)
- * N - Jamendo enhanced + FreeSound + Openverse extra
- * 
- * Total now: 15 tiers, 50+ independent hosts, 6 different companies/CDNs
+ * Extra music tiers (K-N) that ride behind the main chain in sources.js.
+ *
+ * K - multi-engine cloudflare worker: gaana/hungama/wynk/yt/saavn behind
+ *     one call, 320k. A volunteer runs it, and hammering a free tier is how
+ *     free tiers die, so the pool races in waves of 4 with per-host
+ *     cooldowns instead of 30 at once.
+ * L - public spotify metadata + 30s previews. Metadata and previews only;
+ *     past that it's a ToS problem, not a rate-limit one.
+ * M - deezer + itunes previews, no auth on the read endpoints.
+ * N - open-licence pools (jamendo and friends) - ask for a style, never a
+ *     song title, they don't carry film catalogues.
+ *
+ * All unofficial, all may vanish any week. Nothing here may be assumed
+ * alive: health = fetched bytes, first answer wins, cache the winner.
  */
 
 import { proxyBase } from './settings';

@@ -1,7 +1,7 @@
 # Transit data: how it is built, refreshed and checked
 
-Everything the Bus / Metro / Multi-modal tiles show comes from two JSON files
-that a script generates. No screen in the app contains a hand-typed number.
+The bus / metro / multi-modal panels read exactly two JSON files that a script
+generates. There are no numbers typed into the UI by hand.
 
 ```
 web pages  ──►  scrape/*.json  ──►  scripts/build_transit_data.py  ──►  src/data/*.json  ──►  src/core/*.js  ──►  src/tools/*.jsx

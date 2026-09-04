@@ -114,7 +114,7 @@ def main():
             for f in fs:
                 if f.endswith(('.jsx', '.js', '.mjs')):
                     targets.append(os.path.join(dp, f))
-    for f in ('README.md', 'TARGET.md', 'index.html'):
+    for f in ('README.md', 'NOTES.md', 'TRANSIT-DATA.md', 'index.html'):
         p = os.path.join(ROOT, f)
         if os.path.exists(p): targets.append(p)
 
