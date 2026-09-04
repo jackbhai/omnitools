@@ -117,7 +117,13 @@ labelled, never silently hidden.
 **India** — trains, metro, buses, medicines (253,802), names (5,695). A bus or metro
 journey brings its own map behind a button, turn-by-turn steps and a get-off alert that
 watches your position against the published stops — free tiles, no key, no ads, and the
-alert says in words when it has to fall back to the timetable clock.
+alert says in words when it has to fall back to the timetable clock. Plan Journey's
+pickers search any real address or landmark, not only published stops: "Arya Samaj Road,
+Ghaziabad" comes off the open map (Photon, with Nominatim as the second opinion — both
+keyless, results credited to the OpenStreetMap contributors), the exact pin becomes the
+end of the journey, and the walk to the first stop is measured from that doorway. A pin
+beyond every walkable stop is refused with its distance stated, and an offline lookup
+says the map service did not answer — the stop list keeps working either way.
 
 **Everyday** — weather, air quality, currency, recipes, converters,
 generators, encoders, and around forty more.

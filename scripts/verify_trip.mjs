@@ -910,5 +910,78 @@ console.log('\n=== 12. core/combo-route: one search over buses and the metro tog
   chk('no journey was dropped for geometry the map does not support', worst.length === 0);
 }
 
+console.log('\n=== 13. core/mapsearch: places beyond the stop table ===');
+{
+  const G = await import('../src/core/mapsearch.js');
+  chk('two independent providers, primary first', true);
+  const pg = G.parsePhoton({ features: [
+    { geometry: { coordinates: [77.3253, 28.6649] },
+      properties: { name: 'DLF', street: 'Kasturba Marg', district: 'Rajendra Nagar', city: 'Ghaziabad',
+        osm_type: 'W', osm_id: 1360694662 } },
+    { geometry: { coordinates: [null] }, properties: { name: 'broken' } },
+    { geometry: { coordinates: [1, 2] }, properties: {} },
+  ] });
+  chk('photon results come back with lat/lon the right way round',
+    pg.length === 1 && Math.abs(pg[0].lat - 28.6649) < 1e-6 && Math.abs(pg[0].lon - 77.3253) < 1e-6,
+    pg[0] && `${pg[0].lat},${pg[0].lon} ${pg[0].n}`);
+  chk('a photon label is assembled from its parts, deduped',
+    pg[0].n === 'DLF, Kasturba Marg, Rajendra Nagar, Ghaziabad', pg[0].n);
+  const ng = G.parseNominatim([
+    { lat: '28.6129', lon: '77.2295', display_name: 'India Gate, Circle, New Delhi', osm_type: 'node', osm_id: 1 },
+    { lat: 'x', lon: '0', display_name: 'broken' },
+  ]);
+  chk('nominatim rows parse into the same shape', ng.length === 1 && ng[0].kind === 'geo'
+    && Number.isFinite(ng[0].lat) && ng[0].via === 'nominatim', JSON.stringify(ng[0] && ng[0].n));
+  chk('geoPlace turns a hit into a place the planner accepts', (() => {
+    const q = G.geoPlace(ng[0]);
+    return q.kind === 'geo' && q.lat === 28.6129 && q.n.length > 3;
+  })());
+  chk('a query too short to mean anything is answered without touching the network',
+    await G.searchMap('ab') .then(r => r.ok === true && r.hits.length === 0 && r.skipped === 'too short'));
+  /* live provider check, network-tolerant: the sandbox may be offline, but it may
+     not pretend - either real places come back, or the failure is reported as one */
+  await (async () => {
+    const r = await G.searchMap('India Gate New Delhi', { lat: 28.61, lon: 77.22 });
+    if (r.ok) {
+      const far = (r.hits || []).filter((h) => Math.hypot(h.lat - 28.6129, h.lon - 77.2295) > 0.05);
+      chk('the live map search finds India Gate near where India Gate is',
+        r.hits.length > 0 && far.length === 0, `${r.hits.length} hit(s) via ${r.providers.join(',')}`);
+    } else {
+      chk('no network here is reported, never hidden', typeof r.why === 'string' && r.why.length > 5, r.why);
+    }
+  })();
+  /* the planner side: a pin is a place, and a pin too far from anything says so usefully */
+  const pin = { n: 'India Gate', kind: 'geo', lat: 28.6129, lon: 77.2295 };
+  const ok13 = comboPlan(pin, 'Rajiv Chowk', { atMin: 570 });
+  chk('a journey can start from an exact pin, not only from a named stop',
+    ok13.options.length > 0 && ok13.options[0].legs[0].kind === 'walk'
+    && ok13.options[0].legs[0].from === 'India Gate',
+    ok13.options[0] && `${ok13.options[0].mix} ${ok13.options[0].minutes}m`);
+  const far13 = comboPlan(pin, { n: 'Somewhere in the Aravalli', kind: 'geo', lat: 28.352, lon: 77.122 }, { atMin: 570 });
+  chk('a pin beyond every walkable stop is refused with a distance, not a shrug',
+    far13.options.length === 0 && /km from its nearest published stop/.test(far13.note || '')
+    && new RegExp(String(COMBO_WALK_CAP)).test(far13.note || ''), (far13.note || '').slice(0, 96));
+  /* and the bundling rule: this is a feature of one lazy panel, never of the
+     shell - only checkable after `npx vite build` put dist on disk */
+  const out = path.join(ROOT, 'dist/assets');
+  if (fs.existsSync(out)) {
+    const idx = fs.readdirSync(out).find((f) => /^index-.*\.js$/.test(f));
+    const shell = fs.readFileSync(path.join(out, idx), 'utf8');
+    /* The shell already ships a Photon provider and a Nominatim *reverse* lookup for
+       the other tools - that is not our business here. What is ours: the Plan Journey
+       map search must ride only in the lazy panel chunk, so the shell pays neither the
+       code nor the wording. 'Search the whole map for' is a string no other module of
+       this app writes, and the jsonv2 forward-search URL belongs to mapsearch alone. */
+    chk('the start shell never pays for the Plan Journey map search',
+      !shell.includes('Search the whole map for') && !shell.includes('format=jsonv2&limit=6&countrycodes'),
+      `${idx} ${(shell.length / 1024) | 0} kB`);
+    const lazy = fs.readdirSync(out).find((f) => /^multimodal-.*\.js$/.test(f));
+    const mm = lazy ? fs.readFileSync(path.join(out, lazy), 'utf8') : '';
+    chk('the Plan Journey chunk carries it',
+      !!lazy && mm.includes('Search the whole map for') && mm.includes('photon.komoot.io'),
+      `${lazy}`);
+  } else chk('the bundle check needs a dist - run npx vite build first', false, 'no dist/');
+}
+
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

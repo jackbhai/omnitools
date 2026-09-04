@@ -724,6 +724,94 @@ def main():
         except Exception:
             pass
 
+        print("\n=== 13. the picker searches the whole map, not just our stop list ===")
+        # The geocoders are somebody else's servers, so this section never asks them
+        # anything: the page is handed canned answers for the URLs it calls, and what
+        # gets checked is what the panel DOES with them. Whether the real services
+        # answer at all is measured by verify_trip section 13, offline-tolerantly.
+        s13 = b.new_page(viewport={"width": 430, "height": 940})
+        p13 = []
+        s13.on("pageerror", lambda e: p13.append(str(e)))
+        GEO = {"type": "FeatureCollection", "features": [
+            {"geometry": {"coordinates": [77.3253, 28.6649]},
+             "properties": {"name": "Arya Samaj Road", "city": "Ghaziabad", "osm_type": "W", "osm_id": 1}},
+            {"geometry": {"coordinates": [77.1970, 28.6457]},
+             "properties": {"name": "Arya Samaj Road", "district": "Central Delhi", "osm_type": "W", "osm_id": 2}}]}
+        def geo_route(mode):
+            def h(route):
+                u = route.request.url
+                if mode == "off":
+                    route.abort()
+                elif "q=zzqx" in u:
+                    route.fulfill(status=200, content_type="application/json",
+                                  body='{"type":"FeatureCollection","features":[]}')
+                else:
+                    route.fulfill(status=200, content_type="application/json", body=json.dumps(GEO))
+            return h
+        s13.route("**photon.komoot.io**", geo_route("hits"))
+        s13.route("**nominatim.openstreetmap.org**", geo_route("off"))   # second opinion stays a stub
+        s13.goto(BASE)
+        home(s13)
+        open_tile(s13, "Plan Journey")
+        f13 = s13.locator("input >> nth=0")
+        f13.click(timeout=8000); f13.fill(""); f13.type("abc", delay=15)
+        s13.wait_for_timeout(400)
+        check("three letters is not a place, and the panel does not pretend otherwise",
+              s13.locator("button:has-text('Search the whole map')").count() == 0)
+        f13.fill(""); f13.type("Arya Samaj Road", delay=10)
+        s13.wait_for_timeout(500)
+        ask13 = s13.locator("button:has-text('Search the whole map for')")
+        check("a real street that is not a stop gets the map offered beside the stop list",
+              ask13.count() == 1)
+        ask13.first.click(timeout=8000)
+        s13.wait_for_timeout(900)
+        items = s13.locator(".geoitem")
+        n_items = items.count()
+        first_txt = items.first.inner_text().replace("\n", " ")[:80] if n_items else ""
+        check("the map answers with the exact places, each credited to OpenStreetMap",
+              n_items == 2 and "OpenStreetMap" in first_txt, first_txt)
+        check("the two hits are told apart by where they are, not just the name",
+              n_items == 2 and "Ghaziabad" in first_txt
+              and "Delhi" in items.nth(1).inner_text(), first_txt)
+        items.first.click(timeout=8000)
+        s13.wait_for_timeout(600)
+        check("picking one writes that exact pin into FROM, verbatim",
+              "Arya Samaj Road" in s13.locator("input >> nth=0").input_value(),
+              s13.locator("input >> nth=0").input_value()[:60])
+        f13b = s13.locator("input >> nth=1")
+        f13b.click(timeout=8000); f13b.fill(""); f13b.type("zzqx nowhere land", delay=8)
+        s13.wait_for_timeout(400)
+        s13.locator("button:has-text('Search the whole map for')").first.click(timeout=8000)
+        s13.wait_for_timeout(800)
+        check("a place no map service knows is admitted as such, with a way back to the stops",
+              "Neither map service knows" in s13.locator("body").inner_text())
+        check("an unknown place leaves the picker usable, the query still in the box",
+              "zzqx" in s13.locator("input >> nth=1").input_value() + s13.locator("body").inner_text())
+        s13.close()
+        s13c = b.new_page(viewport={"width": 430, "height": 940})
+        p13c = []
+        s13c.on("pageerror", lambda e: p13c.append(str(e)))
+        s13c.route("**photon.komoot.io**", geo_route("off"))
+        s13c.route("**nominatim.openstreetmap.org**", geo_route("off"))
+        s13c.goto(BASE)
+        home(s13c)
+        open_tile(s13c, "Plan Journey")
+        f13c = s13c.locator("input >> nth=0")
+        f13c.click(timeout=8000); f13c.fill(""); f13c.type("Connaught Place", delay=10)
+        s13c.wait_for_timeout(500)
+        s13c.locator("button:has-text('Search the whole map for')").first.click(timeout=8000)
+        s13c.wait_for_timeout(900)
+        body13c = s13c.locator("body").inner_text()
+        check("offline is reported offline - never dressed up as an answer",
+              "no internet, or both map services are refusing us" in body13c, body13c[-160:].replace("\n", " "))
+        check("and the ordinary stop list still works while the map is out",
+              s13c.locator(".list button").count() >= 1)
+        s13c.locator("button:has-text('Try again')").first.click(timeout=8000)   # the retry must re-ask, not explode
+        s13c.wait_for_timeout(700)
+        check("retrying an offline lookup fails politely twice, never loudly once",
+              "no internet, or both map services are refusing us" in s13c.locator("body").inner_text())
+        s13c.close()
+        check("the map-search panel threw no errors anywhere", not p13 and not p13c, "; ".join((p13 + p13c)[:2]))
         print("\n=== 12. console hygiene ===")
         quiet = ("favicon", "geolocation", "net::ERR", "Failed to load resource",
                  "Permission", "WebSocket", "vite")

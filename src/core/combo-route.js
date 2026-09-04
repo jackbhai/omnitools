@@ -695,7 +695,26 @@ function planSearch(fromPlace, toPlace, opts) {
   const g = graph();
   const src = endsAt(fromPlace);
   const dst = endsAt(toPlace);
-  if (!src.size || !dst.size) return { options: [], note: 'nothing is within a walk of one of those places' };
+  if (!src.size || !dst.size) {
+    /* A pin off the map search can genuinely sit further from every published stop
+       than anyone will walk. Saying "nothing is within a walk" is true and useless;
+       saying how far the nearest one is, and what the cap is, gives the traveller
+       the next move - walk there, or pick that stop as the start. */
+    const away = [];
+    for (const [place, ends] of [[fromPlace, src], [toPlace, dst]]) {
+      if (ends.size || place.lat == null) continue;
+      const nb = [
+        ...(M.nearestStations(place.lat, place.lon, 1) || []),
+        ...(nearestStops(place.lat, place.lon, 1) || []),
+      ].sort((x, y) => x.km - y.km)[0];
+      away.push(nb
+        ? `"${place.n}" is ${(+nb.km).toFixed(1)} km from its nearest published stop or station `
+          + `(${nb.n || 'unnamed'}), and this planner never plans more than ${MAX_WALK_KM} km on foot`
+        : `"${place.n}" is outside the published network entirely`);
+    }
+    return { options: [], note: 'nothing is within a walk of one of those places'
+      + (away.length ? ` - ${away.join('; ')}. Pick that stop as the end of the journey, or walk to it.` : '') };
+  }
   if (fromPlace.n === toPlace.n) return { options: [], note: 'same place at both ends' };
   const targets = new Set(dst.keys());
   /* Exact searches, not a wide net: each is optimal for its own metric and stops

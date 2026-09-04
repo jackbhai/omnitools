@@ -175,7 +175,11 @@ export function trackOfCombo(opt, { boardMin = null } = {}) {
   opt.legs.forEach((l, li) => {
     if (l.kind === 'walk') {
       legs.push({ kind: 'walk', from: l.from ?? opt.from, to: l.to, text: l.text, km: l.km });
-      const a = pos(l.from ?? opt.from), b = pos(l.to);
+      /* a place picked off the map is not in the stop table by name - its own exact
+         position is the truth, and it belongs at the end of the line, not at the
+         nearest namesake stop */
+      const a = (li === 0 && opt.fromPos) ? { lat: opt.fromPos.lat, lon: opt.fromPos.lon } : pos(l.from ?? opt.from);
+      const b = (li === opt.legs.length - 1 && opt.toPos) ? { lat: opt.toPos.lat, lon: opt.toPos.lon } : pos(l.to);
       if (a) pts.push({ name: l.from ?? opt.from, ...a, leg: li, kind: 'walk', isBoard: !pts.length, isAlight: false });
       if (b) pts.push({ name: l.to, ...b, leg: li, kind: 'walk', isBoard: false, isAlight: false });
       return;

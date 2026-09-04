@@ -23,6 +23,7 @@ import { clockOf, departures, latestFor, fmt as clock } from '../core/journey-cl
 import * as CR from '../core/combo-route';
 import { TripKit, SoundToggle } from './trip-ui.jsx';
 import { play as sound } from '../core/sfx.js';
+import { searchMap, geoPlace } from '../core/mapsearch.js';
 
 const WALK_KMH = 5;
 const walkMin = (km) => Math.round((km / WALK_KMH) * 60);
@@ -52,6 +53,11 @@ function searchAll(q, limit = 8) {
 }
 
 const coordOf = (p) => {
+  if (!p) return null;
+  /* a place from the map search carries its own exact position - do not go looking
+     for it in the stop table by name, that is how a precise pin turned into
+     "no position" and the panel shrugged */
+  if (Number.isFinite(p.lat) && Number.isFinite(p.lon)) return { lat: p.lat, lon: p.lon };
   if (p.kind === 'metro') {
     const s = M.STATIONS.find((x) => x.n === p.n);
     return s ? { lat: s.lat, lon: s.lon } : null;
@@ -122,6 +128,10 @@ function buildOptions(a, b, atMin = null, { ac = false, only = 'all' } = {}) {
     icon: MODE_ICON[o.mix] || MODE_ICON.Bus,
     from: a.n,
     to: b.n,
+    /* the exact pins, when the place came off the map - the line on the trip map
+       starts and ends here, not at the nearest stop that shares the name */
+    fromPos: pa && a.kind === 'geo' ? { lat: pa.lat, lon: pa.lon } : null,
+    toPos: pb && b.kind === 'geo' ? { lat: pb.lat, lon: pb.lon } : null,
   }));
   out.meta = { tried: r.tried || 0, dropped: r.dropped || 0, pops: r.pops || 0,
     graphSize: r.graphSize || null, note: r.note || null, ac, only,
@@ -134,23 +144,56 @@ function buildOptions(a, b, atMin = null, { ac = false, only = 'all' } = {}) {
   return out;
 }
 
-function Picker({ label, value, onPick, onNear }) {
+/* The map search lives inside the picker, under the stops we ship, because it is
+   the precise answer to an imprecise box: type "Kali Ghata Arya Samaj Road", press
+   the button, and the journey is measured from that doorway - not from the nearest
+   bus stop that happens to share the area's name. Nothing about the local list
+   changes: this adds a row, it never replaces one. */
+function Picker({ label, value, onPick, onNear, near }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
+  const [geo, setGeo] = useState(null);          // {busy} | {hits} | {err}
   const hits = useMemo(() => searchAll(q), [q]);
+  const askMap = async () => {
+    const query = q.trim();
+    if (query.length < 4) return;
+    setGeo({ busy: true });
+    const r = await searchMap(query, near);
+    setGeo(r.ok ? { hits: r.hits, providers: r.providers } : { err: r.why || 'the map service did not answer' });
+  };
   return (
     <div className="fld" style={{ position: 'relative' }}><label>{label}</label><div style={{ display: 'flex', gap: 6 }}><input value={open ? q : (value?.n || '')} placeholder="Metro station or bus stop…"
           onFocus={() => { setOpen(true); setQ(''); }}
           onChange={(e) => { setQ(e.target.value); setOpen(true); }}
           onBlur={() => setTimeout(() => setOpen(false), 180)} /><button className="btn ghost sm" style={{ flex: '0 0 auto' }}
           onMouseDown={(e) => e.preventDefault()} onClick={onNear}><Icon n="pin" size={17} /></button></div>
-      {open && hits.length > 0 && (
+      {open && (hits.length > 0 || geo || q.trim().length >= 4) && (
         <div className="list" style={{ position: 'absolute', top: '100%', left: 0, right: 0,
-          zIndex: 40, marginTop: 4, maxHeight: 260, overflowY: 'auto' }}>
+          zIndex: 40, marginTop: 4, maxHeight: 300, overflowY: 'auto' }}>
           {hits.map((h, i) => (
             <button key={i} className="col" style={{ background: 'none', border: 0,
               textAlign: 'left', width: '100%', cursor: 'pointer' }}
               onMouseDown={(e) => { e.preventDefault(); onPick(h); setOpen(false); setQ(''); }}><b style={{ fontSize: 13.5 }}>{h.kind === 'metro' ? <><Icon n="metro" size={17} /></> : <><Icon n="bus" size={17} /></>} {h.n}</b></button>))}
+          {q.trim().length >= 4 && (
+            <button className="btn ghost sm geoask" style={{ margin: 6, opacity: geo?.busy ? 0.55 : 1 }}
+              onMouseDown={(e) => { e.preventDefault(); if (!geo?.busy) askMap(); }}>
+              <Icon n="pin" size={15} /> Search the whole map for "{q.trim().slice(0, 40)}"</button>)}
+          {geo?.busy && <div className="dim sm" style={{ padding: '8px 10px' }}>Asking the open map…</div>}
+          {geo?.err && (
+            <div className="dim sm" style={{ padding: '8px 10px' }}>
+              {geo.err} — no internet, or both map services are refusing us; the stop list above still works.
+              <button className="btn ghost sm" style={{ marginLeft: 6 }}
+                onMouseDown={(e) => { e.preventDefault(); askMap(); }}>Try again</button>
+            </div>)}
+          {geo && !geo.busy && !geo.err && geo.hits.length === 0 && (
+            <div className="dim sm" style={{ padding: '8px 10px' }}>
+              Neither map service knows that place — try more words (area + landmark) or pick a stop above.</div>)}
+          {(geo?.hits || []).map((h, i) => (
+            <button key={`g${i}`} className="col geoitem" style={{ background: 'none', border: 0,
+              textAlign: 'left', width: '100%', cursor: 'pointer' }}
+              onMouseDown={(e) => { e.preventDefault(); onPick(geoPlace(h)); setOpen(false); setQ(''); setGeo(null); }}>
+              <b style={{ fontSize: 13.5 }}><Icon n="pin" size={15} /> {h.n}</b>
+              <span className="dim sm">exact spot · OpenStreetMap</span></button>))}
         </div>)}
     </div>);
 }
@@ -219,9 +262,17 @@ export function MultiModal() {
     else if (bs) setter({ n: bs.n, kind: 'bus' });
   };
 
+  /* rank map hits toward the other end of the journey when there is one, else
+     toward where the rider is standing - "DLF drycleaning" two km away should
+     outrank a namesake twenty km off */
+  const geoNear = (fallback) => {
+    const other = fallback ? coordOf(fallback) : null;
+    if (other) return other;
+    return loc && Number.isFinite(loc.lat) ? { lat: loc.lat, lon: loc.lon } : null;
+  };
   return (<><Picker label="From" value={from} onPick={(v) => { sound('whoosh'); setFrom(v); setSel(0); }}
-      onNear={() => { sound('whoosh'); near(setFrom); }} /><div style={{ textAlign: 'center', margin: '-4px 0 4px' }}><button className="btn ghost sm" onClick={() => { sound('tick'); const a = from; setFrom(to); setTo(a); setSel(0); }}>⇅ Swap</button></div><Picker label="To" value={to} onPick={(v) => { sound('whoosh'); setTo(v); setSel(0); }}
-      onNear={() => { sound('whoosh'); near(setTo); }} />
+      near={geoNear(to)} onNear={() => { sound('whoosh'); near(setFrom); }} /><div style={{ textAlign: 'center', margin: '-4px 0 4px' }}><button className="btn ghost sm" onClick={() => { sound('tick'); const a = from; setFrom(to); setTo(a); setSel(0); }}>⇅ Swap</button></div><Picker label="To" value={to} onPick={(v) => { sound('whoosh'); setTo(v); setSel(0); }}
+      near={geoNear(from)} onNear={() => { sound('whoosh'); near(setTo); }} />
 
     {(!from || !to) && <Empty t="Pick a start and destination — metro stations and bus stops both work" />}
     {/* The questions stay on screen even when one of them has no answer: a filter
@@ -374,7 +425,10 @@ export function MultiModal() {
       </div><div className="src"><span className="dot" /><span>
           Metro: {M.STATIONS.length} stations on {M.LINES.length} line records, DMRC slabs and published headways.
           Bus: {B.ROUTES.length} published directions over {B.STOPS.length} physical stops, DTC slabs.
-          Walking estimated at {WALK_KMH} km/h. Nothing here is a live vehicle position: the wait is the
+          Walking estimated at {WALK_KMH} km/h.
+          {(from?.kind === 'geo' || to?.kind === 'geo') && <> One end was found by map search —{' '}
+            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>{' '}
+            contributors, ODbL; the walk, the ride and the fare are still ours to compute.</>}{''} Nothing here is a live vehicle position: the wait is the
           published headway and the bus time is the published timetable.{options?.meta && <>
           {' '}One search over {(options.meta.graphSize?.bus || 0) + (options.meta.graphSize?.metro || 0)
             + (options.meta.graphSize?.walk || 0) || 'the published stops'} published connections found{' '}
