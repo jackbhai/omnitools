@@ -397,6 +397,12 @@ export function FullPlayer() {
         {tab === 'lyrics' && (
           <div className="lyrics" ref={lyrRef}>
             {!p.lyrics && <div className="state"><span>No lyrics found for this track</span></div>}
+            {p.lyrics && (
+              <div className="lyr-src dim sm">
+                {p.lyrics.via ? `via ${p.lyrics.via} · ` : ''}
+                {p.lyrics.exact ? 'matched to this exact recording' : 'closest match by name'}
+                {p.lyrics.synced ? ' · tap a line to jump' : ''}
+              </div>)}
             {p.lyrics?.synced && p.lyrics.synced.map((l, i) => (
               <p key={i} data-i={i} className={i === activeLine ? 'lyr on' : 'lyr'}
                 onClick={() => p.seek(l.t)}>{l.line}</p>))}

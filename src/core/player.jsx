@@ -402,6 +402,18 @@ export function PlayerProvider({ children }) {
   /* Which source actually answered — shown under the title so a fallback is
      never mistaken for the original. */
   const [via, setVia] = useState('');
+  /* Lyrics ride along in the background, never blocking a play. The pool
+     matches on exact title+artist+duration first, so `via` says who answered
+     and `exact` says whether it was that recording or a name-only guess. */
+  const grabLyrics = (m) => {
+    if (!m || (!m.title && !m.name)) { setLyrics(null); return; }
+    resolve('lyrics', lyricsPool, {
+      title: m.title || m.name || '', artist: m.artist || '',
+      album: m.album || '', length: Math.round(+(m.dur || m.duration) || 0) || null,
+    }, { ttl: 864e5 })
+      .then((r) => setLyrics(r.data ? { ...r.data, via: r.cached ? 'cache' : r.label } : null))
+      .catch(() => setLyrics(null));
+  };
   /* Whether the browser will let script READ this stream's samples. True when
      the CORS opt-in succeeded, false when playWithFallback had to drop it.
      The visualiser and equaliser both depend on it, and both say so plainly
@@ -544,8 +556,7 @@ export function PlayerProvider({ children }) {
           const i = list.findIndex((x) => (x.id ?? x.url) === (t.id ?? t.url));
           if (i >= 0) prefetchNext(list, i, 4);
         }
-        resolve('lyrics', lyricsPool, { title: meta.title || '', artist: meta.artist || '' }, { ttl: 864e5 })
-          .then((r2) => setLyrics(r2.data)).catch(() => setLyrics(null));
+        grabLyrics(meta);
         return;
       } catch (e) {
         if (clock) clearInterval(clock);
@@ -558,8 +569,7 @@ export function PlayerProvider({ children }) {
         if (blocked && el.src) {
           setStage(''); setLoading(false); setPlaying(false);
           setErr('Ready — tap play to start'); resumeWarming();
-          resolve('lyrics', lyricsPool, { title: t.title || '', artist: t.artist || '' }, { ttl: 864e5 })
-            .then((r2) => setLyrics(r2.data)).catch(() => setLyrics(null));
+          grabLyrics(t);
           return;
         }
         // A cached link can expire (the CDN signs them). Retry once with a
@@ -650,8 +660,7 @@ export function PlayerProvider({ children }) {
         });
       }
       // background lyrics fetch (non-blocking)
-      resolve('lyrics', lyricsPool, { title: meta.title || '', artist: meta.artist || '' }, { ttl: 864e5 })
-        .then((r) => setLyrics(r.data)).catch(() => setLyrics(null));
+      grabLyrics(meta);
     } catch (e) {
       setErr(e.message || 'Could not play this track'); resumeWarming();
       setPlaying(false);

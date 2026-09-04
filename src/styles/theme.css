@@ -396,6 +396,7 @@ button:not(.btn):not(.cat.on){color:var(--fg)}
 .full-name{font-family:var(--font-display);font-size:25px;letter-spacing:.8px;text-align:center;
   margin-top:12px;line-height:1.15}
 .lyrics{padding:8px 0 20px;max-height:100%}
+.lyr-src{text-align:center;margin:0 0 12px;opacity:.7}
 .lyr{font-size:16px;line-height:1.9;color:var(--fg3);text-align:center;cursor:pointer;
   transition:color .2s,transform .2s;padding:2px 0}
 .lyr.on{color:var(--green);font-weight:700;transform:scale(1.05);text-shadow:0 0 18px rgba(0,255,156,.4)}

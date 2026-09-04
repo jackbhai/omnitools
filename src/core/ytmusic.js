@@ -95,16 +95,38 @@ export async function resolveStream(id) {
 /* ---------------------------------------------------------------- lyrics */
 export const lyricsPool = [
   {
+    /* Exact match first: lrclib's /api/get wants the same title, artist and
+       duration we already know. If that answers, the words are for THIS
+       recording, not some live version that happens to share the name. */
+    id: 'lrclib-get', label: 'LRCLIB',
+    async run({ title, artist, album, length }) {
+      if (!title || !artist || !length) throw new Error('need title + artist + duration');
+      const q = new URLSearchParams({ track_name: title, artist_name: artist, length: String(length) });
+      if (album) q.set('album_name', album);
+      const d = await jget(`https://lrclib.net/api/get?${q}`, { ms: 12000 });
+      if (!d || (!d.syncedLyrics && !d.plainLyrics)) throw new Error('no lyrics');
+      return {
+        synced: d.syncedLyrics ? parseLrc(d.syncedLyrics) : null,
+        plain: d.plainLyrics || '',
+        title: d.trackName, artist: d.artistName, exact: true,
+      };
+    },
+  },
+  {
     id: 'lrclib', label: 'LRCLIB',
-    async run({ title, artist }) {
+    async run({ title, artist, length }) {
       const d = await jget(
         `https://lrclib.net/api/search?q=${encodeURIComponent(`${artist || ''} ${title}`.trim())}`, { ms: 12000 });
-      const hit = (d || []).find((x) => x.syncedLyrics || x.plainLyrics);
+      const rows = (d || []).filter((x) => x.syncedLyrics || x.plainLyrics);
+      // A fuzzy hit is only usable when its length is within a few seconds of
+      // what is playing; anything else is a different recording and we would
+      // rather show nothing than the wrong words.
+      const hit = rows.find((x) => !length || Math.abs((+x.duration || 0) - length) <= 4) || null;
       if (!hit) throw new Error('no lyrics');
       return {
         synced: hit.syncedLyrics ? parseLrc(hit.syncedLyrics) : null,
         plain: hit.plainLyrics || '',
-        title: hit.trackName, artist: hit.artistName,
+        title: hit.trackName, artist: hit.artistName, exact: false,
       };
     },
   },
