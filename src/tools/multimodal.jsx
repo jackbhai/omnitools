@@ -24,6 +24,8 @@ import * as CR from '../core/combo-route';
 import { TripKit, SoundToggle } from './trip-ui.jsx';
 import { play as sound } from '../core/sfx.js';
 import { searchMap, geoPlace } from '../core/mapsearch.js';
+import { osrmWalk, applyWalk, nearPin, pairKey } from '../core/walkgeo.js';
+import TripMap from './trip-map.jsx';
 
 const WALK_KMH = 5;
 const walkMin = (km) => Math.round((km / WALK_KMH) * 60);
@@ -133,6 +135,21 @@ function buildOptions(a, b, atMin = null, { ac = false, only = 'all' } = {}) {
     fromPos: pa && a.kind === 'geo' ? { lat: pa.lat, lon: pa.lon } : null,
     toPos: pb && b.kind === 'geo' ? { lat: pb.lat, lon: pb.lon } : null,
   }));
+  /* mark the two walks every journey opens and closes with, so a measuring pass
+     can find them later; a leg whose ends are both places is measured, one
+     missing a coordinate simply never gets asked about */
+  for (const o of out) {
+    const L = o.legs || [];
+    const f = L[0], e = L[L.length - 1];
+    if (f && f.kind === 'walk') {
+      const x = pa || posByName(f.from), y = posByName(f.to);
+      if (x && y) f.wpos = [x, y];
+    }
+    if (e && e.kind === 'walk' && e !== f) {
+      const x = posByName(e.from) || (pb && { lat: pb.lat, lon: pb.lon }), y = pb || posByName(e.to);
+      if (x && y) e.wpos = [x, y];
+    }
+  }
   out.meta = { tried: r.tried || 0, dropped: r.dropped || 0, pops: r.pops || 0,
     graphSize: r.graphSize || null, note: r.note || null, ac, only,
     /* what the searches cost, and whether any of them hit their ceiling - the
@@ -149,7 +166,15 @@ function buildOptions(a, b, atMin = null, { ac = false, only = 'all' } = {}) {
    the button, and the journey is measured from that doorway - not from the nearest
    bus stop that happens to share the area's name. Nothing about the local list
    changes: this adds a row, it never replaces one. */
-function Picker({ label, value, onPick, onNear, near }) {
+const posByName = (n) => {
+  if (!n) return null;
+  const m = M.STATIONS.find((s) => s.n === n);
+  if (m) return { lat: m.lat, lon: m.lon };
+  const b = B.STOPS.find((s) => s && s.n === n);
+  return b ? { lat: b.lat, lon: b.lon } : null;
+};
+
+function Picker({ label, value, onPick, onNear, near, onPin }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const [geo, setGeo] = useState(null);          // {busy} | {hits} | {err}
@@ -178,6 +203,9 @@ function Picker({ label, value, onPick, onNear, near }) {
             <button className="btn ghost sm geoask" style={{ margin: 6, opacity: geo?.busy ? 0.55 : 1 }}
               onMouseDown={(e) => { e.preventDefault(); if (!geo?.busy) askMap(); }}>
               <Icon n="pin" size={15} /> Search the whole map for "{q.trim().slice(0, 40)}"</button>)}
+          <button className="btn ghost sm" style={{ margin: '2px 6px 6px' }}
+            onMouseDown={(e) => { e.preventDefault(); if (onPin) onPin(); }}>
+            <Icon n="pin" size={14} /> …or drop a pin on the map itself</button>
           {geo?.busy && <div className="dim sm" style={{ padding: '8px 10px' }}>Asking the open map…</div>}
           {geo?.err && (
             <div className="dim sm" style={{ padding: '8px 10px' }}>
@@ -223,16 +251,49 @@ export function MultiModal() {
     return o.length ? o : [];
   }, [from, to, when, asked, ac, only]);
 
+  /* The measuring pass. Search priced its walks as straight lines because that
+     is the only distance it can afford ten thousand times a minute; now that a
+     handful of journeys survived ranking, the two end-walks of each are measured
+     once along real footpaths and the cards update under the rider's eyes. A
+     silent service leaves the estimate standing - stated, not hidden. */
+  const [fixes, setFixes] = useState(null);
+  const sigRef = useRef('');
+  const sig = options && options.length ? `${from?.n}|${to?.n}|${when}|${asked}` : '';
+  useEffect(() => {
+    if (sigRef.current !== sig) { sigRef.current = sig; setFixes(null); }
+  }, [sig]);
+  useEffect(() => {
+    if (!options || !options.length) return undefined;
+    let dead = false;
+    (async () => {
+      const seen = new Map();
+      for (const o of options) for (const l of o.legs || []) {
+        if (l.wpos && l.wpos[0] && l.wpos[1]) {
+          const k = pairKey(l.wpos[0], l.wpos[1]);
+          if (!seen.has(k) && seen.size < 8) seen.set(k, osrmWalk(l.wpos[0], l.wpos[1]));
+        }
+      }
+      if (!seen.size) return;
+      const got = new Map();
+      await Promise.all([...seen.entries()].map(async ([k, pr]) => {
+        const f = await pr; if (f && !dead) got.set(k, f);
+      }));
+      if (!dead && got.size) setFixes(got);
+    })();
+    return () => { dead = true; };
+  }, [options]);
+  const measured = useMemo(() => applyWalk(options, fixes), [options, fixes]);
+
   const ranked = useMemo(() => {
-    if (!options?.length) return [];
-    const c = [...options];
+    if (!measured?.length) return [];
+    const c = [...measured];
     if (sort === 'cheap') c.sort((a, b) => a.fare - b.fare || a.minutes - b.minutes);
     else if (sort === 'few') c.sort((a, b) => a.changes - b.changes || a.minutes - b.minutes);
     else if (sort === 'fast') c.sort((a, b) => a.minutes - b.minutes || a.fare - b.fare);
     else c.sort((a, b) => (a.value ?? a.minutes + a.fare / CR.VOT_RPM)
       - (b.value ?? b.minutes + b.fare / CR.VOT_RPM));
     return c;
-  }, [options, sort]);
+  }, [measured, sort]);
 
   const o = ranked[sel] || ranked[0];
   /* "Arrive by" is solved backwards: the latest departure that still makes it,
@@ -254,7 +315,15 @@ export function MultiModal() {
   const refused = when === 'arrive' && arriveBy != null && !!o && !solve;
   useEffect(() => { if (refused) sound('brake'); }, [refused]);
 
-  const near = (setter, isMetro) => {
+  /* Near me used to mean "the nearest published stop, which you then had to walk
+     to somewhere the app could not see". It now means the spot itself: the browser
+     knows the coordinates, the map service knows a street name for them, and the
+     planner measures the walk from the doorway. When naming fails the pin still
+     lands - coordinates as a label are true; a borrowed station name is not. */
+  const near = async (setter) => {
+    if (!loc || !Number.isFinite(loc.lat)) return;
+    const pin = await nearPin(loc.lat, loc.lon);
+    if (pin) { setter(pin); return; }
     const m = M.nearestStations(loc.lat, loc.lon, 1)[0];
     const bs = B.nearestStops(loc.lat, loc.lon, 1)[0];
     if (m && bs) setter(m.km <= bs.km ? { n: m.n, kind: 'metro' } : { n: bs.n, kind: 'bus' });
@@ -270,11 +339,49 @@ export function MultiModal() {
     if (other) return other;
     return loc && Number.isFinite(loc.lat) ? { lat: loc.lat, lon: loc.lon } : null;
   };
+  /* drop-a-pin: a map centred on the other end (or on the rider) where a tap IS
+     the place - for the gully, tower or gate that no geocoder has a name for.
+     The reverse lookup only decorates it; the coordinate is the promise. */
+  const [pin, setPin] = useState(null);
+  const openPin = (which) => {
+    const c = geoNear(which === 'from' ? to : from) || { lat: 28.61, lon: 77.21 };
+    setPin({ which, center: c, marker: null, name: '' });
+  };
+  useEffect(() => {
+    if (!pin || !pin.marker || pin.name) return undefined;
+    let dead = false;
+    nearPin(pin.marker.lat, pin.marker.lon).then((p) => {
+      if (!dead && p) setPin((q) => (q && q.marker === pin.marker ? { ...q, name: p.n } : q));
+    });
+    return () => { dead = true; };
+  }, [pin && pin.marker]);
   return (<><Picker label="From" value={from} onPick={(v) => { sound('whoosh'); setFrom(v); setSel(0); }}
-      near={geoNear(to)} onNear={() => { sound('whoosh'); near(setFrom); }} /><div style={{ textAlign: 'center', margin: '-4px 0 4px' }}><button className="btn ghost sm" onClick={() => { sound('tick'); const a = from; setFrom(to); setTo(a); setSel(0); }}>⇅ Swap</button></div><Picker label="To" value={to} onPick={(v) => { sound('whoosh'); setTo(v); setSel(0); }}
-      near={geoNear(from)} onNear={() => { sound('whoosh'); near(setTo); }} />
+      near={geoNear(to)} onPin={() => { sound('tick'); openPin('from'); }} onNear={() => { sound('whoosh'); near(setFrom); }} /><div style={{ textAlign: 'center', margin: '-4px 0 4px' }}><button className="btn ghost sm" onClick={() => { sound('tick'); const a = from; setFrom(to); setTo(a); setSel(0); }}>⇅ Swap</button></div><Picker label="To" value={to} onPick={(v) => { sound('whoosh'); setTo(v); setSel(0); }}
+      near={geoNear(from)} onPin={() => { sound('tick'); openPin('to'); }} onNear={() => { sound('whoosh'); near(setTo); }} />
 
-    {(!from || !to) && <Empty t="Pick a start and destination — metro stations and bus stops both work" />}
+    {pin && (<div className="card" style={{ marginBottom: 10 }}>
+      <div className="chead" style={{ fontSize: 11 }}>Tap the map where you mean · {pin.which === 'from' ? 'start' : 'destination'}</div>
+      <TripMap points={[]} pick={{ center: pin.center, marker: pin.marker,
+        onPick: (lat, lon) => { sound('tick'); setPin((q) => ({ ...q, marker: { lat, lon }, name: '' })); } }}
+        height={240} />
+      <div className="row" style={{ gap: 8, alignItems: 'center', marginTop: 6 }}>
+        <span className="sm" style={{ flex: 1, minWidth: 0 }}>
+          {pin.marker ? (pin.name || `${pin.marker.lat.toFixed(4)}, ${pin.marker.lon.toFixed(4)} — naming…`)
+                      : 'No pin yet — tap anywhere on the map above.'}
+        </span>
+        <button className="btn ghost sm" onClick={() => { sound('tick'); setPin(null); }}>Cancel</button>
+        <button className="btn sm" disabled={!pin.marker} onClick={() => {
+          if (!pin.marker) return;
+          sound('whoosh');
+          const lat = +pin.marker.lat, lon = +pin.marker.lon;
+          (pin.which === 'from' ? setFrom : setTo)({
+            n: pin.name || `Dropped pin · ${lat.toFixed(4)}, ${lon.toFixed(4)}`, kind: 'geo', lat, lon });
+          setSel(0); setPin(null);
+        }}>Use it</button>
+      </div>
+    </div>)}
+
+    {(!from || !to) && <Empty t="Pick a start and destination — metro stations, bus stops, map searches and dropped pins all work" />}
     {/* The questions stay on screen even when one of them has no answer: a filter
         that empties the panel must still be changeable, or the traveller is stuck
         in the empty result and has to start the whole search again. */}
@@ -401,8 +508,7 @@ export function MultiModal() {
         const track = trackOfCombo(o, { boardMin: clk?.boardMin ?? null });
         return track.points.length > 1 ? (
           <Card>
-            <TripKit track={track} steps={stepsOf(track)} stepsToggle={false}
-              boardMin={clk?.boardMin ?? null} />
+            <TripKit track={track} steps={stepsOf(track)} boardMin={clk?.boardMin ?? null} />
             <div className="dim sm" style={{ marginTop: 8 }}>
               The alert watches every published stop of every leg in this order, so it also
               knows when you have reached the metro station the bus leaves you at.
@@ -425,7 +531,10 @@ export function MultiModal() {
       </div><div className="src"><span className="dot" /><span>
           Metro: {M.STATIONS.length} stations on {M.LINES.length} line records, DMRC slabs and published headways.
           Bus: {B.ROUTES.length} published directions over {B.STOPS.length} physical stops, DTC slabs.
-          Walking estimated at {WALK_KMH} km/h.
+          {measured?.some((x) => x.measuredWalk)
+            ? <>End walks measured along OpenStreetMap footpaths (public OSRM routers, keyed by nothing);
+                minutes at {WALK_KMH} km/h. Transfer walks use published interchange distances.</>
+            : <>Walking estimated at {WALK_KMH} km/h in a straight line.</>}{''}
           {(from?.kind === 'geo' || to?.kind === 'geo') && <> One end was found by map search —{' '}
             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>{' '}
             contributors, ODbL; the walk, the ride and the fare are still ours to compute.</>}{''} Nothing here is a live vehicle position: the wait is the

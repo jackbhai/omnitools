@@ -174,7 +174,8 @@ export function trackOfCombo(opt, { boardMin = null } = {}) {
   const legs = [];
   opt.legs.forEach((l, li) => {
     if (l.kind === 'walk') {
-      legs.push({ kind: 'walk', from: l.from ?? opt.from, to: l.to, text: l.text, km: l.km });
+      legs.push({ kind: 'walk', from: l.from ?? opt.from, to: l.to, text: l.text, km: l.km,
+                  measured: l.measured || null });
       /* a place picked off the map is not in the stop table by name - its own exact
          position is the truth, and it belongs at the end of the line, not at the
          nearest namesake stop */
@@ -213,7 +214,15 @@ export function trackOfCombo(opt, { boardMin = null } = {}) {
   }
   const end = pts.at(-1) || null;
   if (end && !pts.some((p) => p.isAlight)) end.isAlight = true;
+  /* footpath geometry for measured walks - the map draws these as its dotted
+     cyan threads, one per end; a plan without measurements simply has none */
+  const wpath = [];
+  (opt.legs || []).forEach((l) => {
+    if (l.kind === 'walk' && Array.isArray(l.path) && l.path.length > 1)
+      wpath.push(l.path.map((c) => ({ lat: c[0], lon: c[1] })));
+  });
   return {
+    wpath,
     mode: 'combo', label: opt.legs.map((l) => (l.kind === 'bus' ? l.ref : l.kind === 'metro' ? l.line : 'walk')).join(' + '),
     points: pts, legs,
     from: opt.from ?? pts[0]?.name, to: opt.to ?? end?.name,
@@ -428,7 +437,7 @@ export function stepsOf(track) {
       out.push({ kind: 'walk', text: leg.text || `Walk to ${leg.to}`, km: leg.km,
                  metres: leg.km != null ? Math.round(leg.km * 1000) : null,
                  min: leg.km != null ? walkMins(leg.km * 1000) : null,
-                 from: leg.from, to: leg.to, leg: li,
+                 from: leg.from, to: leg.to, leg: li, measured: leg.measured || null,
                  note: leg.note || 'no exit numbers are published for this station' });
       return;
     }

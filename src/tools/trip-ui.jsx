@@ -80,6 +80,7 @@ export function StepList({ steps, active = -1, onPick }) {
               <div className="dim sm">
                 {s.metres < 950 ? `${s.metres} m` : `${(s.metres / 1000).toFixed(1)} km`}
                 {s.min != null ? ` · about ${s.min} min on foot` : ''}
+                {s.measured ? ' · measured on footpaths' : ''}
               </div>)}
           </div>
         </div>))}
@@ -204,7 +205,7 @@ export function TripKit({ track, steps, boardMin = null, height = 250, active: a
       {map && (
         <Suspense fallback={<div className="mapnote" style={{ height: 90 }}><span className="dot" /> Loading map…</div>}>
           <TripMap points={track.points} active={active >= 0 ? active : (armed && t.j?.reached >= 0 ? t.j.reached : -1)}
-            fix={t.fix} onSelect={(i) => setActive(i)} height={height} />
+            fix={t.fix} onSelect={(i) => setActive(i)} height={height} wpath={track.wpath} />
         </Suspense>)}
       </div>
 

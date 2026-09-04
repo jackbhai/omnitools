@@ -15,6 +15,7 @@
  *      into an SVG, so an offline user still sees the shape of their ride.
  */
 import React, { useEffect, useRef, useState } from 'react';
+import { pickFrame } from '../core/walkgeo.js';
 
 /* Key-free tile sources, in the order they are tried. Each one is run by a
  * different organisation, so a single operator's outage or policy change does
@@ -62,10 +63,18 @@ export function project(points, w = 340, h = 190, pad = 16) {
   return points.map((p) => ({ ...p, x: ox + (p.lon - lo0) * kx * s, y: oy + (la1 - p.lat) * s }));
 }
 
-export function Sketch({ points, active = -1, onSelect, fix, height = 190 }) {
+export function Sketch({ points, active = -1, onSelect, fix, height = 190, wpath = null }) {
   const w = 340;
   const src = valid(points);
-  const pts = project(src, w, height);
+  const segs = (wpath || []).filter((s) => Array.isArray(s) && s.length > 1).map((s) => valid(s));
+  const flat = segs.reduce((x, s) => x.concat(s), []);
+  /* project the route AND the footpath threads together - one bbox for the
+     whole picture is the only way both share a frame; slice the tail back off */
+  const all = project(src.concat(flat), w, height);
+  const pts = all.slice(0, src.length);
+  const wp = [];
+  let at = src.length;
+  for (const s of segs) { wp.push(all.slice(at, at + s.length)); at += s.length; }
   if (!pts.length) return null;
   const line = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
   const scale = project([{ lat: 0, lon: 0 }, { lat: 0.001, lon: 0 }], w, height);
@@ -77,6 +86,10 @@ export function Sketch({ points, active = -1, onSelect, fix, height = 190 }) {
       <polyline points={line} fill="none" stroke="#0C3A2C" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
       <polyline points={line} fill="none" stroke="#00FF9C" strokeWidth="2.4"
         strokeLinecap="round" strokeLinejoin="round" opacity=".92" />
+      {wp.map((s, i) => (
+        <polyline key={`w${i}`} fill="none" stroke="#00E5FF" strokeWidth="1.8" strokeDasharray="1 6"
+          strokeLinecap="round" opacity=".85"
+          points={s.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')} />))}
       {fix && isFinite(fix.lat) && (() => {
         const f = project([{ lat: fix.lat, lon: fix.lon }], w, height)[0];
         const r = Math.min(60, Math.max(5, (fix.accuracy || 45) / metresPerPx));
@@ -99,10 +112,50 @@ export function Sketch({ points, active = -1, onSelect, fix, height = 190 }) {
     </svg>);
 }
 
+/* A picker that needs no tiles and no library: the same pickFrame arithmetic
+   the click handlers use, so "tap near the corner" means the same coordinate
+   whether the tiles loaded or not. A crosshair in the middle, a pin where the
+   rider tapped, and that is the whole interface - the honest offline twin of
+   the leaflet picker above. */
+function PickableSketch({ pick, height = 190 }) {
+  const w = 340;
+  const f = pickFrame(pick.center || { lat: 28.61, lon: 77.21 }, w, height);
+  const at = pick.marker && isFinite(pick.marker.lat) ? f.project(pick.marker) : null;
+  const c = f.project(pick.center);
+  const onClick = (e) => {
+    if (!pick.onPick || !e.currentTarget.getBoundingClientRect) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - r.left) * w) / r.width;
+    const py = ((e.clientY - r.top) * height) / r.height;
+    const q = f.unproject(px, py);
+    pick.onPick(q.lat, q.lon);
+  };
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} width="100%" height={height} onClick={onClick}
+      role="img" aria-label="Tap to pick a spot on the sketch map"
+      style={{ cursor: 'crosshair', display: 'block' }}>
+      <rect x="0" y="0" width={w} height={height} rx="10" fill="#0C1310" />
+      {Array.from({ length: 9 }, (_, i) => (
+        <line key={`v${i}`} x1={(i + 1) * (w / 10)} y1="0" x2={(i + 1) * (w / 10)} y2={height} stroke="#182721" strokeWidth="1" />))}
+      {Array.from({ length: 5 }, (_, i) => (
+        <line key={`h${i}`} x1="0" y1={(i + 1) * (height / 6)} x2={w} y2={(i + 1) * (height / 6)} stroke="#182721" strokeWidth="1" />))}
+      <line x1={c.x - 7} y1={c.y} x2={c.x + 7} y2={c.y} stroke="#2C443B" strokeWidth="1.4" />
+      <line x1={c.x} y1={c.y - 7} x2={c.x} y2={c.y + 7} stroke="#2C443B" strokeWidth="1.4" />
+      {at && (<g>
+        <circle cx={at.x} cy={at.y} r="8.5" fill="none" stroke="#00FF9C" strokeWidth="2.2" opacity=".85" />
+        <circle cx={at.x} cy={at.y} r="2.4" fill="#00FF9C" /></g>)}
+      <text x="8" y={height - 8} fill="#5E7A6E" fontSize="8.4" style={{ fontFamily: 'system-ui' }}>
+        offline sketch picker - tap where you mean; ~{Math.round(111320 / f.s)} m per pixel</text>
+    </svg>);
+}
+
 /* ------------------------------------------------------------------- panel */
-export default function TripMap({ points, active = -1, fix, onSelect, height = 250, className = '' }) {
+export default function TripMap({ points, active = -1, fix, onSelect, height = 250, className = '',
+                                 pick = null, wpath = null }) {
   const box = useRef(null);
   const api = useRef(null);          // { L, map, draw }
+  const pickRef = useRef(null);
+  pickRef.current = pick && pick.onPick ? pick.onPick : null;
   const [status, setStatus] = useState(isBrowser ? 'loading' : 'ssr');
   const [srcIdx, setSrcIdx] = useState(0);
 
@@ -127,6 +180,12 @@ export default function TripMap({ points, active = -1, fix, onSelect, height = 2
         tap: true, preferCanvas: true, fadeAnimation: true, zoomAnimation: false,
       });
       api.current = { L, map };
+      if (pickRef.current) {
+        /* pick mode: a tap anywhere on the map is an answer, not a pan -
+           and the crosshair says so before anyone presses */
+        map.getContainer().style.cursor = 'crosshair';
+        map.on('click', (e) => { try { pickRef.current(e.latlng.lat, e.latlng.lng); } catch {} });
+      }
       css.then(() => { if (!dead) setTimeout(() => { try { map.invalidateSize(); } catch {} }, 60); });
       setStatus('ready');
       try { map.invalidateSize(); } catch {}
@@ -160,10 +219,30 @@ export default function TripMap({ points, active = -1, fix, onSelect, height = 2
     const { L, map } = a;
     if (a.layer) { try { a.layer.remove(); } catch {} a.layer = null; }
     const pts = valid(points);
+    if (pick && pick.center && isFinite(pick.center.lat)) {
+      const m = L.layerGroup().addTo(map);
+      const at = pick.marker && isFinite(pick.marker.lat) ? pick.marker : pick.center;
+      L.circleMarker([at.lat, at.lon], { radius: 8, color: '#00FF9C', weight: 2.4, fillColor: '#00FF9C', fillOpacity: .25 }).addTo(m);
+      L.circleMarker([at.lat, at.lon], { radius: 2.2, color: '#00FF9C', weight: 0, fillColor: '#00FF9C', fillOpacity: 1 }).addTo(m);
+      if (!api.current.viewed) { try { map.setView([pick.center.lat, pick.center.lon], 16); api.current.viewed = true; } catch {} }
+      else if (pick.marker) { try { map.panTo([pick.marker.lat, pick.marker.lon]); } catch {} }
+      a.layer = m;
+      setTimeout(() => { try { map.invalidateSize(); } catch {} }, 60);
+      return;
+    }
     if (!pts.length) return;
     const latlngs = pts.map((p) => [p.lat, p.lon]);
     const walk = (points || []).some((p) => p.kind === 'walk');
     const layer = L.layerGroup().addTo(map);
+    /* measured end-walks, when there are any: real footpath threads, dotted so
+       they never pretend to be a ride line */
+    if (wpath && wpath.length) {
+      for (const seg of wpath) {
+        if (!Array.isArray(seg) || seg.length < 2) continue;
+        L.polyline(seg.map((c) => [c.lat, c.lon]), { color: '#00E5FF', weight: 2.3, opacity: .85,
+          dashArray: '1 7', lineCap: 'round' }).addTo(layer);
+      }
+    }
     L.polyline(latlngs, { color: '#0C3A2C', weight: 6.5, opacity: .85 }).addTo(layer);
     L.polyline(latlngs, { color: '#00FF9C', weight: 3.2, opacity: .95, dashArray: walk ? '2 7' : null,
       lineCap: 'round' }).addTo(layer);
@@ -191,6 +270,8 @@ export default function TripMap({ points, active = -1, fix, onSelect, height = 2
     }
     setTimeout(() => { try { map.invalidateSize(); } catch {} }, 60);
   }, [JSON.stringify(valid(points).map((p) => [p.lat, p.lon, p.name, p.kind])), active,
+      pick && pick.marker ? `${pick.marker.lat.toFixed(6)},${pick.marker.lon.toFixed(6)}` : '',
+      wpath ? JSON.stringify(wpath) : '',
       fix?.lat, fix?.lon, fix?.accuracy, status, onSelect]);
 
   const pts = valid(points);
@@ -201,7 +282,8 @@ export default function TripMap({ points, active = -1, fix, onSelect, height = 2
       {status === 'loading' && <div className="mapnote" style={{ height }}><span className="dot" /> Loading map…</div>}
       {(status === 'offline' || status === 'ssr') && (
         <div className="mapsketchwrap">
-          <Sketch points={pts} active={active} onSelect={onSelect} fix={fix} height={height} />
+          {pick ? <PickableSketch pick={pick} height={height} />
+                 : <Sketch points={pts} active={active} onSelect={onSelect} fix={fix} height={height} wpath={wpath} />}
         </div>)}
       <div className="mapnote sm">
         {status === 'offline'

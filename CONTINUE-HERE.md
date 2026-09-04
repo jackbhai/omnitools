@@ -446,12 +446,11 @@ you're starting on, then start. Don't summarise it back to me — I wrote it.
 
 ---
 
-## Travel layer: map, get-off alerts, journey clock (shipped in code, **not yet on Pages**)
+## Travel layer: map, alerts, clock, whole-map places, measured walks (shipped AND live on Pages)
 
-Everything below is committed on `main` in this repo and every gate is green —
-but the live site at `jackbhai.github.io/omnitools/` still serves the pre-map
-build (`index-DtDIxHKb.js`; `assets/trip-map-*.js` returns 404 there). That is
-the whole reason the map is "not visible" on the phone: it is not deployed.
+All of it is deployed at `jackbhai.github.io/omnitools/` (verified on the live
+CDN by chunk bytes + strings, not by hash equality - CI re-hashes with
+`BASE_PATH=/omnitools/`).
 
 | what | where |
 |---|---|
@@ -459,23 +458,25 @@ the whole reason the map is "not visible" on the phone: it is not deployed.
 | trip model + turn-by-turn + get-off states (`no-signal → to-stop → at-board → riding → alight → done`) | `src/core/trip.js`, `src/core/trip-state.js` |
 | real notifications (service-worker channel, page-level fallback) | `src/core/alerts.js`, `public/sw.js` |
 | leave-at / arrive-by clock + timeline bar | `src/core/journey-clock.js`, wired in `src/tools/multimodal.jsx` |
-| seven synthesised sounds, app-wide (`.tile`/`.btn`/`.chip`/`.iconbtn`/Back answered by a delegated listener started in `App.jsx`; Settings has five test buttons; the header carries the switch on every screen) | `src/core/sfx.js` (`attach`), `src/App.jsx`, `src/tools/settings.jsx`, the three planners, `core/trip-state.js` |
-| one graph, both modes: Plan Journey searches buses and the metro together, so a mixed journey is found rather than guessed | `src/core/combo-route.js` (5,239 nodes - 88,344 edges - 5 exact searches - 28-909 ms) |
+| seven synthesised sounds, app-wide (delegated press listener; Settings test buttons; header switch) | `src/core/sfx.js` (`attach`), `src/App.jsx`, `src/tools/settings.jsx`, the three planners, `core/trip-state.js` |
+| one graph, both modes: buses and metro searched together, mixed journeys found not guessed | `src/core/combo-route.js` (5,239 nodes - 88,344 edges - 5 exact searches - 28-909 ms) |
+| whole-map geocoding in the pickers: Photon (Komoot) primary, Nominatim (OSM Foundation) second opinion when the first is silent; `kind:'geo'` places flow to the planner with exact coordinates; ODbL credit on every hit | `src/core/mapsearch.js`, wired in `Picker` |
+| dropped pins: tap the map (leaflet click or the offline sketch's shared `pickFrame` maths) = the place; reverse Nominatim only names it; near-me now means the rider's own spot, not the nearest station | `src/core/walkgeo.js` (`nearPin`, `pickFrame`), `trip-map.jsx` (`pick` + `PickableSketch`) |
+| end-walks measured along real footpaths (public OSRM: `routing.openstreetmap.de/routed-foot`, `router.project-osrm.org` as street-distance fallback); minutes always the app's own 5 km/h; failure leaves the straight-line estimate standing and saying so; measured legs renumber the card, the totals and the dotted cyan map threads together | `src/core/walkgeo.js` (`osrmWalk`, `applyWalk`), `trip.js` (`wpath` on tracks), `combo-route` output marked with `wpos` in `buildOptions` |
 
-| gate | result |
+| gate | result (at commit `888423d`+walkgeo work) |
 |---|---|
-| `npm run verify` | data PASS 24 · bus 78/0 · metro 69/0 · trip 165/0 · render 20 ✓ |
-| `python3 tests/qa_transit.py http://localhost:4173/` | 137 passed · 0 failed (12 sections; §10 app-wide sound, §11 the combined search) |
-| `npx vite build`, `debrand.py --check`, `deemoji.py` | clean |
+| `npm run verify` | data PASS 24 · bus 78/0 · metro 69/0 · trip 189/0 (§13 whole-map, §14 walkgeo) · render ✓ |
+| `python3 tests/qa_transit.py http://localhost:4173/` | 158 passed · 0 failed (14 sections; §13 stubbed geocoders, §14 stubbed routers + pin-drop + offline) |
+| shell size | index 1,458.9 kB - map/walk code rides ONLY in lazy chunks (verify §13/§14 check the strings are absent from the shell) |
 
-**To deploy (needs a GitHub token this sandbox does not have — verified four times, `$GH` is unset and there is no credential file):**
+**Deploy = push to `main`; the Pages workflow runs by itself.** The sandbox has
+no stored credential on purpose - ask the user for their PAT each session
+(one use, then advise revocation), push via
+`git push "https://x-access-token:TOKEN@github.com/jackbhai/omnitools.git" main`,
+poll Actions for the `Deploy to GitHub Pages` run for the new sha, then fetch the
+served `index-*.js` + the chunk with a cache-buster and compare BYTES and marker
+strings.
 
-```bash
-cd omnitools
-git push "https://jackbhai:${GH}@github.com/jackbhai/omnitools.git" main
-# ~90 s later: gh api repos/jackbhai/omnitools/actions/runs?per_page=1 → conclusion == success
-# then confirm the shipped chunk actually exists:
-curl -sI https://jackbhai.github.io/omnitools/assets/$(curl -s https://jackbhai.github.io/omnitools/ | grep -o 'index-[A-Za-z0-9_-]*\.js' | head -1) | head -1
-```
 
 Do not "fix" the missing map by rewriting the panel — rebuild and push, then re-measure the 404 above.

@@ -124,6 +124,13 @@ keyless, results credited to the OpenStreetMap contributors), the exact pin beco
 end of the journey, and the walk to the first stop is measured from that doorway. A pin
 beyond every walkable stop is refused with its distance stated, and an offline lookup
 says the map service did not answer — the stop list keeps working either way.
+Places with no name at all (a gully, a gate, a shop that OSM forgot) get "…or drop a pin
+on the map itself": a real map — or its offline sketch twin — where the tap itself is the
+place, labelled afterwards by reverse lookup if a label exists. And the two end-walks of
+every journey are measured along actual OpenStreetMap footpaths (public OSRM routers, no
+keys), so turn-by-turn says "640 m · measured on footpaths" instead of "about this far in
+a straight line"; when the routing service is silent, the estimate stands and says it is
+an estimate.
 
 **Everyday** — weather, air quality, currency, recipes, converters,
 generators, encoders, and around forty more.

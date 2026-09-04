@@ -197,8 +197,13 @@ def main():
         up = t.upper()
         check("a fare is quoted", "₹" in t)
         check("minutes / stops / changes stats", "MINUTES" in up and "STOPS" in up and "CHANGES" in up)
-        check("next-bus-at-your-stop row rendered", "NEXT AT" in up,
-              [x for x in t.split("\n") if "NEXT AT" in x.upper()][:1])
+        # after the last published run there IS no next bus - the panel then says
+        # so out loud, and that answer passes too. a test that only passes before
+        # 5 pm is a fake bug factory, not a check.
+        check("the next bus at the stop is answered - or its absence is stated",
+              "NEXT AT" in up or "LAST BUS" in up or "NO BUS LEFT" in up,
+              [x for x in t.split("\n")
+               if "Next at" in x or "last bus" in x.lower() or "No bus left" in x][:1])
         check("women-free note kept", "free" in t.lower())
         check("distance honesty line", "drives" in t.lower() or "road" in t.lower())
 
@@ -812,6 +817,115 @@ def main():
               "no internet, or both map services are refusing us" in s13c.locator("body").inner_text())
         s13c.close()
         check("the map-search panel threw no errors anywhere", not p13 and not p13c, "; ".join((p13 + p13c)[:2]))
+        print("\n=== 14. measured walks and map-dropped pins ===")
+        # The routing servers, geocoders and tile hosts are all answered from this
+        # file - what is being tested is what the panel does with an answer, never
+        # whether some operator feels like replying today.
+        ROUTE_OK = {"code": "Ok", "routes": [{"distance": 640.0, "duration": 512.0,
+            "geometry": {"coordinates": [[77.3253, 28.6649], [77.3285, 28.667], [77.3311, 28.6691]]}}]}
+        REV14 = {"address": {"road": "Kasturba Marg", "suburb": "Rajendra Nagar", "city": "Ghaziabad"},
+                 "display_name": "Kasturba Marg, Rajendra Nagar, Ghaziabad, Uttar Pradesh"}
+        def s14_routes(s, mode):
+            def fill(route, obj):
+                route.fulfill(status=200, content_type="application/json", body=json.dumps(obj))
+            s.route("**photon.komoot.io**", lambda r: fill(r, GEO))
+            s.route("**nominatim.openstreetmap.org**",
+                    lambda r: fill(r, [REV14]) if "/search" in r.request.url else fill(r, REV14))
+            for tile in ("**tile.openstreetmap.fr**", "**arcgisonline.com**", "**opentopomap.org**", "**tile.openstreetmap.org**"):
+                s.route(tile, lambda r: r.abort())
+            if mode == "dead":
+                s.route("**routing.openstreetmap.de**", lambda r: r.abort())
+                s.route("**router.project-osrm.org**", lambda r: r.abort())
+            else:
+                s.route("**routing.openstreetmap.de**", lambda r: fill(r, ROUTE_OK))
+                s.route("**router.project-osrm.org**", lambda r: r.abort())
+        def s14_two_pins(s):
+            f = s.locator("input >> nth=0")
+            f.click(timeout=8000); f.type("Arya Samaj Road", delay=8)
+            s.wait_for_timeout(500)
+            s.locator("button:has-text('Search the whole map for')").first.click(timeout=8000)
+            s.wait_for_timeout(800)
+            s.locator(".geoitem").first.click(timeout=8000)
+            g = s.locator("input >> nth=1")
+            g.click(timeout=8000); g.type("Arya Samaj Road", delay=8)
+            s.wait_for_timeout(500)
+            s.locator("button:has-text('Search the whole map for')").first.click(timeout=8000)
+            s.wait_for_timeout(800)
+            s.locator(".geoitem").nth(1).click(timeout=8000)
+            s.wait_for_timeout(1400)
+        s14 = b.new_page(viewport={"width": 430, "height": 940})
+        p14e = []
+        s14.on("pageerror", lambda e: p14e.append(str(e)))
+        s14_routes(s14, "live")
+        s14.goto(BASE); home(s14); open_tile(s14, "Plan Journey")
+        s14_two_pins(s14)
+        try:
+            s14.wait_for_selector("text=measured along OpenStreetMap footpaths", timeout=14000)
+            got_note = True
+        except Exception:
+            got_note = False
+        check("when the foot router answers, the panel says the walks are measured, not guessed",
+              got_note)
+        s14.locator("button:has-text('Turn by turn')").first.click(timeout=8000)
+        s14.wait_for_timeout(700)
+        b14 = s14.locator("body").inner_text()
+        check("turn-by-turn prints the router's metres with the walk line",
+              "640 m" in b14 and "measured on footpaths" in b14,
+              [l.strip() for l in b14.split("\n") if "640" in l][:1] or "no 640 line")
+        mb14 = s14.locator("button:has-text('Map ·')")
+        check("the map button counts points without pretending precision",
+              mb14.count() >= 1, mb14.first.inner_text()[:32] if mb14.count() else "none")
+        mb14.first.click(timeout=8000)
+        s14.wait_for_timeout(3400)
+        check("the measured walk is drawn, dotted, over the ride line",
+              s14.locator('.mapbox svg polyline[stroke="#00E5FF"], .mapbox path[stroke="#00E5FF"]').count() >= 1,
+              f"threads={s14.locator('.mapbox svg polyline[stroke=\"#00E5FF\"], .mapbox path[stroke=\"#00E5FF\"]').count()}")
+        s14.close()
+        s14o = b.new_page(viewport={"width": 430, "height": 940})
+        p14o = []
+        s14o.on("pageerror", lambda e: p14o.append(str(e)))
+        s14_routes(s14o, "dead")
+        s14o.goto(BASE); home(s14o); open_tile(s14o, "Plan Journey")
+        s14_two_pins(s14o)
+        s14o.locator("button:has-text('Turn by turn')").first.click(timeout=8000)
+        s14o.wait_for_timeout(900)
+        b14o = s14o.locator("body").inner_text()
+        check("a silent routing service leaves the straight-line number standing, and says so",
+              "in a straight line" in b14o and "measured on footpaths" not in b14o,
+              b14o[-160:].replace("\n", " "))
+        s14o.close()
+        s14p = b.new_page(viewport={"width": 430, "height": 940})
+        p14p = []
+        s14p.on("pageerror", lambda e: p14p.append(str(e)))
+        s14_routes(s14p, "live")
+        s14p.goto(BASE); home(s14p); open_tile(s14p, "Plan Journey")
+        f14p = s14p.locator("input >> nth=0")
+        f14p.click(timeout=8000); f14p.type("Ghasitaram", delay=10)
+        s14p.wait_for_timeout(600)
+        dpin = s14p.locator("button:has-text('drop a pin on the map')")
+        check("the picker offers the map itself for the places no list has", dpin.count() == 1)
+        dpin.first.click(timeout=8000)
+        s14p.wait_for_timeout(900)
+        check("a picker card opens under the field", s14p.locator(".mapbox").count() >= 1)
+        try:
+            pick = s14p.wait_for_selector("svg[aria-label*='Tap to pick']", timeout=16000)
+        except Exception:
+            pick = s14p.locator(".mapleaf").first
+        bx = pick.bounding_box()
+        s14p.mouse.click(bx["x"] + bx["width"] / 2, bx["y"] + bx["height"] / 2)
+        s14p.wait_for_timeout(1300)
+        b14p = s14p.locator("body").inner_text()
+        check("the tap is answered with the address that lives there",
+              "Kasturba Marg, Rajendra Nagar, Ghaziabad" in b14p,
+              [l.strip() for l in b14p.split("\n") if "Kasturba" in l][:1] or "no Kasturba line")
+        s14p.locator("button:has-text('Use it')").first.click(timeout=8000)
+        s14p.wait_for_timeout(700)
+        check("and 'Use it' writes that exact spot into the From field",
+              "Kasturba Marg" in s14p.locator("input >> nth=0").input_value(),
+              s14p.locator("input >> nth=0").input_value()[:64])
+        s14p.close()
+        check("none of the new machinery threw in any browser",
+              not (p14e + p14o + p14p), "; ".join((p14e + p14o + p14p)[:2]))
         print("\n=== 12. console hygiene ===")
         quiet = ("favicon", "geolocation", "net::ERR", "Failed to load resource",
                  "Permission", "WebSocket", "vite")

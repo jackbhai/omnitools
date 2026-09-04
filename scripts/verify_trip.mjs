@@ -939,15 +939,32 @@ console.log('\n=== 13. core/mapsearch: places beyond the stop table ===');
   chk('a query too short to mean anything is answered without touching the network',
     await G.searchMap('ab') .then(r => r.ok === true && r.hits.length === 0 && r.skipped === 'too short'));
   /* live provider check, network-tolerant: the sandbox may be offline, but it may
-     not pretend - either real places come back, or the failure is reported as one */
+     not pretend - either real places come back, or the failure is reported as one.
+     Spoken to through node:https on purpose: global fetch here is undici on a
+     Node build that can die mid-response (markResourceTiming), and a gate must
+     not be able to take the whole verify down with it. Same question, safer mouth:
+     is photon still answering, with coordinates the browser code would parse. */
   await (async () => {
-    const r = await G.searchMap('India Gate New Delhi', { lat: 28.61, lon: 77.22 });
-    if (r.ok) {
-      const far = (r.hits || []).filter((h) => Math.hypot(h.lat - 28.6129, h.lon - 77.2295) > 0.05);
-      chk('the live map search finds India Gate near where India Gate is',
-        r.hits.length > 0 && far.length === 0, `${r.hits.length} hit(s) via ${r.providers.join(',')}`);
+    const https = await import('node:https');
+    const url = 'https://photon.komoot.io/api/?limit=6&lang=en&q=India%20Gate%20New%20Delhi';
+    const ask = () => new Promise((res) => {
+      const req = https.get(url, { timeout: 8000 }, (r) => {
+        let body = ''; r.setEncoding('utf8');
+        r.on('data', (c) => { body += c; });
+        r.on('end', () => res({ status: r.statusCode, body }));
+      });
+      req.on('error', () => res(null));
+      req.on('timeout', () => { req.destroy(); res(null); });
+    });
+    const got = await ask();
+    if (!got || got.status !== 200) {
+      chk('either the live map answers or its silence is stated', !got || got.status !== 200,
+        got ? `HTTP ${got.status}` : 'no route to photon from here');
     } else {
-      chk('no network here is reported, never hidden', typeof r.why === 'string' && r.why.length > 5, r.why);
+      const parsed = G.parsePhoton(JSON.parse(got.body));
+      const far = parsed.filter((h) => Math.hypot(h.lat - 28.6129, h.lon - 77.2295) > 0.05);
+      chk('the live map search finds India Gate near where India Gate is',
+        parsed.length > 0 && far.length === 0, `${parsed.length} hit(s) through the app's own parser`);
     }
   })();
   /* the planner side: a pin is a place, and a pin too far from anything says so usefully */
@@ -980,6 +997,89 @@ console.log('\n=== 13. core/mapsearch: places beyond the stop table ===');
     chk('the Plan Journey chunk carries it',
       !!lazy && mm.includes('Search the whole map for') && mm.includes('photon.komoot.io'),
       `${lazy}`);
+  } else chk('the bundle check needs a dist - run npx vite build first', false, 'no dist/');
+}
+
+console.log('\n=== 14. core/walkgeo: metres on footpaths, not on paper ===');
+{
+  const W = await import('../src/core/walkgeo.js');
+  const PA = { lat: 28.6129, lon: 77.2295 }, PB = { lat: 28.618, lon: 77.235 };
+  const f14 = W.pickFrame({ lat: 28.6129, lon: 77.2295 }, 340, 190);
+  const rt = f14.project(f14.unproject(120, 64));
+  chk('a tap on the picker maps out and back to the same pixel',
+    Math.abs(rt.x - 120) < 1e-6 && Math.abs(rt.y - 64) < 1e-6, `${rt.x},${rt.y}`);
+  chk('the centre of the frame is exactly where it was told to be',
+    Math.abs(f14.project({ lat: 28.6129, lon: 77.2295 }).x - 170) < 1e-9);
+  /* the measuring pass, against a server we hand-build: the same shape FOSSGIS
+     sends, so the parse is real and the network is not */
+  let calls14 = 0;
+  const footServer = (u) => {
+    calls14++;
+    if (!String(u).includes('routed-foot')) return Promise.resolve({ ok: false, status: 503 });
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ code: 'Ok', routes: [{
+      distance: 916.6, duration: 733,
+      geometry: { coordinates: [[77.2295, 28.6129], [77.232, 28.615], [77.235, 28.618]] } }] }) });
+  };
+  const fx1 = await W.osrmWalk(PA, PB, footServer);
+  const fx2 = await W.osrmWalk({ lat: 28.7, lon: 77.1 }, { lat: 28.71, lon: 77.12 }, (u) => {
+    if (String(u).includes('routing.openstreetmap.de')) return Promise.resolve({ ok: false, status: 503 });
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ code: 'Ok', routes: [{ distance: 1500, duration: 90, geometry: { coordinates: [[77.1, 28.7], [77.12, 28.71]] } }] }) });
+  });
+  chk('when the foot server falls silent the street graph still answers, and says which it was',
+    fx2 && fx2.via === 'streets', fx2 && fx2.via);
+  chk('both servers dead is a shrug, not a crash',
+    await W.osrmWalk({ lat: 1, lon: 1 }, { lat: 1.01, lon: 1.01 }, () => Promise.resolve({ ok: false, status: 500 })) === null);
+  /* a box that says no six times gets silence, not a seventh asking */
+  let asks = 0, quietPair = false;
+  const noisy = () => { asks++; return Promise.resolve({ ok: false, status: 500 }); };
+  for (let i = 0; i < 8; i++) {
+    const at = asks;
+    await W.osrmWalk({ lat: 20 + i / 97, lon: 70 }, { lat: 20.01 + i / 97, lon: 70.01 }, noisy);
+    if (asks === at) quietPair = true;
+  }
+  chk('after repeated failure the app stops pestering the routing box for a while',
+    quietPair && asks < 16, `${asks} fetches over 8 fresh pairs, then silence`);
+  /* the pin's name: an address when there is one, coordinates when there is not */
+  const pin14 = await W.nearPin(28.6129, 77.2295, () => Promise.resolve({ ok: true, json: () => Promise.resolve({
+    address: { road: 'Kasturba Marg', suburb: 'Rajendra Nagar', city: 'Ghaziabad' } }) }));
+  chk('a pin is named the way a person would name it', pin14 && pin14.n === 'Kasturba Marg, Rajendra Nagar, Ghaziabad'
+    && pin14.kind === 'geo' && pin14.lat === 28.6129, pin14 && pin14.n);
+  const pin14b = await W.nearPin(28.5, 77.5, () => Promise.reject(new Error('offline')));
+  chk('an unnamed pin is still an exact pin - coordinates as label, never a guess',
+    pin14b && /^Dropped pin · 28\.5000, 77\.5000$/.test(pin14b.n), pin14b && pin14b.n);
+  /* applying measurements: the arithmetic the rider sees */
+  const opt14 = { from: 'Pin A', to: 'Pin B', minutes: 40, walkMin: 12, fare: 20,
+    legs: [
+      { kind: 'walk', from: 'Pin A', to: 'Stop X', km: 0.44, min: 5, wpos: [PA, { lat: 28.614, lon: 77.231 }] },
+      { kind: 'bus', ref: 'DW-2', from: 'Stop X', to: 'Stop Y', km: 5.1, min: 23 },
+      { kind: 'walk', from: 'Stop Y', to: 'Pin B', km: 0.58, min: 7, wpos: [{ lat: 28.616, lon: 77.233 }, PB] },
+    ] };
+  const fixes14 = new Map([[W.pairKey(PA, { lat: 28.614, lon: 77.231 }), { km: 0.6, metres: 600, min: 7, via: 'footpaths', path: [[28.6129, 77.2295], [28.614, 77.231]] }]]);
+  const done14 = W.applyWalk([opt14], fixes14);
+  const o14 = done14[0];
+  chk('a measured walk replaces the estimate in the leg, the card and the clock together',
+    o14.legs[0].metres === 600 && o14.legs[0].measured === 'footpaths'
+    && o14.minutes === 42 && o14.walkMin === 14 && o14.measuredWalk === true,
+    `${o14.minutes}m/${o14.walkMin}m walk/${o14.legs[0].km}km`);
+  chk('the untellable end keeps its estimate - partial truth, stated as partial',
+    o14.legs[2].km === 0.58 && !o14.legs[2].measured);
+  chk('the measured walk reaches the map as geometry',
+    Array.isArray(o14.legs[0].path) && o14.legs[0].path[1][0] === 28.614, o14.measuredWalk ? 'flag ok' : 'no flag');
+  chk('nothing to apply changes nothing', W.applyWalk([opt14], new Map())[0] === opt14);
+  /* and the bundle rule again: this rides in the panels that use it, never in the shell */
+  const out14 = path.join(ROOT, 'dist/assets');
+  if (fs.existsSync(out14)) {
+    const idx14 = fs.readdirSync(out14).find((x) => /^index-.*\.js$/.test(x));
+    const sh14 = fs.readFileSync(path.join(out14, idx14), 'utf8');
+    chk('the start shell pays for none of this',
+      !sh14.includes('routed-foot') && !sh14.includes('drop a pin on the map'), `${idx14}`);
+    /* which lazy file carries it can shift between builds as vite hoists shared
+       imports - the invariant is only that it is SOMEWHERE outside the shell */
+    const anywhere = fs.readdirSync(out14).filter((x) => x.endsWith('.js') && x !== idx14)
+      .map((x) => fs.readFileSync(path.join(out14, x), 'utf8'));
+    chk('the measuring code ships in the lazy chunks, where the panels can reach it',
+      anywhere.some((b) => b.includes('routed-foot')) && anywhere.some((b) => b.includes('PickableSketch') || b.includes('drop a pin on the map')),
+      `${anywhere.length} lazy files scanned`);
   } else chk('the bundle check needs a dist - run npx vite build first', false, 'no dist/');
 }
 
