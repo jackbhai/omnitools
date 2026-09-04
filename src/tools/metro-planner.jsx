@@ -9,6 +9,7 @@ import { planRoutes, searchStations, nearestStations, isStation, STATIONS, LINES
 import { busAtStation } from '../core/transit-link';
 import { trackOfMetro, stepsOf } from '../core/trip';
 import { TripKit } from './trip-ui.jsx';
+import { play as sound } from '../core/sfx.js';
 import { Card, Empty } from '../ui/kit';
 import { Icon } from '../ui/icons';
 
@@ -133,8 +134,8 @@ export function MetroPlanner() {
     if (n) setter(n.n);
   };
 
-  return (<><Picker label="From" value={from} onPick={(v) => { setFrom(v); setSel(0); }}
-      placeholder="Search station…" nearBtn onNear={() => useNear(setFrom)} /><div style={{ textAlign: 'center', margin: '-4px 0 4px' }}><button className="btn ghost sm" onClick={() => { const a = from; setFrom(to); setTo(a); setSel(0); }}>⇅ Swap</button></div><Picker label="To" value={to} onPick={(v) => { setTo(v); setSel(0); }}
+  return (<><Picker label="From" value={from} onPick={(v) => { sound('whoosh'); setFrom(v); setSel(0); }}
+      placeholder="Search station…" nearBtn onNear={() => useNear(setFrom)} /><div style={{ textAlign: 'center', margin: '-4px 0 4px' }}><button className="btn ghost sm" onClick={() => { const a = from; setFrom(to); setTo(a); setSel(0); }}>⇅ Swap</button></div><Picker label="To" value={to} onPick={(v) => { sound('whoosh'); setTo(v); setSel(0); }}
       placeholder="Search station…" nearBtn onNear={() => useNear(setTo)} /><div className="btnrow"><button className={`cat ${smart ? 'on' : ''}`} onClick={() => setSmart(!smart)}> Smart card</button><button className={`cat ${holiday ? 'on' : ''}`} onClick={() => setHoliday(!holiday)}><Icon n="sparkle" size={17} /> Sunday/holiday</button></div>
 
     {!routes && <Empty t={from === to ? 'Pick two different stations' : 'Pick both stations'} />}

@@ -459,11 +459,12 @@ the whole reason the map is "not visible" on the phone: it is not deployed.
 | trip model + turn-by-turn + get-off states (`no-signal → to-stop → at-board → riding → alight → done`) | `src/core/trip.js`, `src/core/trip-state.js` |
 | real notifications (service-worker channel, page-level fallback) | `src/core/alerts.js`, `public/sw.js` |
 | leave-at / arrive-by clock + timeline bar | `src/core/journey-clock.js`, wired in `src/tools/multimodal.jsx` |
+| six synthesised sounds (a train passing on search, bells on alerts) | `src/core/sfx.js`, wired in the three planners + `core/trip-state.js` |
 
 | gate | result |
 |---|---|
-| `npm run verify` | data PASS 24 · bus 78/0 · metro 69/0 · trip 103/0 · render 20 ✓ |
-| `python3 tests/qa_transit.py http://localhost:4173/` | 94 passed · 0 failed |
+| `npm run verify` | data PASS 24 · bus 78/0 · metro 69/0 · trip 131/0 · render 20 ✓ |
+| `python3 tests/qa_transit.py http://localhost:4173/` | 109 passed · 0 failed |
 | `npx vite build`, `debrand.py --check`, `deemoji.py` | clean |
 
 **To deploy (needs a GitHub token this sandbox does not have — verified four times, `$GH` is unset and there is no credential file):**

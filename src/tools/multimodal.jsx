@@ -11,7 +11,7 @@
  * Every number comes from the same verified datasets used by the single-mode
  * planners — nothing is estimated except walking time (5 km/h, stated).
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLoc } from '../core/geo';
 import * as M from '../core/metro-route';
 import * as B from '../core/bus-route';
@@ -20,7 +20,8 @@ import { StationBuses } from './metro-planner';
 import { Icon } from '../ui/icons';
 import { trackOfCombo, stepsOf } from '../core/trip';
 import { clockOf, departures, latestFor, fmt as clock } from '../core/journey-clock';
-import { TripKit } from './trip-ui.jsx';
+import { TripKit, SoundToggle } from './trip-ui.jsx';
+import { play as sound } from '../core/sfx.js';
 
 const WALK_KMH = 5;
 const walkMin = (km) => Math.round((km / WALK_KMH) * 60);
@@ -258,6 +259,19 @@ export function MultiModal() {
   const runMin = solve ? solve.departMin : asked;
   const clk = o ? clockOf(o, runMin) : null;
   const grid = o ? departures(o, runMin, 5, 15) : [];
+  /* Sound. A place being picked is a train going past; a journey being worked
+     out is the announcement chime; a plan the timetable cannot support is an air
+     brake. All six are synthesised in the browser (core/sfx.js) — no file is
+     fetched, so nothing here costs a byte of network or a line of offline cache. */
+  const sawJourney = useRef(false);
+  useEffect(() => {
+    const has = ranked.length > 0;
+    if (has && !sawJourney.current) sound('chime', { delay: 0.42 });
+    sawJourney.current = has;
+  }, [ranked.length]);
+  const refused = when === 'arrive' && arriveBy != null && !!o && !solve;
+  useEffect(() => { if (refused) sound('brake'); }, [refused]);
+
   const near = (setter, isMetro) => {
     const m = M.nearestStations(loc.lat, loc.lon, 1)[0];
     const bs = B.nearestStops(loc.lat, loc.lon, 1)[0];
@@ -266,9 +280,9 @@ export function MultiModal() {
     else if (bs) setter({ n: bs.n, kind: 'bus' });
   };
 
-  return (<><Picker label="From" value={from} onPick={(v) => { setFrom(v); setSel(0); }}
-      onNear={() => near(setFrom)} /><div style={{ textAlign: 'center', margin: '-4px 0 4px' }}><button className="btn ghost sm" onClick={() => { const a = from; setFrom(to); setTo(a); setSel(0); }}>⇅ Swap</button></div><Picker label="To" value={to} onPick={(v) => { setTo(v); setSel(0); }}
-      onNear={() => near(setTo)} />
+  return (<><Picker label="From" value={from} onPick={(v) => { sound('whoosh'); setFrom(v); setSel(0); }}
+      onNear={() => { sound('whoosh'); near(setFrom); }} /><div style={{ textAlign: 'center', margin: '-4px 0 4px' }}><button className="btn ghost sm" onClick={() => { sound('tick'); const a = from; setFrom(to); setTo(a); setSel(0); }}>⇅ Swap</button></div><Picker label="To" value={to} onPick={(v) => { sound('whoosh'); setTo(v); setSel(0); }}
+      onNear={() => { sound('whoosh'); near(setTo); }} />
 
     {(!from || !to) && <Empty t="Pick a start and destination — metro stations and bus stops both work" />}
     {options?.length === 0 && <Empty t="No metro or bus route found between these two points" />}
@@ -276,11 +290,11 @@ export function MultiModal() {
     {ranked.length > 0 && (<><div className="btnrow">
         {[['fast', ' Fastest'], ['cheap', ' Cheapest'], ['easy', ' Fewest changes']].map(([v, l]) => (
           <button key={v} className={`cat ${sort === v ? 'on' : ''}`}
-            onClick={() => { setSort(v); setSel(0); }}>{l}</button>))}
+            onClick={() => { sound('tick'); setSort(v); setSel(0); }}>{l}</button>))}
       </div><div className="btnrow trow">
         {[['now', 'Now'], ['leave', 'Leave at'], ['arrive', 'Arrive by']].map(([v, l]) => (
           <button key={v} className={`cat ${when === v ? 'on' : ''}`} onClick={() => {
-            setWhen(v); setSel(0);
+            sound('tick'); setWhen(v); setSel(0);
             if (v === 'leave' && leaveAt == null) setLeaveAt(Math.ceil((nowMin + 5) / 5) * 5 % 1440);
             if (v === 'arrive' && arriveBy == null) setArriveBy(Math.ceil((nowMin + 45) / 5) * 5 % 1440);
           }}>{l}</button>))}
@@ -290,7 +304,7 @@ export function MultiModal() {
           value={toHHMM(arriveBy)} onChange={(e) => setArriveBy(fromHHMM(e.target.value))} />}
       </div><div className="cats" style={{ marginTop: 10 }}>
         {ranked.map((x, i) => (
-          <button key={i} className={`cat ${sel === i ? 'on' : ''}`} onClick={() => setSel(i)}>
+          <button key={i} className={`cat ${sel === i ? 'on' : ''}`} onClick={() => { sound('tick'); setSel(i); }}>
             {x.icon} {x.minutes}m · ₹{x.fare}
           </button>))}
       </div><Card><div className="chead">{o.icon} {o.mode} · {from.n} → {to.n}</div><div className="g3"><div className="stat"><div className="v">{o.minutes}</div><div className="l">Minutes</div></div><div className="stat"><div className="v">₹{o.fare}</div><div className="l">Fare</div></div><div className="stat"><div className="v">{o.changes}</div><div className="l">Changes</div></div></div><div className="g2" style={{ marginTop: 8 }}><div className="stat"><div className="v">{o.km}</div><div className="l">km total</div></div><div className="stat"><div className="v">{o.walkMin}</div><div className="l">min walking</div></div></div></Card>
@@ -347,7 +361,7 @@ export function MultiModal() {
             <div className="btnrow tight">
               {grid.map((g) => (
                 <button key={g.departMin} className={`cat ${g.departMin === runMin ? 'on' : ''}`}
-                  onClick={() => { setWhen('leave'); setLeaveAt(g.departMin); }}>
+                  onClick={() => { sound(g.blocked ? 'brake' : 'tick'); setWhen('leave'); setLeaveAt(g.departMin); }}>
                   {clock(g.departMin)} → {clock(g.arriveMin)}
                   <span className="dim sm"> {g.minutes}m{g.blocked ? ', no service then' : ''}</span>
                 </button>))}
@@ -403,5 +417,9 @@ export function MultiModal() {
           Bus: {B.ROUTES.length} published directions over {B.STOPS.length} physical stops, DTC slabs.
           Walking estimated at {WALK_KMH} km/h. Nothing here is a live vehicle position: the wait is the
           published headway and the bus time is the published timetable.</span></div></>)}
+
+      {/* last, so a panel about journeys does not open with a settings row — but
+          always present, so the sounds can be silenced before anything is searched */}
+      <SoundToggle />
   </>);
 }

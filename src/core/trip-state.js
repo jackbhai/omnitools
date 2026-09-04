@@ -20,6 +20,7 @@
  */
 import { judge } from './trip.js';
 import { watchFix, pushNotification, vibrate, keepAwake, onVisible, notifPermission } from './alerts.js';
+import { play as sound } from './sfx.js';
 
 const KEY = 'omni:trip-v1';
 const TICK_MS = 4000;
@@ -71,6 +72,9 @@ export function tick() {
     const urgent = /get off|arrived|missed|passed/i.test(j.alert.title);
     pushAlert({ ...j.alert, urgent });
     vibrate(urgent ? [220, 80, 220, 80, 320] : [120, 60, 120]);
+    // a phone in a pocket shows nothing but it does make a noise: the urgent
+    // bells are the alert for people who are not looking at the screen
+    sound(urgent ? 'alight' : 'ding');
     pushNotification({ title: j.alert.title, body: j.alert.body, tag: 'omni-trip' })
       .then((via) => { state = { ...state, via: via === 'none' ? 'inapp' : via }; emit(); });
   }

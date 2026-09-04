@@ -27,6 +27,7 @@ import { planBus, searchStops, isStop, routesAt, nearestStops, refineFare,
 import { metroNearStop } from '../core/transit-link';
 import { trackOfBus, stepsOf } from '../core/trip';
 import { TripKit } from './trip-ui.jsx';
+import { play as sound } from '../core/sfx.js';
 import { Card, Empty } from '../ui/kit';
 import { Icon } from '../ui/icons';
 
@@ -165,13 +166,13 @@ export function BusPlanner() {
   }, [o]);
 
   return (<>
-    <StopPicker label="From" value={from} onPick={(v) => { setFrom(v); setSel(0); }}
+    <StopPicker label="From" value={from} onPick={(v) => { sound('whoosh'); setFrom(v); setSel(0); }}
       onNear={() => useNear(setFrom)} />
     <div style={{ textAlign: 'center', margin: '-4px 0 4px' }}>
       <button className="btn ghost sm" onClick={() => { const a = from; setFrom(to); setTo(a); setSel(0); }}>
         <Icon n="swap" size={15} /> Swap</button>
     </div>
-    <StopPicker label="To" value={to} onPick={(v) => { setTo(v); setSel(0); }}
+    <StopPicker label="To" value={to} onPick={(v) => { sound('whoosh'); setTo(v); setSel(0); }}
       onNear={() => useNear(setTo)} />
     <div className="btnrow">
       <button className={`cat ${!ac ? 'on' : ''}`} onClick={() => setAc(false)}>Non-AC</button>

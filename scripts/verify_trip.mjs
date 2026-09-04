@@ -19,6 +19,7 @@ import {
 } from '../src/core/trip.js';
 import { armTrip, getTripState, gateCheck, resumeTrip, subscribe, tick } from '../src/core/trip-state.js';
 import { clockOf, departures, latestFor, dateFor, fmt as cfmt, walkMin, METRO_KMPM, ACCESS_MIN, CHANGE_MIN } from '../src/core/journey-clock.js';
+import { SOUNDS, SOUND_NAMES, play as splay, setEnabled, enabled as sndEnabled, MASTER } from '../src/core/sfx.js';
 
 let pass = 0, fail = 0;
 const chk = (n, c, d = '') => { c ? pass++ : fail++; console.log(`  ${c ? 'PASS' : 'FAIL'}  ${n}${d ? '  — ' + d : ''}`); };
@@ -391,7 +392,174 @@ console.log('\n=== 8. the journey clock: wall times, from published data only ==
   }
 }
 
-console.log('\n=== 9. the map stays behind its button ===');
+console.log('\n=== 9. the sounds: synthesised, bounded, and honest about silence ===');
+{
+  const sfx = src('src/core/sfx.js');
+
+  const imports = [...sfx.matchAll(/^import[^'"]*['"]([^'"]+)['"]/gm)].map((m) => m[1]);
+  chk('the sound layer imports one thing: the settings object',
+    imports.length === 1 && imports[0] === './settings.js', imports.join(', ') || 'none');
+  const netty = ['fetch(', 'XMLHttpRequest', 'new Audio(', 'decodeAudioData', 'data:audio',
+    '.mp3', '.ogg', '.wav', '.m4a', 'http://', 'https://', 'caches.open'];
+  chk('and no sound is downloaded, streamed or cached',
+    netty.every((k) => !sfx.includes(k)), netty.filter((k) => sfx.includes(k)).join(', '));
+  chk('every recipe is a build function with a length and a repeat floor',
+    SOUND_NAMES.every((n) => {
+      const r = SOUNDS[n];
+      return typeof r.build === 'function' && r.label && r.when && r.dur > 0.02 && r.dur < 2.5
+        && r.minMs >= 40;
+    }), SOUND_NAMES.map((n) => `${n} ${SOUNDS[n].dur}s`).join(' · '));
+  chk('the UI only ever names a sound that exists', (() => {
+    const used = new Set();
+    for (const f of ['src/tools/multimodal.jsx', 'src/tools/trip-ui.jsx', 'src/tools/metro-planner.jsx',
+      'src/tools/bus-planner.jsx', 'src/core/trip-state.js']) {
+      for (const m of src(f).matchAll(/sound\(\s*'(?:([^']+)'|.*?\?\s*'([a-z]+)'\s*:\s*'([a-z]+)')/g)) {
+        [m[1], m[2], m[3]].forEach((x) => x && used.add(x));
+      }
+    }
+    return [...used].every((u) => SOUND_NAMES.includes(u)) && used.size >= 4;
+  })(), SOUND_NAMES.join(' | '));
+  const peaks = [...sfx.matchAll(/peak:\s*([0-9.]+)/g)].map((m) => +m[1]);
+  chk('no voice can clip, however fast the thumb moves',
+    peaks.length >= 8 && Math.max(...peaks) <= 0.4 && MASTER <= 0.6,
+    `${peaks.length} peaks, loudest ${Math.max(...peaks)}, master ${MASTER}`);
+  chk('a get-off alert may sound while the tab is hidden, a button press may not',
+    SOUNDS.alight.whileHidden === true && !SOUNDS.tick.whileHidden && !SOUNDS.whoosh.whileHidden);
+
+  /* Run the real play() against a host that records the graph. The shapes below
+     are what the recipes ask the browser to do; a recipe that builds nothing, or
+     builds it in the wrong order, fails here rather than in someone's ear. */
+  const rec = { log: [], started: [], stops: [], buffers: 0 };
+  const param = (owner, name) => ({
+    value: 0,
+    setValueAtTime(v, t) { rec.log.push([owner, name, 'set', v, t]); return this; },
+    linearRampToValueAtTime(v, t) { rec.log.push([owner, name, 'lin', v, t]); return this; },
+    exponentialRampToValueAtTime(v, t) { rec.log.push([owner, name, 'exp', v, t]); return this; },
+    cancelScheduledValues() { return this; },
+  });
+  let born = 0;
+  const node = (kind) => {
+    const id = `${kind}#${++born}`;
+    const o = { __id: id, connect(x) { return x || o; } };
+    return new Proxy(o, {
+      get(t, p) {
+        if (p in t) return t[p];
+        if (p === 'start') return (at) => rec.started.push([id, at]);
+        if (p === 'stop') return (at) => rec.stops.push([id, at]);
+        return param(id, String(p));
+      },
+      set(t, p, v) { t[p] = v; rec.log.push([id, String(p), 'set', v, 0]); return true; },
+    });
+  };
+  class Host {
+    constructor() {
+      this.sampleRate = 44100; this.state = 'running'; this.currentTime = 0;
+      this.destination = node('dest');
+    }
+    resume() { return Promise.resolve(); }
+    createBuffer(ch, n, r) { rec.buffers++; return { sampleRate: r, length: n, numberOfChannels: ch, getChannelData: () => new Float32Array(n) }; }
+    createOscillator() { return node('osc'); }
+    createBufferSource() { return node('bufsrc'); }
+    createGain() { return node('gain'); }
+    createBiquadFilter() { return node('biquad'); }
+    createStereoPanner() { return node('pan'); }
+    createDynamicsCompressor() { return node('comp'); }
+  }
+  const clock0 = performance.now();
+  let fakeNow = 1000;
+  globalThis.performance = { now: () => fakeNow };
+  globalThis.AudioContext = Host;
+
+  rec.log.length = 0; rec.started.length = 0; rec.stops.length = 0;
+  const whoosh = splay('whoosh');
+  const bps = rec.log.filter((l) => l[0].startsWith('biquad') && l[1] === 'frequency');
+  chk('the whoosh is one noise source through a swept band, three sources in all',
+    whoosh.ok === true && rec.started.length === 3 && bps.length === 3,
+    `${rec.started.length} sources · ${bps.length} filter events`);
+  chk('the sweep goes up to a passing train and back down',
+    Math.max(...bps.map((l) => l[3])) >= 1400 && bps[0][3] < 400 && bps[2][3] < 400,
+    bps.map((l) => `${l[2]} ${l[3]}Hz`).join(' → '));
+  const pans = rec.log.filter((l) => l[0].startsWith('pan'));
+  chk('and it crosses the head from left ear to right',
+    pans.length === 2 && pans[0][3] < -0.8 && pans[1][3] > 0.8,
+    pans.map((l) => l[3]).join(' → '));
+  const rumble = rec.log.find((l) => l[0].startsWith('osc') && l[1] === 'frequency' && l[2] === 'set');
+  chk('with the rails under it (a 50-ish Hz sine)', rumble && rumble[3] >= 40 && rumble[3] <= 70,
+    rumble ? `${rumble[3]} Hz` : 'none');
+  chk('nothing is left running: every source has a stop',
+    rec.stops.length === rec.started.length, `${rec.started.length} starts / ${rec.stops.length} stops`);
+
+  rec.log.length = 0; rec.started.length = 0;
+  const alight = splay('alight');
+  const bellStarts = rec.started.filter((s) => s[0].startsWith('osc')).map((s) => s[1]);
+  chk('the get-off alert is three bells and a thump, scheduled apart',
+    alight.ok === true && rec.started.length === 7 && new Set(bellStarts.map((x) => +x.toFixed(3))).size >= 4,
+    `${rec.started.length} sources · ${new Set(bellStarts.map((x) => +x.toFixed(3))).size} start times`);
+  const brk = (() => { fakeNow += 5000; rec.log.length = 0; const r = splay('brake');
+    return { r, type: rec.log.find((l) => l[1] === 'type') }; })();
+  chk('a refusal is a different sound, not the bell turned down',
+    brk.r.ok === true && brk.type && brk.type[3] === 'highpass', JSON.stringify(brk.type?.[3]));
+
+  const first = splay('tick');
+  const second = splay('tick');
+  chk('a fast thumb cannot machine-gun: the repeat floor refuses the second',
+    first.ok === true && second.ok === false && second.why === 'too soon', `${first.ok} / ${second.why}`);
+  fakeNow += 1000;
+  chk('one second later the same sound is allowed again', splay('tick').ok === true);
+
+  globalThis.document = { hidden: true };
+  fakeNow += 1000;
+  const hiddenTick = splay('tick');
+  fakeNow += 1000;
+  const hiddenAlight = splay('alight');
+  chk('a backgrounded tab stays quiet under your thumb', hiddenTick.ok === false
+    && hiddenTick.why === 'this tab is in the background', hiddenTick.why);
+  chk('but an alert still rings, because that is what it is for', hiddenAlight.ok === true);
+  delete globalThis.document;
+
+  chk('an unknown name answers in words instead of throwing',
+    splay('whooshh').why === 'no such sound');
+  setEnabled(false);
+  fakeNow += 1000;
+  const off = splay('chime');
+  chk('and turned off, every call says so rather than going silent',
+    sndEnabled() === false && off.ok === false && off.why === 'sounds are off', off.why);
+  setEnabled(true);
+  fakeNow += 1000;
+  chk('the toggle in a panel and the one in Settings are the same setting',
+    sndEnabled() === true && splay('chime').ok === true);
+
+  const wasOsc = Host.prototype.createOscillator;
+  Host.prototype.createOscillator = () => { throw new Error('device busy'); };
+  let threw = null;
+  let broken = { ok: true, why: '' };
+  fakeNow += 5000;
+  try { broken = splay('ding'); } catch (e) { threw = e; }
+  Host.prototype.createOscillator = wasOsc;
+  chk('a graph the browser refuses mid-flight is caught, not thrown at a component',
+    threw === null && broken.ok === false && /graph failed/.test(broken.why), broken.why);
+  fakeNow += 5000;
+  chk('and the panel recovers: the next press builds again', splay('ding').ok === true);
+
+  // A browser with no Web Audio at all is only provable from a clean module
+  // instance, since the live one has already made its context.
+  const savedAC = globalThis.AudioContext;
+  delete globalThis.AudioContext;
+  const fresh = await import('../src/core/sfx.js?no-web-audio');
+  const noAudio = fresh.play('tick');
+  const saidSupported = fresh.supported();
+  globalThis.AudioContext = savedAC;
+  chk('no Web Audio is said out loud, and support is reported honestly',
+    noAudio.ok === false && noAudio.why === 'this browser has no Web Audio'
+      && saidSupported === false, `${noAudio.why} · supported() said ${saidSupported}`);
+  chk('the six sounds are the whole vocabulary, so nothing can name a missing one',
+    fresh.SOUND_NAMES.length === 6 && SOUND_NAMES.every((n) => fresh.SOUNDS[n].label === SOUNDS[n].label),
+    fresh.SOUND_NAMES.join(' · '));
+  globalThis.performance = { now: () => clock0 };
+  delete globalThis.window;
+}
+
+console.log('\n=== 10. the map stays behind its button ===');
 {
   const files = ['src/tools/trip-ui.jsx', 'src/tools/trip-map.jsx', 'src/core/trip-state.js',
                  'src/core/trip.js', 'src/core/alerts.js', 'src/tools/transit-live.jsx',
@@ -474,7 +642,7 @@ console.log('\n=== 9. the map stays behind its button ===');
   }
 }
 
-console.log('\n=== 10. what actually ships ===');
+console.log('\n=== 11. what actually ships ===');
 {
   const dist = path.join(ROOT, 'dist/assets');
   if (!fs.existsSync(dist)) console.log('  SKIP  dist not built yet — run npx vite build first');
@@ -488,6 +656,23 @@ console.log('\n=== 10. what actually ships ===');
     chk('the map component is its own chunk', files.some((f) => /^trip-map-.*\.js$/.test(f)));
     const hub = files.find((f) => /^metro-planner-.*\.js$/.test(f)) || files.find((f) => /bus-route|travel-hubs/.test(f));
     chk('the transit chunk carries the trip engine', fs.readFileSync(path.join(dist, hub)).includes('at-board'), hub);
+    /* A string a user would never see: sfx.js answers in words when Web Audio is
+       missing, so this marker is the module itself and not prose about it (the
+       Settings page describes the sounds and legitimately lives in the shell). */
+    const MARK = 'this browser has no Web Audio';
+    const carriers = files.filter((f) => f.endsWith('.js')
+      && fs.readFileSync(path.join(dist, f)).includes(MARK));
+    chk('the sound layer ships in exactly one chunk, the lazy one',
+      carriers.length === 1 && carriers[0] !== shell, carriers.join(', ') || 'none');
+    chk('the start shell never builds an audio graph of its own',
+      !buf.includes(MARK) && !buf.includes('no such sound'),
+      `${shell} ${(buf.length / 1024).toFixed(0)} kB`);
+    chk('the switch ships in the same chunk as the sounds it switches',
+      carriers.length === 1 && fs.readFileSync(path.join(dist, carriers[0])).includes('Sounds off'),
+      carriers[0]);
+    chk('the Settings page can describe them without importing them',
+      src('src/tools/settings.jsx').includes("setSetting('sfx'")
+        && !src('src/tools/settings.jsx').includes('sfx.js'), 'a checkbox, no import');
   }
 }
 

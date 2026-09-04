@@ -89,9 +89,9 @@ are real long sections between IAS stations — they are published, not invented
 | `verify:data` → `scripts/verify_transit_data.py` | structural invariants, timetable sanity, `rv` symmetry, stop-index integrity, and length re-measured against an independent router (median built/OSRM ratio 1.001) | PASS 24 · WARN 0 · FAIL 0 |
 | `verify:bus` → `scripts/verify_bus.mjs` | 78 assertions on the bus core, generated from the data itself (fare slabs, `nextAtStop`, `planBus`, `statusNow`, `headwayNow`) | 78 passed · 0 failed |
 | `verify:metro` → `scripts/verify_metro.mjs` | 69 assertions on the metro core incl. the bus↔metro join, last-train estimates, transfers, the 2025 fare chart | 69 passed · 0 failed |
-| `verify:trip` → `scripts/verify_trip.mjs` | the journey model (geometry, every `judge` state, the dense-stop regressions, step wording) plus assertions on what actually ships: leaflet and the bus JSON must stay out of the start shell, and every tile source must be key-free; §8 clocks three real pairs and asserts the timeline sums to the headline | 103 passed · 0 failed |
+| `verify:trip` → `scripts/verify_trip.mjs` | the journey model (geometry, every `judge` state, the dense-stop regressions, step wording) plus assertions on what actually ships: leaflet and the bus JSON must stay out of the start shell, and every tile source must be key-free; §8 clocks three real pairs and asserts the timeline sums to the headline | 131 passed · 0 failed |
 | `verify:render` → `vite build --ssr scripts/ssr-smoke.jsx` + `node .ssr-smoke/ssr-smoke.js` | all 10 travel components render to HTML, and 10 real journeys/stops answer from the shipped data | 20 passed · 0 failed |
-| `python3 tests/qa_transit.py <url>` | a real chromium: shell paints through the lazy boundary, both hubs, both planners, the combined planner, the map behind its button on all three, a `set_geolocation` walk down a 71-stop route, resume after reload, console hygiene | 94 passed · 0 failed |
+| `python3 tests/qa_transit.py <url>` | a real chromium: shell paints through the lazy boundary, both hubs, both planners, the combined planner, the map behind its button on all three, a `set_geolocation` walk down a 71-stop route, resume after reload, console hygiene | 109 passed · 0 failed |
 | `python3 scripts/healthcheck.py all` | the rest of the app's network sources | 93/96 (3 unrelated third-party flakes) |
 
 Run the browser suite against `npx vite preview` (a built `dist`), never against
@@ -225,3 +225,30 @@ equals what the metro panel prints. `agrees` is the same test the UI can call at
 the earliest real arrival, not a fudge. The card prints one line saying that bus minutes are
 published, metro waits are headway-derived, walking is a flat 5 km/h, and that nothing in the
 panel is a live vehicle position.
+
+## 9. The sounds (`src/core/sfx.js`)
+
+Six of them, and every one is built from oscillators and a noise buffer inside the browser:
+**no audio file is downloaded, none is cached, and `caches.open` is never called**, so the
+offline payload and the service worker are untouched. `verify:trip` asserts that literally —
+the module contains no `fetch`, `new Audio`, `decodeAudioData`, data URI or URL at all, and
+it imports exactly one thing (`core/settings.js`), which is why it can stay in the lazy
+transit chunk: the built `index-*.js` carries no audio graph.
+
+| sound | what it means | what it is made of |
+|---|---|---|
+| `whoosh` | a place has been picked | noise through a band swept 240 → 1600 → 205 Hz, 52 → 34 Hz rail rumble, panned −0.95 → +0.95 |
+| `chime` | a journey has been worked out | C6 E6 G6 C7, 90 ms apart |
+| `ding` | an alert has really armed | C6 + G6 |
+| `alight` | **get off now** | three C6/E6 bells 260 ms apart plus a 66 Hz thump — the only sound allowed while the tab is hidden |
+| `brake` | the timetable cannot support this | noise through a highpass falling 2400 → 620 Hz, saw 240 → 70, 90 → 55 thump |
+| `tick` | a key was pressed | one 1180 → 900 Hz square, 45 ms |
+
+`play()` answers `{ ok, why }` and never throws: `sounds are off`, `this tab is in the
+background`, `too soon` (the per-sound repeat floor), `no such sound`, `this browser has no
+Web Audio`, `graph failed: …`. The last decision is printed under the panel's own switch, so
+silence always has a reason in words. Peaks are capped at 0.34 per voice behind a master of
+0.5 and a compressor at −12 dB; the browser suite renders the same graphs through an
+`OfflineAudioContext` and asserts peak 0.30 with **zero clipped samples**, 0.85 s of signal,
+different energy in the two ears, and 0 nodes built when the switch is off — off is silence,
+not quieter.

@@ -450,7 +450,138 @@ def main():
         check("no label in this panel is a blank or an undefined", "undefined" not in t5.lower()
               and "₹" in t5 and "NaN" not in t5, [l for l in t5.split("\n") if "undefined" in l.lower()][:1])
 
-        print("\n=== 9. console hygiene ===")
+
+        CAP = """
+(() => {
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  class Cap extends OAC {
+    constructor() {
+      super(2, 44100 * 4, 44100);
+      window.__cap = this;
+      window.__ctxCount = (window.__ctxCount || 0) + 1;
+    }
+  }
+  window.AudioContext = Cap;
+  window.webkitAudioContext = Cap;
+  window.__nodes = 0;
+  ['createOscillator', 'createGain', 'createBiquadFilter', 'createBufferSource',
+   'createStereoPanner', 'createBuffer', 'createDynamicsCompressor'].forEach((k) => {
+    const orig = OAC.prototype[k];
+    if (!orig) return;
+    OAC.prototype[k] = function (...a) { window.__nodes++; return orig.apply(this, a); };
+  });
+  window.__measure = async () => {
+    const b = await window.__cap.startRendering();
+    const R = [];
+    for (let ch = 0; ch < b.numberOfChannels; ch++) {
+      const d = b.getChannelData(ch);
+      let peak = 0, sq = 0, zc = 0, clipped = 0, first = -1, last = -1, prev = 0;
+      for (let i = 0; i < d.length; i++) {
+        const a = Math.abs(d[i]);
+        if (a > peak) peak = a;
+        if (a >= 0.999) clipped++;
+        sq += d[i] * d[i];
+        if (a > 0.004) { if (first < 0) first = i; last = i; }
+        if ((d[i] > 0) !== (prev > 0)) zc++;
+        prev = d[i];
+      }
+      const block = 4410, prof = [];
+      for (let s = 0; s + block <= d.length; s += block) {
+        let e = 0; for (let i = s; i < s + block; i++) e += Math.abs(d[i]);
+        prof.push(e / block);
+      }
+      R.push({ peak: +peak.toFixed(4), rms: +Math.sqrt(sq / d.length).toFixed(5),
+               len: +((last - first) / 44100).toFixed(3), zcr: zc, clipped: clipped, prof: prof });
+    }
+    return R;
+  };
+})();
+"""
+
+        print("\\n=== 9. the sounds: rendered samples, not promises ===")
+        # The app is handed an OfflineAudioContext in place of a live one, so what
+        # it schedules can be measured rather than trusted: peak, length, stereo
+        # spread, clipped samples, and whether "off" is silence or only quieter.
+        s = b.new_page(viewport={"width": 430, "height": 940})
+        s.add_init_script(CAP)
+        home(s)
+        open_tile(s, "Plan Journey")
+        pick_suggestion(s, "input >> nth=0", "Rajiv Chowk", "Rajiv Chowk")
+        pick_suggestion(s, "input >> nth=1", "Hauz Khas", "Hauz Khas")
+        s.wait_for_timeout(1400)
+        ctxs = s.evaluate("window.__ctxCount || 0")
+        check("picking a place really opens an audio context", ctxs >= 1, f"{ctxs} context(s)")
+        rr = s.evaluate("window.__measure()")
+        lft, rgt = rr[0], rr[1]
+        check("and the sound is audible", lft["peak"] > 0.02 and lft["rms"] > 0.002,
+              f"peak {lft['peak']} · rms {lft['rms']}")
+        check("it lasts as long as a train taking the platform", 0.3 <= lft["len"] <= 4.0,
+              f"{lft['len']} s of signal")
+        check("nothing clips, with two whooshes and a chime stacked on one clock",
+              lft["clipped"] == 0 and rgt["clipped"] == 0,
+              f"{lft['clipped']}/{rgt['clipped']} clipped samples")
+        check("it moves across the head, so it is not a mono beep",
+              abs(lft["rms"] - rgt["rms"]) > 0.0002, f"L {lft['rms']} vs R {rgt['rms']}")
+        prof = lft["prof"]
+        loud = [x for x in prof if x > 0.1 * max(prof)] if prof else []
+        check("it runs for at least four 100 ms blocks and fades, so it is not a click",
+              len(loud) >= 4 and prof and prof[-1] < prof[0],
+              f"{len(loud)} loud blocks of {len(prof)}, {prof[0]:.3f} down to {prof[-1]:.4f}")
+        check("and building it took a real graph, not a silent stub",
+              s.evaluate("window.__nodes") >= 12, f"{s.evaluate('window.__nodes')} nodes")
+        check("and it is bright enough to hear over a fan",
+              lft["zcr"] / max(0.1, lft["len"]) > 300,
+              f"{lft['zcr']} zero crossings in {lft['len']} s")
+
+        s2 = b.new_page(viewport={"width": 430, "height": 940})
+        s2.add_init_script(CAP + """
+(() => { try { localStorage.setItem('omni:settings', JSON.stringify({ sfx: false })); } catch (e) {} })();""")
+        home(s2)
+        open_tile(s2, "Plan Journey")
+        pick_suggestion(s2, "input >> nth=0", "Rajiv Chowk", "Rajiv Chowk")
+        s2.wait_for_timeout(1200)
+        check("turned off, not one audio node is built",
+              s2.evaluate("window.__ctxCount || 0") == 0,
+              f"{s2.evaluate('window.__ctxCount || 0')} contexts")
+        check("and not one node is built either, so it is off and not merely quiet",
+              s2.evaluate("window.__nodes || 0") == 0, f"{s2.evaluate('window.__nodes || 0')} nodes")
+
+        s3 = b.new_page(viewport={"width": 430, "height": 940})
+        s3.add_init_script(CAP)
+        home(s3)
+        open_tile(s3, "Plan Journey")
+        pick_suggestion(s3, "input >> nth=0", "Rajiv Chowk", "Rajiv Chowk")
+        pick_suggestion(s3, "input >> nth=1", "Hauz Khas", "Hauz Khas")
+        s3.wait_for_timeout(1400)
+        check("the panel that makes the sound carries the switch",
+              s3.locator("button:has-text('Sounds on')").count() >= 1)
+        s3.locator("button:has-text('Sounds on')").first.click(timeout=8000)
+        s3.wait_for_timeout(700)
+        t3 = s3.locator("body").inner_text()
+        check("one press turns them off and says what that means",
+              "Sounds off" in t3 and "nothing plays, nothing is fetched" in t3.lower(),
+              [x for x in t3.split("\\n") if "Sounds" in x][:2])
+        check("the choice is remembered, not just painted",
+              '"sfx": false' in (s3.evaluate("localStorage.getItem('omni:settings')") or "")
+              or '"sfx":false' in (s3.evaluate("localStorage.getItem('omni:settings')") or ""),
+              s3.evaluate("localStorage.getItem('omni:settings')"))
+        home(s3)
+        open_tile(s3, "Plan Journey")
+        s3.wait_for_timeout(1000)
+        check("and after coming back the panel is still quiet, before anything is searched",
+              s3.locator("button:has-text('Sounds off')").count() >= 1)
+        s3.locator("button:has-text('Sounds off')").first.click(timeout=8000)
+        s3.wait_for_timeout(900)
+        t4 = s3.locator("body").inner_text()
+        check("turning them on plays a bell you can hear, and names it",
+              "Sounds on" in t4 and "last:" in t4.lower()
+              and s3.evaluate("window.__ctxCount || 0") >= 1,
+              [x for x in t4.split("\\n") if "last:" in x.lower()][:1])
+        for _p in (s, s2, s3):
+          try: _p.close()
+          except Exception: pass
+
+        print("\n=== 10. console hygiene ===")
         quiet = ("favicon", "geolocation", "net::ERR", "Failed to load resource",
                  "Permission", "WebSocket", "vite")
         noise = [e for e in errs if not any(k in e for k in quiet)]

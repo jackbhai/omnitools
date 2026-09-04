@@ -19,6 +19,7 @@ import React, { Suspense, lazy, useEffect, useRef, useState, useSyncExternalStor
 import { createPortal } from 'react-dom';
 import { Icon } from '../ui/icons';
 import { subscribe, getTripState, armTrip, stopTrip, enableNotifications, gateCheck } from '../core/trip-state';
+import { play as sound, setEnabled, enabled as soundOn, soundLog, SOUNDS, supported as soundSupported } from '../core/sfx.js';
 
 const TripMap = lazy(() => import('./trip-map.jsx'));
 
@@ -85,6 +86,37 @@ export function StepList({ steps, active = -1, onPick }) {
     </div>);
 }
 
+/* ------------------------------------------------------------------ sound */
+/**
+ * The one place the sounds can be turned off, sitting in the panel that makes
+ * them. Switching them on plays a bell so the choice can be heard before it is
+ * trusted; switching them off says so in words. `how it knows` prints the last
+ * decision, because silence with no reason is indistinguishable from a bug.
+ */
+export function SoundToggle({ note = '' }) {
+  const [on, set] = useState(() => soundOn());
+  const [log, setLog] = useState(() => soundLog());
+  useEffect(() => {
+    let live = true;
+    const id = setInterval(() => { if (live) { set(soundOn()); setLog(soundLog()); } }, 1200);
+    return () => { live = false; clearInterval(id); };
+  }, []);
+  const flip = () => { const v = !on; setEnabled(v); set(v); setLog(soundLog()); if (v) sound('ding'); };
+  if (!soundSupported()) {
+    return <div className="dim sm">Sound: this browser has no Web Audio, so nothing plays and nothing is fetched.</div>;
+  }
+  const last = log[log.length - 1];
+  return (
+    <div className="sndrow">
+      <button className={`cat ${on ? 'on' : ''}`} onClick={flip}
+        title={`Turn ${on ? 'off' : 'on'} the small sounds in this tool — each one is generated in your browser, no file is downloaded`}>
+        {on ? 'Sounds on' : 'Sounds off'}
+      </button>
+      <span className="dim sm">{on && last ? `last: ${SOUNDS[last.name]?.label || last.name}${last.ok ? '' : ' — ' + last.why}`
+        : on ? 'silent until you tap something' : 'nothing plays, nothing is fetched'}{note}</span>
+    </div>);
+}
+
 /* -------------------------------------------------------------- arm / stop */
 export function ArmButton({ track, source = '', boardMin = null, label = 'Get-off alert' }) {
   const t = useTrip();
@@ -98,7 +130,8 @@ export function ArmButton({ track, source = '', boardMin = null, label = 'Get-of
     // bar on screen is the promise, the notification is the upgrade on top
     const a = armTrip(track, { boardMin, source });
     setBusy(false);
-    if (!a.ok) { setWhy(a.why); return; }
+    if (!a.ok) { sound('brake'); setWhy(a.why); return; }
+    sound('ding');       // the bell means the watch really started
     const gate = gateCheck(track, t.fix ? { lat: t.fix.lat, lon: t.fix.lon, accuracy: t.fix.accuracy } : null);
     if (gate?.why) setWhy(gate.why);
     if (t.perm !== 'granted') {
@@ -108,7 +141,7 @@ export function ArmButton({ track, source = '', boardMin = null, label = 'Get-of
   };
 
   if (mine) {
-    return <button className="btn ghost sm" onClick={() => stopTrip()}><Icon n="x" size={14} /> Stop alert</button>;
+    return <button className="btn ghost sm" onClick={() => { sound('tick'); stopTrip(); }}><Icon n="x" size={14} /> Stop alert</button>;
   }
   return (
     <span className="armwrap">

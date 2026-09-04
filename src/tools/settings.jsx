@@ -325,6 +325,10 @@ export function Settings() {
               <span>Auto Radio - Keep queue topped up so playback never ends (Music player)</span>
             </label>
             <label className="chk">
+              <input type="checkbox" checked={settings.sfx} onChange={e => { const s = setSetting('sfx', e.target.checked); setSettingsState(s); }} />
+              <span>Travel Sounds - A train going past when you pick a place, a bell when a get-off alert arms, three bells when it fires. Synthesised in the browser (no audio file is downloaded, nothing is cached); each travel panel also has its own toggle</span>
+            </label>
+            <label className="chk">
               <input type="checkbox" checked={settings.useBuiltin} onChange={e => { const s = setSetting('useBuiltin', e.target.checked); setSettingsState(s); }} />
               <span>Use Built-in Proxy - Fall back to bundled relay (omni-proxy.omni-jackbhai.workers.dev) - 0.06-0.1s warm vs 6.9s public</span>
             </label>
@@ -439,7 +443,7 @@ export function Settings() {
         </Card>
       </Card>
 
-      <div className="src"><span className="dot" /><span>Settings v1.0 - PWA App-like + Themes 7 + Custom Theme Maker + Live Check System - PWA: standalone display, SW network-first shell cache-first hashed assets, offline ready, install prompt, cache management - Themes: dark default AMOLED black + light + amoled pure black + ocean + forest + sunset + midnight purple + custom maker with color pickers for --bg --s1 --s2 --s3 --line --green --cyan --fg etc live preview save to localStorage - Features: proxy settings autoRadio useBuiltin - Live Check: button checks all features health % working per feature/category overall % with live logs timestamp type real-time progress - Professional settings page - No fake data - Verified</span></div>
+      <div className="src"><span className="dot" /><span>Settings v1.0 - PWA App-like + Themes 7 + Custom Theme Maker + Live Check System - PWA: standalone display, SW network-first shell cache-first hashed assets, offline ready, install prompt, cache management - Themes: dark default AMOLED black + light + amoled pure black + ocean + forest + sunset + midnight purple + custom maker with color pickers for --bg --s1 --s2 --s3 --line --green --cyan --fg etc live preview save to localStorage - Features: proxy settings autoRadio useBuiltin sfx (travel sounds, synthesised locally) - Live Check: button checks all features health % working per feature/category overall % with live logs timestamp type real-time progress - Professional settings page - No fake data - Verified</span></div>
     </>
   );
 }
