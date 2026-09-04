@@ -8,7 +8,7 @@
  *   - hashed assets (immutable) -> cache first (safe: filename changes per build)
  *   - everything cross-origin   -> never touched
  */
-const V = 'omni-v5';
+const V = 'omni-v6';
 const MED = 'omni-med-v1';        // medicine shards, cached only once used
 
 /* The medicine index is 253,802 brands across 752 shards (24 MB). Precaching

@@ -43,17 +43,49 @@ if ('serviceWorker' in navigator) {
     try {
       const reg = await navigator.serviceWorker.register(
         import.meta.env.BASE_URL + 'sw.js', { updateViaCache: 'none' });
+      /* A new build used to reload the page the moment its worker installed —
+         mid-song, mid-scroll, no warning. It now waits on a one-line prompt
+         and only hands over once the user taps it. */
+      let bar = null, handing = false;
+      const ask = () => {
+        if (bar) return;
+        bar = document.createElement('div');
+        bar.setAttribute('role', 'status');
+        bar.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);'
+          + 'z-index:2147483000;display:flex;gap:10px;align-items:center;'
+          + 'background:#101413;border:1px solid rgba(0,255,156,.35);border-radius:12px;'
+          + 'padding:8px 12px;color:#E8FFF4;font:13px/1.2 "DM Sans",system-ui,sans-serif;'
+          + 'box-shadow:0 6px 24px rgba(0,0,0,.5)';
+        const msg = document.createElement('span');
+        msg.textContent = 'New version ready';
+        const btn = document.createElement('button');
+        btn.textContent = 'Reload';
+        btn.style.cssText = 'background:#00FF9C;color:#000;border:0;border-radius:8px;'
+          + 'padding:6px 12px;font-weight:700;font-size:13px;cursor:pointer';
+        btn.onclick = () => {
+          if (!reg.waiting) { location.reload(); return; }
+          handing = true;
+          reg.waiting.postMessage('skip-waiting');
+        };
+        bar.append(msg, btn);
+        document.body.appendChild(bar);
+      };
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        // Only after we asked for the handover; the first claim on install
+        // must not bounce anyone anywhere.
+        if (handing) location.reload();
+      });
+      const check = () => reg.update().catch(() => {});
       reg.addEventListener('updatefound', () => {
         const sw = reg.installing;
         sw?.addEventListener('statechange', () => {
-          // A new build is ready and an old worker is in control -> take over now.
-          if (sw.state === 'installed' && navigator.serviceWorker.controller) {
-            sw.postMessage('skip-waiting');
-            location.reload();
-          }
+          if (sw.state === 'installed' && navigator.serviceWorker.controller) ask();
         });
       });
-      reg.update();
+      if (reg.waiting) ask();
+      // A tab left open for days picks up deploys the moment it gets focus.
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+      check();
     } catch {}
   });
 }
