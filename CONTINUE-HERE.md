@@ -459,12 +459,13 @@ the whole reason the map is "not visible" on the phone: it is not deployed.
 | trip model + turn-by-turn + get-off states (`no-signal → to-stop → at-board → riding → alight → done`) | `src/core/trip.js`, `src/core/trip-state.js` |
 | real notifications (service-worker channel, page-level fallback) | `src/core/alerts.js`, `public/sw.js` |
 | leave-at / arrive-by clock + timeline bar | `src/core/journey-clock.js`, wired in `src/tools/multimodal.jsx` |
-| six synthesised sounds (a train passing on search, bells on alerts) | `src/core/sfx.js`, wired in the three planners + `core/trip-state.js` |
+| seven synthesised sounds, app-wide (`.tile`/`.btn`/`.chip`/`.iconbtn`/Back answered by a delegated listener started in `App.jsx`; Settings has five test buttons; the header carries the switch on every screen) | `src/core/sfx.js` (`attach`), `src/App.jsx`, `src/tools/settings.jsx`, the three planners, `core/trip-state.js` |
+| one graph, both modes: Plan Journey searches buses and the metro together, so a mixed journey is found rather than guessed | `src/core/combo-route.js` (5,239 nodes - 88,344 edges - 7 exact searches - 117-830 ms) |
 
 | gate | result |
 |---|---|
-| `npm run verify` | data PASS 24 · bus 78/0 · metro 69/0 · trip 131/0 · render 20 ✓ |
-| `python3 tests/qa_transit.py http://localhost:4173/` | 109 passed · 0 failed |
+| `npm run verify` | data PASS 24 · bus 78/0 · metro 69/0 · trip 161/0 · render 20 ✓ |
+| `python3 tests/qa_transit.py http://localhost:4173/` | 137 passed · 0 failed (12 sections; §10 app-wide sound, §11 the combined search) |
 | `npx vite build`, `debrand.py --check`, `deemoji.py` | clean |
 
 **To deploy (needs a GitHub token this sandbox does not have — verified four times, `$GH` is unset and there is no credential file):**

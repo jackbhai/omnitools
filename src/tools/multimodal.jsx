@@ -20,6 +20,7 @@ import { StationBuses } from './metro-planner';
 import { Icon } from '../ui/icons';
 import { trackOfCombo, stepsOf } from '../core/trip';
 import { clockOf, departures, latestFor, fmt as clock } from '../core/journey-clock';
+import * as CR from '../core/combo-route';
 import { TripKit, SoundToggle } from './trip-ui.jsx';
 import { play as sound } from '../core/sfx.js';
 
@@ -63,7 +64,7 @@ const coordOf = (p) => {
 function TimingNote({ o }) {
   const d = o?.detail;
   if (!d) return null;
-  const metro = o.mode === 'Metro' || o.mode === 'Bus + Metro';
+  const metro = (o?.legs || []).some((l) => l.kind === 'metro');
   const lastGone = metro && d.canMakeIt === false;
   const tight = metro && d.lastTrainLeftIn != null && d.lastTrainLeftIn >= 0 && d.lastTrainLeftIn < 30;
   const busStopped = !metro && d.running === false;
@@ -72,9 +73,10 @@ function TimingNote({ o }) {
       <div className="chead"><Icon n="clock" size={16} /> This option right now</div>
       <div className="dim sm">
         {metro
-          ? <>Trains on the {d.legs?.[0]?.line} run every {d.wait?.[0] ? `${d.wait[0].lo}-${d.wait[0].hi}` : '—'} min{' '}
-              {d.wait?.[0]?.peak ? 'at this hour (peak)' : 'at this hour'}, so expect to wait about {d.nextIn} min —
-              about {d.minutesWithWait} min for the trip including that wait.</>
+          ? <>Trains on the {d.legs?.[0]?.line || 'line'} run every {d.wait?.[0] ? `${d.wait[0].lo}-${d.wait[0].hi}` : '—'} min{' '}
+              {d.wait?.[0]?.peak ? 'at this hour (peak)' : 'at this hour'}, so expect to wait about {d.nextIn} min at the
+              platform — about {d.minutesWithWait} min for the rail part of this journey, including that wait.
+              {o.legs.some((l) => l.kind === 'bus') ? 'The bus legs are timed by their published departures below.' : ''}</>
           : <>Distance measured along the route each bus drives; {d.changes ? 'two tickets, one per bus.' : 'one ticket.'}</>}
       </div>
       {lastGone && <div className="note">The last train from {d.lastTrainAt} towards {d.lastTrainFrom} has already
@@ -86,116 +88,35 @@ function TimingNote({ o }) {
     </Card>);
 }
 
-function buildOptions(a, b, atMin = null) {
-  // `atMin` (minutes of day, IST) makes the metro planner answer for THAT hour:
-  // headways, the last train and whether the line is open at all. Nothing else
-  // changes — the same published data, read at a different minute.
+const MODE_ICON = {
+  Metro: <Icon n="metro" size={17} />,
+  Bus: <Icon n="bus" size={17} />,
+  'Metro + Bus': <><Icon n="metro" size={17} /><Icon n="bus" size={17} /></>,
+};
+
+/**
+ * The journeys worth showing, from one search over a graph that holds both
+ * modes (core/combo-route.js). `only` picks which sub-graph to search: 'all'
+ * lets a bus beat a metro and a metro beat a bus, 'mixed' demands both modes in
+ * one journey, 'metro' / 'bus' ask a single mode to prove itself.
+ *
+ * The array carries `meta` — how many journeys the search found, how many it
+ * dropped as slower AND dearer, how long it took — because the panel prints that
+ * instead of pretending the list was the whole world.
+ */
+function buildOptions(a, b, atMin = null, { ac = false, only = 'all' } = {}) {
   const pa = coordOf(a), pb = coordOf(b);
   if (!pa || !pb) return [];
-  const out = [];
-
-  /* ---------- metro only ---------- */
-  try {
-    const sA = M.nearestStations(pa.lat, pa.lon, 1)[0];
-    const sB = M.nearestStations(pb.lat, pb.lon, 1)[0];
-    if (sA && sB && sA.n !== sB.n && sA.km <= MAX_WALK_KM && sB.km <= MAX_WALK_KM) {
-      const r = M.planRoutes(sA.n, sB.n, atMin == null ? { k: 1 } : { k: 1, atMin })[0];
-      if (r) {
-        const w = walkMin(sA.km) + walkMin(sB.km);
-        out.push({
-          mode: 'Metro', icon: <><Icon n="metro" size={17} /></>,
-          minutes: r.minutes + w, fare: r.fare, changes: r.changes,
-          km: +(r.km + sA.km + sB.km).toFixed(2), walkMin: w,
-          legs: [
-            ...(sA.km > 0.05 ? [{ kind: 'walk', text: `Walk to ${sA.n}`, km: +sA.km.toFixed(2), min: walkMin(sA.km) }] : []),
-            ...r.legs.map((l) => ({ kind: 'metro', line: l.line, colour: l.colour,
-              from: l.from, to: l.to, stops: l.stops, count: l.count, km: l.km })),
-            ...(sB.km > 0.05 ? [{ kind: 'walk', text: `Walk to ${b.n}`, km: +sB.km.toFixed(2), min: walkMin(sB.km) }] : []),
-          ],
-          detail: r,
-        });
-      }
-    }
-  } catch { /* no metro option */ }
-
-  /* ---------- bus only ---------- */
-  try {
-    const sA = B.nearestStops(pa.lat, pa.lon, 1)[0];
-    const sB = B.nearestStops(pb.lat, pb.lon, 1)[0];
-    if (sA && sB && sA.n !== sB.n && sA.km <= MAX_WALK_KM && sB.km <= MAX_WALK_KM) {
-      const r = B.planBus(sA.n, sB.n)[0];
-      if (r) {
-        const w = walkMin(sA.km) + walkMin(sB.km);
-        out.push({
-          mode: 'Bus', icon: <><Icon n="bus" size={17} /></>,
-          minutes: r.minutes + w, fare: r.fare, changes: r.changes,
-          km: +(r.km + sA.km + sB.km).toFixed(2), walkMin: w,
-          legs: [
-            ...(sA.km > 0.05 ? [{ kind: 'walk', text: `Walk to ${sA.n}`, km: +sA.km.toFixed(2), min: walkMin(sA.km) }] : []),
-            ...r.legs.map((l) => ({ kind: 'bus', ref: l.ref, from: l.from, to: l.to,
-              count: l.stops, km: l.km })),
-            ...(sB.km > 0.05 ? [{ kind: 'walk', text: `Walk to ${b.n}`, km: +sB.km.toFixed(2), min: walkMin(sB.km) }] : []),
-          ],
-          detail: r,
-        });
-      }
-    }
-  } catch { /* no bus option */ }
-
-  /* ---------- bus feeder -> metro -> bus feeder ---------- */
-  try {
-    const mA = M.nearestStations(pa.lat, pa.lon, 3);
-    const mB = M.nearestStations(pb.lat, pb.lon, 3);
-    const startFar = mA[0] && mA[0].km > 0.8;
-    const endFar = mB[0] && mB[0].km > 0.8;
-    if ((startFar || endFar) && mA[0] && mB[0] && mA[0].n !== mB[0].n) {
-      const core = M.planRoutes(mA[0].n, mB[0].n, atMin == null ? { k: 1 } : { k: 1, atMin })[0];
-      if (core) {
-        const legs = [];
-        let mins = core.minutes, fare = core.fare, km = core.km, changes = core.changes;
-
-        // feeder bus at the start
-        if (startFar) {
-          const bs = B.nearestStops(pa.lat, pa.lon, 1)[0];
-          const bm = B.nearestStops(mA[0].lat, mA[0].lon, 1)[0];
-          if (bs && bm && bs.n !== bm.n && bs.km <= MAX_WALK_KM) {
-            try {
-              const f = B.planBus(bs.n, bm.n)[0];
-              if (f && f.changes === 0) {
-                legs.push({ kind: 'walk', text: `Walk to ${bs.n}`, km: +bs.km.toFixed(2), min: walkMin(bs.km) });
-                legs.push({ kind: 'bus', ref: f.legs[0].ref, from: f.legs[0].from, to: f.legs[0].to,
-                  count: f.legs[0].stops, km: f.legs[0].km, bus: f });
-                mins += f.minutes; fare += f.fare; km += f.km; changes += 1;
-              }
-            } catch {}
-          }
-        }
-        legs.push(...core.legs.map((l) => ({ kind: 'metro', line: l.line, colour: l.colour,
-          from: l.from, to: l.to, count: l.count, km: l.km })));
-
-        if (endFar) {
-          const bm = B.nearestStops(mB[0].lat, mB[0].lon, 1)[0];
-          const be = B.nearestStops(pb.lat, pb.lon, 1)[0];
-          if (bm && be && bm.n !== be.n && be.km <= MAX_WALK_KM) {
-            try {
-              const f = B.planBus(bm.n, be.n)[0];
-              if (f && f.changes === 0) {
-                legs.push({ kind: 'bus', ref: f.legs[0].ref, from: f.legs[0].from, to: f.legs[0].to,
-                  count: f.legs[0].stops, km: f.legs[0].km, bus: f });
-                mins += f.minutes; fare += f.fare; km += f.km; changes += 1;
-              }
-            } catch {}
-          }
-        }
-        if (legs.some((l) => l.kind === 'bus')) {
-          out.push({ mode: 'Bus + Metro', icon: <><Icon n="bus" size={17} /><Icon n="metro" size={17} /></>, minutes: mins, fare, changes,
-            km: +km.toFixed(2), walkMin: legs.filter((l) => l.kind === 'walk')
-              .reduce((s, l) => s + l.min, 0), legs, detail: core });
-        }
-      }
-    }
-  } catch { /* no combined option */ }
-
+  const r = CR.plan({ ...a, ...pa }, { ...b, ...pb }, { atMin, ac, only });
+  const out = (r.options || []).map((o) => ({
+    ...o,
+    mode: o.mix,
+    icon: MODE_ICON[o.mix] || MODE_ICON.Bus,
+    from: a.n,
+    to: b.n,
+  }));
+  out.meta = { tried: r.tried || 0, dropped: r.dropped || 0, pops: r.pops || 0,
+    graphSize: r.graphSize || null, note: r.note || null, ac, only };
   return out;
 }
 
@@ -224,7 +145,9 @@ export function MultiModal() {
   const { loc } = useLoc();
   const [from, setFrom] = useState(null);
   const [to, setTo] = useState(null);
-  const [sort, setSort] = useState('fast');
+  const [sort, setSort] = useState('best');          // best | fast | cheap | few
+  const [only, setOnly] = useState('all');            // all | mixed | metro | bus
+  const [ac, setAc] = useState(false);                // price the bus rides as AC
   const [sel, setSel] = useState(0);
   /* When. 'now' is what the other tools answer; 'leave at' and 'arrive by' are
      what a person actually has to decide. Both are answered from the same
@@ -239,16 +162,18 @@ export function MultiModal() {
 
   const options = useMemo(() => {
     if (!from || !to || from.n === to.n) return null;
-    const o = buildOptions(from, to, when === 'now' ? null : asked);
+    const o = buildOptions(from, to, when === 'now' ? null : asked, { ac, only });
     return o.length ? o : [];
-  }, [from, to, when, asked]);
+  }, [from, to, when, asked, ac, only]);
 
   const ranked = useMemo(() => {
     if (!options?.length) return [];
     const c = [...options];
     if (sort === 'cheap') c.sort((a, b) => a.fare - b.fare || a.minutes - b.minutes);
-    else if (sort === 'easy') c.sort((a, b) => a.changes - b.changes || a.minutes - b.minutes);
-    else c.sort((a, b) => a.minutes - b.minutes || a.fare - b.fare);
+    else if (sort === 'few') c.sort((a, b) => a.changes - b.changes || a.minutes - b.minutes);
+    else if (sort === 'fast') c.sort((a, b) => a.minutes - b.minutes || a.fare - b.fare);
+    else c.sort((a, b) => (a.value ?? a.minutes + a.fare / CR.VOT_RPM)
+      - (b.value ?? b.minutes + b.fare / CR.VOT_RPM));
     return c;
   }, [options, sort]);
 
@@ -285,12 +210,25 @@ export function MultiModal() {
       onNear={() => { sound('whoosh'); near(setTo); }} />
 
     {(!from || !to) && <Empty t="Pick a start and destination — metro stations and bus stops both work" />}
-    {options?.length === 0 && <Empty t="No metro or bus route found between these two points" />}
-
-    {ranked.length > 0 && (<><div className="btnrow">
-        {[['fast', ' Fastest'], ['cheap', ' Cheapest'], ['easy', ' Fewest changes']].map(([v, l]) => (
+    {/* The questions stay on screen even when one of them has no answer: a filter
+        that empties the panel must still be changeable, or the traveller is stuck
+        in the empty result and has to start the whole search again. */}
+    {options && (<><div className="btnrow">
+        {[['best', ' Best overall'], ['fast', ' Fastest'], ['cheap', ' Cheapest'], ['few', ' Fewest changes']].map(([v, l]) => (
           <button key={v} className={`cat ${sort === v ? 'on' : ''}`}
-            onClick={() => { sound('tick'); setSort(v); setSel(0); }}>{l}</button>))}
+            onClick={() => { sound('tick'); setSort(v); setSel(0); }}
+            title={v === 'best'
+              ? `Minutes, plus ₹${CR.VOT_RPM} for every minute saved — the trade-off the search ranks by`
+              : v === 'few' ? 'Fewest vehicle changes, then the shortest ride' : undefined}>{l}</button>))}
+      </div><div className="btnrow">
+        {/* one search over both modes; these say what that search may use. 'Both' is
+            the honest default: a bus is allowed to win, and so is the metro. */}
+        {[['all', 'Both, whichever wins'], ['mixed', 'Metro + bus, both'], ['metro', 'Metro only'], ['bus', 'Bus only']].map(([v, l]) => (
+          <button key={v} className={`cat ${only === v ? 'on' : ''}`}
+            onClick={() => { sound('tick'); setOnly(v); setSel(0); }}
+            title={v === 'mixed' ? 'Only journeys that use a bus and the metro in the same trip' : undefined}>{l}</button>))}
+        <button className={`cat ${ac ? 'on' : ''}`} onClick={() => { sound('tick'); setAc(!ac); setSel(0); }}
+          title="Prices every bus ride on the DTC AC slab instead of the ordinary one">AC bus</button>
       </div><div className="btnrow trow">
         {[['now', 'Now'], ['leave', 'Leave at'], ['arrive', 'Arrive by']].map(([v, l]) => (
           <button key={v} className={`cat ${when === v ? 'on' : ''}`} onClick={() => {
@@ -302,7 +240,14 @@ export function MultiModal() {
           value={toHHMM(leaveAt)} onChange={(e) => setLeaveAt(fromHHMM(e.target.value))} />}
         {when === 'arrive' && <input className="tinp" type="time" aria-label="Arrival time"
           value={toHHMM(arriveBy)} onChange={(e) => setArriveBy(fromHHMM(e.target.value))} />}
-      </div><div className="cats" style={{ marginTop: 10 }}>
+      </div></>)}
+
+    {options?.length === 0 && (
+      <Empty t={only === 'mixed'
+        ? 'In this data no journey needs both a bus and the metro here — the metro-only and bus-only answers are under Both, whichever wins'
+        : options?.meta?.note || 'No metro or bus route found between these two points'} />)}
+
+    {ranked.length > 0 && (<><div className="cats" style={{ marginTop: 10 }}>
         {ranked.map((x, i) => (
           <button key={i} className={`cat ${sel === i ? 'on' : ''}`} onClick={() => { sound('tick'); setSel(i); }}>
             {x.icon} {x.minutes}m · ₹{x.fare}
@@ -416,7 +361,14 @@ export function MultiModal() {
           Metro: {M.STATIONS.length} stations on {M.LINES.length} line records, DMRC slabs and published headways.
           Bus: {B.ROUTES.length} published directions over {B.STOPS.length} physical stops, DTC slabs.
           Walking estimated at {WALK_KMH} km/h. Nothing here is a live vehicle position: the wait is the
-          published headway and the bus time is the published timetable.</span></div></>)}
+          published headway and the bus time is the published timetable.{options?.meta && <>
+          {' '}One search over {(options.meta.graphSize?.bus || 0) + (options.meta.graphSize?.metro || 0)
+            + (options.meta.graphSize?.walk || 0) || 'the published stops'} published connections found{' '}
+          {options.meta.tried} usable journey{options.meta.tried === 1 ? '' : 's'} and set aside{' '}
+          {options.meta.dropped} that {options.meta.dropped === 1 ? 'was' : 'were'} both slower and dearer —{' '}
+          {options.meta.only === 'all' ? 'metro and bus searched together'
+            : options.meta.only === 'mixed' ? 'only journeys using both modes'
+            : `only ${options.meta.only}`}, {options.meta.ac ? 'AC' : 'ordinary'} bus fares.</>}</span></div></>)}
 
       {/* last, so a panel about journeys does not open with a settings row — but
           always present, so the sounds can be silenced before anything is searched */}

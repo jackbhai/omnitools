@@ -5,6 +5,10 @@ import { Music } from './tools/music2';
 import * as T from './tools/transit';
 import * as C from './tools/convert';
 import { LocProvider } from './core/geo';
+/* Sound effects belong to the app, not to one tool: the gesture layer is started
+   here, in the shell, so a tap on any button in any tool answers. It imports no
+   data file and no audio file — every sound is synthesised in the browser. */
+import { attach as sfxAttach, enabled as sfxEnabled, setEnabled as sfxSet } from './core/sfx';
 import { PlayerProvider, usePlayer } from './core/player';
 import { MiniPlayer, FullPlayer } from './ui/PlayerUI';
 import { Downloader } from './tools/downloader';
@@ -183,6 +187,9 @@ export default function App() {
   const [cat, setCat] = useState('All');
   const [q, setQ] = useState('');
   const [showStatus, setShowStatus] = useState(false);
+  const [snd, setSnd] = useState(() => sfxEnabled());
+
+  useEffect(() => sfxAttach(), []);
   const [fav, setFav] = useState(() => {
     try { return JSON.parse(localStorage.getItem('omni:fav') || '[]'); } catch { return []; }
   });
@@ -226,6 +233,14 @@ export default function App() {
             <Icon n={fav.includes(tool.id) ? 'staron' : 'star'} size={18}
               style={{ color: fav.includes(tool.id) ? 'var(--green)' : '' }} />
           </button>)}
+        <button className="iconbtn" aria-label={snd ? 'Sound effects on' : 'Sound effects off'}
+          title={snd ? 'Sound effects are on for every tool - click to silence the app'
+            : 'Sound effects are off - click to let the app answer a tap'}
+          onClick={() => { const v = !snd; sfxSet(v); setSnd(v); }}>
+          <Icon n={snd ? 'volume' : 'volumeoff'} size={18} style={{ color: snd ? 'var(--green)' : '' }} />
+        </button>
+        <button className="iconbtn" aria-label="Settings" title="Settings - themes, PWA, sounds, proxy"
+          onClick={() => go('settings')}><Icon n="cog" size={18} /></button>
         <button className="iconbtn" aria-label="System status" onClick={() => setShowStatus((s) => !s)}>
           <span className="dot" />
         </button>

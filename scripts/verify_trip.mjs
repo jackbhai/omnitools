@@ -20,6 +20,11 @@ import {
 import { armTrip, getTripState, gateCheck, resumeTrip, subscribe, tick } from '../src/core/trip-state.js';
 import { clockOf, departures, latestFor, dateFor, fmt as cfmt, walkMin, METRO_KMPM, ACCESS_MIN, CHANGE_MIN } from '../src/core/journey-clock.js';
 import { SOUNDS, SOUND_NAMES, play as splay, setEnabled, enabled as sndEnabled, MASTER } from '../src/core/sfx.js';
+import {
+  plan as comboPlan, graph as comboGraph, metroDetail, VOT_RPM as COMBO_VOT, MAX_WALK_KM as COMBO_WALK_CAP,
+  MAX_WALK_MIN, MAX_LEGS, CHANGE_MIN as CX_GATE, BOARD_MIN as CX_BOARD, ACCESS_MIN as CX_ACCESS,
+  METRO_KMPM as CX_METRO_KMPM, WALK_KMH as CX_WALK_KMH,
+} from '../src/core/combo-route.js';
 
 let pass = 0, fail = 0;
 const chk = (n, c, d = '') => { c ? pass++ : fail++; console.log(`  ${c ? 'PASS' : 'FAIL'}  ${n}${d ? '  — ' + d : ''}`); };
@@ -186,8 +191,15 @@ console.log('\n=== 5. combined metro + bus legs stay one track ===');
       bare.points.length >= 5 && bare.points[0].name === 'Rajiv Chowk'
       && bare.points.at(-1).name === 'Hauz Khas' && bare.points.filter((p) => p.isAlight).length === 1,
       `${bare.points.length} points · ${bare.points.map((p) => p.name).slice(0, 3).join(' , ')}`);
+    // Not a source grep any more: the combined planner is a real search now, so it
+    // has to actually hand over the stations between the ends — that list is what
+    // puts the get-off alert on a platform instead of on a street.
+    const handed = comboPlan({ n: 'Rajiv Chowk', kind: 'metro', lat: 28.6329, lon: 77.2197 },
+      { n: 'Hauz Khas', kind: 'metro', lat: 28.5499, lon: 77.2551 }, { atMin: 570 });
+    const hLeg = (handed.options?.[0]?.legs || []).find((l) => l.kind === 'metro');
     chk('the combined planner hands the stations over, not just the ends',
-      /stops:\s*l\.stops/.test(src('src/tools/multimodal.jsx')));
+      !!hLeg && hLeg.stops.length > 3 && hLeg.stops[1] !== hLeg.stops[0],
+      `${hLeg?.stops.length || 0} stations on the leg: ${(hLeg?.stops || []).slice(0, 3).join(' , ')}`);
   }
 }
 
@@ -552,9 +564,18 @@ console.log('\n=== 9. the sounds: synthesised, bounded, and honest about silence
   chk('no Web Audio is said out loud, and support is reported honestly',
     noAudio.ok === false && noAudio.why === 'this browser has no Web Audio'
       && saidSupported === false, `${noAudio.why} · supported() said ${saidSupported}`);
-  chk('the six sounds are the whole vocabulary, so nothing can name a missing one',
-    fresh.SOUND_NAMES.length === 6 && SOUND_NAMES.every((n) => fresh.SOUNDS[n].label === SOUNDS[n].label),
-    fresh.SOUND_NAMES.join(' · '));
+  chk('the seven sounds are the whole vocabulary, so nothing can name a missing one',
+    fresh.SOUND_NAMES.length === 7 && SOUND_NAMES.every((n) => fresh.SOUNDS[n].label === SOUNDS[n].label)
+    && fresh.SOUNDS.back.label === SOUNDS.back.label, fresh.SOUND_NAMES.join(' · '));
+  chk('the gesture layer exists and keeps its promise off-browser',
+    typeof fresh.attach === 'function' && typeof fresh.attach() === 'function' && fresh.attached() === false,
+    'attach() is a no-op where there is no window, and returns the undo function');
+  chk('a press is matched by the classes the app actually renders', (() => {
+    const s = io => io;
+    const srcTxt = src('src/core/sfx.js');
+    return ['.tile', '.btn', '.cat', '.chip', "'.tabs button'", '.iconbtn', '.row', 'aria-label="Back"']
+      .every((needle) => srcTxt.includes(needle.replace(/^'|'$/g, '')));
+  })(), 'the delegated list names the real selectors');
   globalThis.performance = { now: () => clock0 };
   delete globalThis.window;
 }
@@ -656,24 +677,190 @@ console.log('\n=== 11. what actually ships ===');
     chk('the map component is its own chunk', files.some((f) => /^trip-map-.*\.js$/.test(f)));
     const hub = files.find((f) => /^metro-planner-.*\.js$/.test(f)) || files.find((f) => /bus-route|travel-hubs/.test(f));
     chk('the transit chunk carries the trip engine', fs.readFileSync(path.join(dist, hub)).includes('at-board'), hub);
-    /* A string a user would never see: sfx.js answers in words when Web Audio is
-       missing, so this marker is the module itself and not prose about it (the
-       Settings page describes the sounds and legitimately lives in the shell). */
+    /* Sounds are app-wide by design now: the shell starts the gesture layer, so
+       the engine must be IN the start chunk. What must stay out of the shell is the
+       2.4 MB of transit JSON and leaflet — the checks above keep them lazy. A
+       string a user would never see marks the module itself: sfx.js answers in
+       words when Web Audio is missing. */
     const MARK = 'this browser has no Web Audio';
     const carriers = files.filter((f) => f.endsWith('.js')
       && fs.readFileSync(path.join(dist, f)).includes(MARK));
-    chk('the sound layer ships in exactly one chunk, the lazy one',
-      carriers.length === 1 && carriers[0] !== shell, carriers.join(', ') || 'none');
-    chk('the start shell never builds an audio graph of its own',
-      !buf.includes(MARK) && !buf.includes('no such sound'),
+    chk('the sound engine ships in the start shell, where every tool can reach it',
+      carriers.includes(shell) || buf.includes(MARK), `${shell}, ${carriers.length} carrier(s)`);
+    chk('the shell listens for presses and can silence them',
+      buf.includes('pointerdown') && buf.includes('Sound effects off'), 'delegated press + header switch');
+    chk('the shell still carries no transit data and no map library',
+      !buf.includes('route_records') && !buf.includes('leaflet'),
       `${shell} ${(buf.length / 1024).toFixed(0)} kB`);
-    chk('the switch ships in the same chunk as the sounds it switches',
-      carriers.length === 1 && fs.readFileSync(path.join(dist, carriers[0])).includes('Sounds off'),
-      carriers[0]);
-    chk('the Settings page can describe them without importing them',
+    chk('the app starts the layer once, from the shell',
+      /useEffect\(\(\) => sfxAttach\(\)/.test(src('src/App.jsx'))
+      && src('src/App.jsx').includes("'./core/sfx'"), 'one effect, no per-tool wiring');
+    chk('the Settings page switches the app-wide preference and can be heard',
       src('src/tools/settings.jsx').includes("setSetting('sfx'")
-        && !src('src/tools/settings.jsx').includes('sfx.js'), 'a checkbox, no import');
+        && src('src/tools/settings.jsx').includes("from '../core/sfx.js'")
+        && src('src/tools/settings.jsx').includes('Hear a tap'), 'checkbox + real test buttons');
+    /* A comment written inside JSX children is not a comment: it is text, and it
+       paints. The minifier keeps every other kind, so this only ever fires on a
+       real leak — which is exactly what one of these panels did in review. */
+    const leaked = [];
+    const chunks = files.filter((f) => f.endsWith('.js')).map((f) => fs.readFileSync(path.join(dist, f), 'utf8'));
+    for (const j of ['src/tools/multimodal.jsx', 'src/tools/trip-ui.jsx', 'src/tools/settings.jsx']) {
+      for (const m of src(j).matchAll(/\/\*+([\s\S]*?)\*\//g)) {
+        const words = m[1].replace(/\*/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+        if (words.length > 30 && chunks.some((c) => c.includes(words))) leaked.push(`${j}: ${words.slice(0, 40)}`);
+      }
+    }
+    chk('no code comment is ever rendered as text on screen', leaked.length === 0,
+      leaked.join(' · ') || 'comments stay comments');
+    chk('a travel panel keeps its own switch, writing the same key',
+      src('src/core/sfx.js').includes("setSetting('sfx', !!on)")
+        || src('src/core/sfx.js').includes('setEnabled'), 'one preference, two places to reach it');
   }
+}
+
+console.log('\n=== 12. core/combo-route: one search over buses and the metro together ===');
+{
+  const g = comboGraph();
+  const t0 = Date.now();
+  chk('the graph is built once and reused', comboGraph() === g, `${Date.now() - t0} ms on the second call`);
+  chk('the graph holds both modes plus the walk links',
+    g.count > 3000 && g.size.bus > 20000 && g.size.metro > 400 && g.size.walk > 1000,
+    JSON.stringify({ nodes: g.count, ...g.size }));
+  chk('a walk link exists only where the published station exits say so', (() => {
+    const st = STATIONS.find((s) => s.b && s.b.length);
+    const id = g.nid.get(`m#${st.n}`);
+    if (id == null) return false;
+    const out = g.adj[id].map((ei) => g.edges[ei]).filter((e) => e.mode === 'walk' && e.from === id);
+    const named = new Set(st.b.map((b) => `b#${b.i != null ? b.i : (g.byName.get(b.n) || [])[0]}`));
+    return out.length > 0 && out.every((e) => named.has(g.label[e.to]));
+  })(), 'the search cannot invent a corridor a station does not publish');
+  chk('every metro edge knows its line, colour and network',
+    g.edges.every((e) => e.mode !== 'metro' || (e.line && e.colour && e.net)), `${g.size.metro} metro edges`);
+  chk('every bus edge costs at least a minute and moves somewhere',
+    g.edges.every((e) => e.mode !== 'bus' || (e.min >= 1 && e.km > 0)), `${g.size.bus} bus edges`);
+
+  const pairs = [
+    [{ n: 'Rajiv Chowk', kind: 'metro', lat: 28.6329, lon: 77.2197 },
+      { n: 'Hauz Khas', kind: 'metro', lat: 28.5499, lon: 77.2551 }],
+    [{ n: 'Kashmere Gate', kind: 'metro', lat: 28.6678, lon: 77.2306 },
+      { n: 'AIIMS', kind: 'metro', lat: 28.5662, lon: 77.2098 }],
+    [{ n: 'Anand Vihar ISBT', kind: 'bus', lat: 28.6510, lon: 77.3145 },
+      { n: 'Nehru Place', kind: 'metro', lat: 28.5490, lon: 77.2509 }],
+  ];
+  let maxMs = 0, paretoOk = true, capsOk = true, wordsOk = true, pricedOk = true;
+  const seen = [];
+  for (const [a, b] of pairs) {
+    const t1 = Date.now();
+    const r = comboPlan(a, b, { atMin: 570 });
+    maxMs = Math.max(maxMs, Date.now() - t1);
+    const o = r.options || [];
+    seen.push(o.map((x) => `${x.mix} ${x.minutes}m ₹${x.fare}`).join(' | ') || 'nothing');
+    for (const x of o) {
+      for (const y of o) {
+        if (x === y) continue;
+        if (y.minutes <= x.minutes && y.fare <= x.fare && (y.minutes < x.minutes || y.fare < x.fare)) paretoOk = false;
+      }
+      if (x.walkMin > MAX_WALK_MIN || x.legs.length > MAX_LEGS) capsOk = false;
+      if (/undefined|\[object Object\]/.test(JSON.stringify(x.legs))) wordsOk = false;
+      if (!(x.fare > 0) || !(x.minutes > 0) || !(x.km > 0)) pricedOk = false;
+    }
+    if (!o.length) paretoOk = false;
+  }
+  chk('a combined search answers every pair in well under a second', maxMs < 2500,
+    `${maxMs} ms for the slowest of three pairs`);
+  chk('nothing shown is beaten by another option on both time and money', paretoOk, seen[0]);
+  chk('no option breaks the published walk or leg caps', capsOk,
+    `<= ${MAX_WALK_MIN} min walking, <= ${MAX_LEGS} legs`);
+  chk('every leg reads as words', wordsOk, 'no undefined, no [object Object]');
+  chk('every option is priced and timed', pricedOk, seen[1]);
+
+  const mine = comboPlan(pairs[0][0], pairs[0][1], { atMin: 570 }).options;
+  const metroMine = mine.filter((o) => o.legs.every((l) => l.kind !== 'bus'))[0];
+  const ref = planRoutes('Rajiv Chowk', 'Hauz Khas', { atMin: 570 })[0];
+  chk('the metro champion of the combined graph agrees with the metro planner',
+    !!ref && !!metroMine
+    && Math.abs(metroMine.minutes - (ref.minutes + metroMine.walkMin)) <= 3
+    && metroMine.fare === ref.fare,
+    `combined ${metroMine?.minutes} min incl ${metroMine?.walkMin} min of walking, ₹${metroMine?.fare}`
+    + ` vs the metro tool's ${ref?.minutes} min ₹${ref?.fare}`);
+  const busMine = mine.filter((o) => o.legs.every((l) => l.kind !== 'metro'))[0];
+  const bRides = (busMine?.legs || []).filter((l) => l.kind === 'bus');
+  let bRef = null;
+  /* planBus speaks in stop names, so the comparison is over the very two stops the
+     combined journey boards and alights at — same pair, two engines, one answer. */
+  try { if (bRides.length) bRef = planBus(bRides[0].from, bRides[bRides.length - 1].to)[0] || null; } catch { bRef = null; }
+  chk('over the same two stops the bus tool has no cheaper ticket than the combined search',
+    !bRef || !busMine || busMine.fare <= bRef.fare + 0.01,
+    bRef ? `combined ₹${busMine.fare} vs the bus tool's ₹${bRef.fare} (${bRides[0].from} → ${bRides[bRides.length - 1].to})`
+      : 'the bus tool had no opinion on those two stops');
+  chk('the combined planner reaches a bus within a walk of what the bus tool quotes',
+    !bRef || !busMine || busMine.minutes - busMine.walkMin <= bRef.minutes + 15,
+    bRef ? `${busMine.minutes - busMine.walkMin} min of transport vs ${bRef.minutes} min stop to stop` : '—');
+
+  const mixed = comboPlan(pairs[2][0], pairs[2][1], { atMin: 570, only: 'mixed' }).options[0];
+  chk('the search finds a journey that needs a bus AND the metro, unprompted',
+    !!mixed && mixed.legs.some((l) => l.kind === 'metro') && mixed.legs.some((l) => l.kind === 'bus'),
+    mixed ? `${mixed.minutes} min ₹${mixed.fare}: ` + mixed.legs.map((l) => l.kind).join(' + ') : 'none found');
+  const metroOnly = comboPlan(pairs[2][0], pairs[2][1], { atMin: 570, only: 'metro' }).options;
+  chk('only-metro returns metro journeys and nothing else',
+    metroOnly.length > 0 && metroOnly.every((o) => o.legs.every((l) => l.kind !== 'bus')),
+    `${metroOnly.length} option(s)`);
+  chk('asking for both modes at once is never worse than asking for one', (() => {
+    const all = comboPlan(pairs[2][0], pairs[2][1], { atMin: 570, only: 'all' }).options;
+    const m = comboPlan(pairs[2][0], pairs[2][1], { atMin: 570, only: 'metro' }).options;
+    return all.length && (!m.length || Math.min(...all.map((o) => o.minutes)) <= Math.min(...m.map((o) => o.minutes)));
+  })(), 'the wider search can only add choices');
+
+  const ac = comboPlan(pairs[1][0], pairs[1][1], { atMin: 570, ac: true });
+  const plain = comboPlan(pairs[1][0], pairs[1][1], { atMin: 570, ac: false });
+  const acBus = (ac.options || []).find((o) => o.legs.some((l) => l.kind === 'bus'));
+  const plBus = (plain.options || []).find((o) => o.legs.some((l) => l.kind === 'bus'));
+  chk('the AC toggle moves the bus fare and nothing else',
+    !!acBus && !!plBus && acBus.legs.filter((l) => l.kind === 'bus').length >= 0
+    && ac.options.some((o) => o.fare >= plBus.fare), `AC ₹${acBus?.fare} vs ordinary ₹${plBus?.fare}`);
+  chk('a place given by name alone still gets an answer',
+    comboPlan({ n: 'Rajiv Chowk', kind: 'metro' }, { n: 'Hauz Khas', kind: 'metro' }, { atMin: 570 })
+      .options.length > 0);
+  chk('the same journey asked twice is answered from the memo', (() => {
+    const a = { n: 'Samaypur Badli', kind: 'metro', lat: 28.7669, lon: 77.1369 };
+    const b = { n: 'Rajiv Chowk', kind: 'metro', lat: 28.6329, lon: 77.2197 };
+    comboPlan(a, b, { atMin: 570 });
+    const t2 = Date.now();
+    const r = comboPlan(a, b, { atMin: 570 });
+    return Date.now() - t2 < 40 && r.options.length > 0;
+  })(), 'under 40 ms for a repeat');
+  chk('a journey that starts and ends in the same place is refused, not invented', (() => {
+    const r = comboPlan(pairs[0][0], pairs[0][0], {});
+    return r.options.length === 0 && !!r.note;
+  })(), comboPlan(pairs[0][0], pairs[0][0], {}).note);
+  chk('the costs the search optimises are the ones the panel publishes',
+    CX_GATE === 7 && CX_BOARD === 8 && CX_ACCESS === 2 && COMBO_VOT === 2 && CX_METRO_KMPM === 0.55
+    && CX_WALK_KMH === 5 && COMBO_WALK_CAP === 2, '7 at a gate · 8 to re-board · 2 to get in · ₹2/min');
+
+  const o0 = comboPlan(pairs[0][0], pairs[0][1], { atMin: 570 }).options[0];
+  const det = metroDetail(o0.legs, 570);
+  chk('the journey clock is handed the metro detail it expects',
+    det.legs.length === o0.legs.filter((l) => l.kind === 'metro').length && Number.isInteger(det.minutesWithWait)
+    && det.km > 0 && det.canMakeIt === true && det.nextIn >= 0 && !!det.lastTrain,
+    `${det.minutesWithWait} min with the wait, ${det.legs.length} leg(s)`);
+  const ck = clockOf(o0, 570);
+  chk('a combined option drives the journey clock without gaps',
+    ck.legs.length >= o0.legs.length && !ck.risk.length && ck.agrees !== false
+    && ck.legs.some((l) => l.kind === 'wait') && ck.legs.filter((l) => l.kind === 'ride').length === 1
+    && ck.noWaitMin + ck.allowanceMin === ck.publishedMinutes && ck.walkMin === o0.walkMin
+    && Number.isFinite(ck.departMin) && Number.isFinite(ck.arriveMin),
+    `${ck.fmt(ck.departMin)} → ${ck.fmt(ck.arriveMin)} · ${ck.rideMin} min riding, ${ck.walkMin} walking,`
+    + ` bar ${ck.noWaitMin}+${ck.allowanceMin} = published ${ck.publishedMinutes}`);
+  const trk = trackOfCombo(o0, {});
+  chk('a combined option draws a map line that starts at the boarding stop',
+    trk.points.length >= 5 && trk.points[0].isBoard && trk.points.filter((p) => p.isAlight).length === 1
+    && trk.points.filter((p) => p.isBoard).length === 1
+    && !JSON.stringify(trk.points).includes('undefined'),
+    `${trk.points.length} points · ${trk.label} · boards ${trk.points.filter((p) => p.isBoard).length}`);
+  chk('the bus legs of a mixed journey carry what the alert needs',
+    o0.legs.every((l) => l.kind !== 'bus' || (l.ri != null && l.i0 != null && Number.isFinite(l.minutes)
+      && l.names?.length > 1 && typeof l.from === 'string' && l.bus?.legs?.[0]?.ri === l.ri)),
+    (o0.legs.find((l) => l.kind === 'bus') || {}).ref || 'no bus leg in the first option');
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

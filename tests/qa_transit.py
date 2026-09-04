@@ -581,7 +581,147 @@ def main():
           try: _p.close()
           except Exception: pass
 
-        print("\n=== 10. console hygiene ===")
+        print("\n=== 10. sounds in the whole app, switched from the top right ===")
+        # The engine is in the start shell now. So a press in a tool that has
+        # nothing to do with travel must build an audio graph — that is the whole
+        # difference between "sounds in one panel" and "sounds in the app".
+        s5 = b.new_page(viewport={"width": 430, "height": 940})
+        s5.add_init_script(CAP)
+        home(s5)
+        s5.wait_for_timeout(400)
+        n0 = s5.evaluate("window.__nodes || 0")
+        s5.locator(".tile", has_text="QR").first.click(timeout=9000)
+        s5.wait_for_timeout(500)
+        n1 = s5.evaluate("window.__nodes || 0")
+        check("opening a non-travel tool answers with sound", n1 > n0, f"{n0} to {n1} audio nodes on a tile press")
+        s5.locator('button[aria-label="System status"]').click(timeout=9000)
+        s5.wait_for_timeout(300)
+        n2 = s5.evaluate("window.__nodes || 0")
+        check("so does a header button, through the same delegated rule", n2 > n1, f"{n1} to {n2} nodes")
+        s5.locator('button[aria-label="Back"]').click(timeout=9000)
+        s5.wait_for_timeout(300)
+        check("and leaving one is a different sound, not the same tick",
+              s5.evaluate("window.__nodes || 0") > n2, "the back button has its own recipe")
+
+        # Settings has to be one tap away from any screen, and it has to be able to
+        # say what the app will do about sound effects.
+        s5.locator('button[aria-label="Settings"]').click(timeout=9000)
+        s5.wait_for_timeout(900)
+        t5 = s5.locator("body").inner_text()
+        check("the cog in the header lands on Settings", "settings" in s5.evaluate("location.hash").lower(),
+              s5.evaluate("location.hash"))
+        check("Settings speaks for the whole app, not only for travel",
+              "Sound effects - the whole app" in t5 and "Travel Sounds" not in t5,
+              [x for x in t5.split("\n") if "Sound effects" in x][:1])
+        check("and offers to be heard before it is trusted",
+              s5.locator("button:has-text('Hear a tap')").count() == 1
+              and s5.locator("button:has-text('Hear a tool open')").count() == 1
+              and s5.locator("button:has-text('Hear a leave')").count() == 1)
+        n3 = s5.evaluate("window.__nodes || 0")
+        s5.locator("button:has-text('Hear a tap')").click(timeout=9000)
+        s5.wait_for_timeout(400)
+        check("its test button builds a real graph", s5.evaluate("window.__nodes || 0") > n3,
+              f"{n3} to {s5.evaluate('window.__nodes || 0')} nodes")
+        s5.locator('button[aria-label="Sound effects on"]').click(timeout=9000)
+        s5.wait_for_timeout(300)
+        pref = json.loads(s5.evaluate("localStorage.getItem('omni:settings') || '{}'") or "{}")
+        check("the header speaker writes the one preference the whole app reads",
+              pref.get("sfx") is False, json.dumps(pref))
+        n4 = s5.evaluate("window.__nodes || 0")
+        s5.locator("button:has-text('Hear a leave')").click(timeout=9000)
+        s5.wait_for_timeout(300)
+        check("off means off: the next press builds nothing at all",
+              s5.evaluate("window.__nodes || 0") == n4, f"still {n4} nodes")
+        unchecked = s5.evaluate("() => { const l = [...document.querySelectorAll('.chk span')]"
+            ".find(x => x.textContent.includes('Sound effects'));"
+            " const box = l && l.parentElement.querySelector('input'); return !!(box && !box.checked); }")
+        check("and the checkbox here reads off too, so the two switches cannot disagree",
+              unchecked, "the Settings row tracks what the header speaker did")
+        check("and it says so in words instead of failing quietly",
+              "Switched off above" in s5.locator("body").inner_text())
+        home(s5)
+        open_tile(s5, "Plan Journey")
+        s5.wait_for_timeout(700)
+        check("the travel panel's own row reads the same preference",
+              s5.locator("button:has-text('Sounds off')").count() >= 1,
+              "off in the header is off in the panel")
+        s5.locator('button[aria-label="Sound effects off"]').click(timeout=9000)
+        s5.wait_for_timeout(300)
+        n5 = s5.evaluate("window.__nodes || 0")
+        # the test buttons live on the Settings page, so go back to them
+        s5.locator('button[aria-label="Settings"]').click(timeout=9000)
+        s5.wait_for_timeout(700)
+        s5.locator("button:has-text('Hear a tap')").click(timeout=9000)
+        s5.wait_for_timeout(400)
+        check("and switching it back on from the header is heard",
+              s5.evaluate("window.__nodes || 0") > n5,
+              f"{n5} to {s5.evaluate('window.__nodes || 0')} nodes after the header turned sound back on")
+        try:
+            s5.close()
+        except Exception:
+            pass
+
+        print("\n=== 11. Plan Journey is one search over both modes ===")
+        s6 = b.new_page(viewport={"width": 430, "height": 940})
+        s6.goto(BASE)
+        home(s6)
+        open_tile(s6, "Plan Journey")
+        pick_suggestion(s6, "input >> nth=0", "Rajiv Chowk", "Rajiv Chowk")
+        pick_suggestion(s6, "input >> nth=1", "Hauz Khas", "Hauz Khas")
+        s6.wait_for_timeout(1800)
+        body6 = s6.locator("body").inner_text()
+        for chip in ["Both, whichever wins", "Metro + bus, both", "Metro only", "Bus only", "AC bus"]:
+            check(f"the search offers the {chip.lower()} question",
+                  s6.locator(f"button:has-text('{chip}')").count() == 1, chip)
+        for srt in ["Best overall", "Fastest", "Cheapest", "Fewest changes"]:
+            check(f"and ranks them by {srt.lower()}", s6.locator(f"button:has-text('{srt}')").count() == 1, srt)
+        m = re.search(r"One search over ([\d,]+) published connections found (\d+) usable journey", body6)
+        check("the panel says what the search actually did, in numbers",
+              m is not None and int(m.group(2)) >= 1, m.group(0) if m else body6[-200:])
+        chips6 = [x.strip() for x in s6.locator(".cats button.cat").all_inner_texts()]
+        check("the answer is one ranked list of journeys, not a list per mode",
+              len(chips6) >= 1 and all("m · ₹" in c for c in chips6), " / ".join(chips6[:4]))
+        s6.locator("button:has-text('Best overall')").click(timeout=8000)
+        s6.wait_for_timeout(500)
+        s6.locator("button:has-text('Cheapest')").click(timeout=8000)
+        s6.wait_for_timeout(500)
+        cheapest = s6.locator(".cats button.cat.on").inner_text()
+        s6.locator("button:has-text('Fastest')").click(timeout=8000)
+        s6.wait_for_timeout(500)
+        fastest = s6.locator(".cats button.cat.on").inner_text()
+        def mins_of(txt):
+            mm = re.search(r"(\d+)m", txt)
+            return int(mm.group(1)) if mm else 10**6
+        def rupees_of(txt):
+            mm = re.search(r"₹(\d+)", txt)
+            return int(mm.group(1)) if mm else 10**6
+        check("re-ranking picks a genuinely cheaper first option and a genuinely quicker one",
+              rupees_of(cheapest) <= rupees_of(fastest) and mins_of(fastest) <= mins_of(cheapest),
+              f"cheapest {cheapest.strip()} vs fastest {fastest.strip()}")
+        s6.locator("button:has-text('Metro + bus, both')").click(timeout=8000)
+        s6.wait_for_timeout(2500)
+        body7 = s6.locator("body").inner_text()
+        check("asking for both modes either returns a journey that uses both or says it found none",
+              "Metro + Bus" in body7 or "no journey needs both a bus and the metro" in body7,
+              [x for x in body7.split("\n") if "both" in x.lower()][:1])
+        s6.locator("button:has-text('Bus only')").click(timeout=8000)
+        s6.wait_for_timeout(2000)
+        modes6 = [x.strip() for x in s6.locator(".list b").all_inner_texts()]
+        check("bus only returns bus journeys when the metro is excluded",
+              not modes6 or all("Metro" not in m for m in modes6), " / ".join(modes6[:4]) or "one option, no compare table")
+        s6.locator("button:has-text('Both, whichever wins')").click(timeout=8000)
+        s6.locator("button:has-text('AC bus')").click(timeout=8000)
+        s6.wait_for_timeout(1800)
+        ac_chips = [x.strip() for x in s6.locator(".cats button.cat").all_inner_texts()]
+        check("the AC toggle changes the price of a bus journey, visibly",
+              len(ac_chips) >= 1 and all("₹" in c for c in ac_chips) and all(re.search(r"\d+m", c) for c in ac_chips),
+              " / ".join(ac_chips[:3]))
+        try:
+            s6.close()
+        except Exception:
+            pass
+
+        print("\n=== 12. console hygiene ===")
         quiet = ("favicon", "geolocation", "net::ERR", "Failed to load resource",
                  "Permission", "WebSocket", "vite")
         noise = [e for e in errs if not any(k in e for k in quiet)]

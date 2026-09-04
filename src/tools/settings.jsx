@@ -13,7 +13,11 @@ import { Icon } from '../ui/icons';
 import { THEMES, getCurrentThemeId, getCustomTheme, saveCustomTheme, applyTheme, getAllThemes } from '../core/theme.js';
 import { getPWAInfo, triggerInstall, onInstallPrompt, getCacheStatus, clearAllCaches, getOfflineStatus } from '../core/pwa.js';
 import { runLiveCheck, getFeatureCategories } from '../core/live-check.js';
-import { getSettings, setSetting } from '../core/settings.js';
+import { getSettings, setSetting, onSettings } from '../core/settings.js';
+/* The switch is a checkbox; these are the sounds it switches. Both come from the
+   one module the app itself listens through, so what is heard here is exactly
+   what is heard in a tool — no separate demo audio. */
+import { play as sfxPlay, soundLog as sfxLog, SOUNDS as SFX, supported as sfxSupported } from '../core/sfx.js';
 
 export function Settings() {
   const [currentTheme, setCurrentTheme] = useState(getCurrentThemeId());
@@ -42,7 +46,22 @@ export function Settings() {
   const [liveProgress, setLiveProgress] = useState(null);
   const [isChecking, setIsChecking] = useState(false);
   const [settings, setSettingsState] = useState(getSettings());
+  const [sfxLast, setSfxLast] = useState('');
   const logRef = useRef(null);
+
+  /* Two switches write this one preference - the speaker in the header and the
+     checkbox here - so this page has to listen, or it shows a state the app has
+     already left behind. Subscribing costs nothing and cannot go stale. */
+  useEffect(() => onSettings((s) => setSettingsState(s)), []);
+
+  /* What the button does is call the same play() a tool calls, and what prints
+     under it is that call's answer — including "sounds are off", so a silent
+     button is never mistaken for a broken one. */
+  const hear = (name) => {
+    sfxPlay(name);
+    const l = sfxLog()[sfxLog().length - 1];
+    setSfxLast(l ? `${SFX[l.name] ? SFX[l.name].label : l.name}${l.ok ? '' : ' — ' + l.why}` : '');
+  };
 
   useEffect(() => {
     // Init theme
@@ -326,8 +345,19 @@ export function Settings() {
             </label>
             <label className="chk">
               <input type="checkbox" checked={settings.sfx} onChange={e => { const s = setSetting('sfx', e.target.checked); setSettingsState(s); }} />
-              <span>Travel Sounds - A train going past when you pick a place, a bell when a get-off alert arms, three bells when it fires. Synthesised in the browser (no audio file is downloaded, nothing is cached); each travel panel also has its own toggle</span>
+              <span>Sound effects - the whole app, not only travel: a train going past when you open a tool, a tick on a button or a filter, air going the other way when you leave, a bell when a get-off alert arms and three bells when it fires. Every one is synthesised in your browser - no audio file is downloaded, nothing is cached</span>
             </label>
+            <div className="btnrow" style={{ marginTop: 8 }}>
+              {[['tick', 'Hear a tap'], ['whoosh', 'Hear a tool open'], ['back', 'Hear a leave'], ['chime', 'Hear an answer'], ['ding', 'Hear an alert armed']].map(([n, l]) => (
+                <button key={n} className="btn ghost" onClick={() => hear(n)}>{l}</button>
+              ))}
+            </div>
+            <div className="dim sm" style={{ fontSize: 10, marginTop: 6 }}>
+              {!sfxSupported() ? 'This browser has no Web Audio - nothing can play and nothing is fetched.'
+                : settings.sfx === false ? 'Switched off above, so these buttons answer with the reason, not a sound.'
+                : sfxLast ? `Last: ${sfxLast}` : 'Seven sounds in all; a backgrounded tab keeps only the get-off bell.'}
+              <br />The same switch sits at the top right of every screen, and each travel panel keeps its own copy of it - one preference, three places to reach it, never out of step.
+            </div>
             <label className="chk">
               <input type="checkbox" checked={settings.useBuiltin} onChange={e => { const s = setSetting('useBuiltin', e.target.checked); setSettingsState(s); }} />
               <span>Use Built-in Proxy - Fall back to bundled relay (omni-proxy.omni-jackbhai.workers.dev) - 0.06-0.1s warm vs 6.9s public</span>
@@ -443,7 +473,7 @@ export function Settings() {
         </Card>
       </Card>
 
-      <div className="src"><span className="dot" /><span>Settings v1.0 - PWA App-like + Themes 7 + Custom Theme Maker + Live Check System - PWA: standalone display, SW network-first shell cache-first hashed assets, offline ready, install prompt, cache management - Themes: dark default AMOLED black + light + amoled pure black + ocean + forest + sunset + midnight purple + custom maker with color pickers for --bg --s1 --s2 --s3 --line --green --cyan --fg etc live preview save to localStorage - Features: proxy settings autoRadio useBuiltin sfx (travel sounds, synthesised locally) - Live Check: button checks all features health % working per feature/category overall % with live logs timestamp type real-time progress - Professional settings page - No fake data - Verified</span></div>
+      <div className="src"><span className="dot" /><span>Settings v1.0 - PWA App-like + Themes 7 + Custom Theme Maker + Live Check System - PWA: standalone display, SW network-first shell cache-first hashed assets, offline ready, install prompt, cache management - Themes: dark default AMOLED black + light + amoled pure black + ocean + forest + sunset + midnight purple + custom maker with color pickers for --bg --s1 --s2 --s3 --line --green --cyan --fg etc live preview save to localStorage - Features: proxy settings autoRadio useBuiltin sfx (app-wide sound effects, synthesised locally, with audible test buttons) - Live Check: button checks all features health % working per feature/category overall % with live logs timestamp type real-time progress - Professional settings page - No fake data - Verified</span></div>
     </>
   );
 }

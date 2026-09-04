@@ -199,8 +199,16 @@ export function trackOfCombo(opt, { boardMin = null } = {}) {
       legs.push({ kind: 'metro', line: l.line, colour: l.colour, from: l.from, to: l.to, stops: l.count, km: l.km });
     }
   });
+  /* A walk that ends exactly where the ride begins is one place, not two events:
+     the alert would otherwise say "walk to Rajiv Chowk" and "board" as if they were
+     separate stops. And the journey's end is only flagged as an alighting when no
+     ride already flagged one — the get-off cue belongs on the platform, not on the
+     pavement after it. */
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i].isBoard && pts[i - 1].name === pts[i].name) pts[i].isBoard = false;
+  }
   const end = pts.at(-1) || null;
-  if (end) end.isAlight = true;
+  if (end && !pts.some((p) => p.isAlight)) end.isAlight = true;
   return {
     mode: 'combo', label: opt.legs.map((l) => (l.kind === 'bus' ? l.ref : l.kind === 'metro' ? l.line : 'walk')).join(' + '),
     points: pts, legs,

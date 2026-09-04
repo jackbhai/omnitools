@@ -132,6 +132,14 @@ export const SOUNDS = {
       tone(ctx, dest, { type: 'triangle', f: 180, to: 92, t: t + 0.1, dur: 0.5, peak: 0.05 });
     },
   },
+  back: {
+    label: 'Air going the other way', when: 'you leave a tool',
+    dur: 0.8, minMs: 260,
+    build(ctx, dest, t) {
+      swept(ctx, dest, { t, dur: 0.7, peak: 0.28, f: 1500, f1: 265, f2: 175, q: 1.3, pan: [0.9, -0.7] });
+      tone(ctx, dest, { f: 40, to: 58, t: t + 0.04, dur: 0.5, peak: 0.18 });
+    },
+  },
   ding: {
     label: 'One station bell', when: 'an alert you asked for has been armed',
     dur: 0.55, minMs: 140,
@@ -272,6 +280,74 @@ export function play(name, { delay = 0 } = {}) {
     return note(name, { ...res, why: 'graph failed: ' + (e && e.message ? e.message : e) });
   }
 }
+
+/* ------------------------------------------------- the interaction layer */
+
+/**
+ * What a press sounds like, app-wide. Read top to bottom, first match wins, and
+ * `null` means "stay quiet" — an element can opt out with data-sfx="none".
+ *
+ * One listener on the document instead of a call in every tool: 40+ tools cannot
+ * be remembered one by one, and a delegated rule covers the buttons that get
+ * written next month. The panel-level calls stay useful — they fire on the same
+ * gesture and the anti-repeat window in play() turns the second one away, so a
+ * deliberate sound (a chime for an answer, a bell for an alert) still wins.
+ */
+const PRESS_SOUNDS = [
+  ['[data-sfx="none"]', null],
+  ['.sndrow', null],
+  ['.tile', 'whoosh'],
+  ['button[aria-label="Back"]', 'back'],
+  ['.btn', 'tick'],
+  ['.cat', 'tick'],
+  ['.chip', 'tick'],
+  ['.tabs button', 'tick'],
+  ['.iconbtn', 'tick'],
+  ['.row', 'tick'],
+  ['input[type="checkbox"]', 'tick'],
+  ['input[type="radio"]', 'tick'],
+];
+
+let ATTACHED = null;
+
+/** Start the app-wide layer. Returns the function that stops it again. */
+export function attach(root) {
+  if (typeof window === 'undefined') return () => {};
+  if (ATTACHED) return ATTACHED.off;
+  const host = (root && root.addEventListener ? root : document);
+  const soundFor = (el) => {
+    for (const [sel, name] of PRESS_SOUNDS) {
+      if (el.closest(sel)) return name;
+    }
+    return undefined;
+  };
+  const fire = (ev, key) => {
+    if (!enabled()) return;
+    const el = ev.target && ev.target.closest ? ev.target : null;
+    if (!el) return;
+    if (!key) {
+      if (ev.button != null && ev.button !== 0) return;     // a right-click is not a press
+      if (ev.pointerType === 'pen' && ev.isPrimary === false) return;
+    }
+    const name = soundFor(el);
+    if (name === undefined) return;
+    if (name) play(name);
+  };
+  const onDown = (ev) => fire(ev, false);
+  const onKey = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') fire(ev, true); };
+  host.addEventListener('pointerdown', onDown, true);
+  host.addEventListener('keydown', onKey, true);
+  const off = () => {
+    host.removeEventListener('pointerdown', onDown, true);
+    host.removeEventListener('keydown', onKey, true);
+    ATTACHED = null;
+  };
+  ATTACHED = { off, host };
+  return off;
+}
+
+/** Is the layer listening? The start shell says yes from its first paint. */
+export function attached() { return !!ATTACHED; }
 
 /** The setting can be changed from the Settings page; honour it live. */
 if (typeof window !== 'undefined') {

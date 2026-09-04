@@ -88,10 +88,12 @@ export function StepList({ steps, active = -1, onPick }) {
 
 /* ------------------------------------------------------------------ sound */
 /**
- * The one place the sounds can be turned off, sitting in the panel that makes
- * them. Switching them on plays a bell so the choice can be heard before it is
- * trusted; switching them off says so in words. `how it knows` prints the last
- * decision, because silence with no reason is indistinguishable from a bug.
+ * A travel panel's own copy of the app-wide switch — the same key the header
+ * speaker and the Settings checkbox write, so the three cannot disagree. It sits
+ * last in the panel, below the journeys, because a panel about travel should open
+ * with travel. Switching it on plays a bell so the choice can be heard before it
+ * is trusted; `last:` prints the most recent decision, because silence with no
+ * reason is indistinguishable from a bug.
  */
 export function SoundToggle({ note = '' }) {
   const [on, set] = useState(() => soundOn());

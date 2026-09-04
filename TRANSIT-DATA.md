@@ -228,12 +228,23 @@ panel is a live vehicle position.
 
 ## 9. The sounds (`src/core/sfx.js`)
 
-Six of them, and every one is built from oscillators and a noise buffer inside the browser:
+Seven of them, and every one is built from oscillators and a noise buffer inside the browser:
 **no audio file is downloaded, none is cached, and `caches.open` is never called**, so the
 offline payload and the service worker are untouched. `verify:trip` asserts that literally —
 the module contains no `fetch`, `new Audio`, `decodeAudioData`, data URI or URL at all, and
-it imports exactly one thing (`core/settings.js`), which is why it can stay in the lazy
-transit chunk: the built `index-*.js` carries no audio graph.
+it imports exactly one thing (`core/settings.js`).
+
+**They are the app's, not travel's.** `App.jsx` calls `sfx.attach()` once in the shell, and the
+layer listens to `pointerdown`/`keydown` on the document and maps the element that was pressed
+to a sound: `.tile` → `whoosh` (opening any tool), a button labelled `Back` → `back`,
+`.btn`/`.cat`/`.chip`/`.tabs button`/`.iconbtn`/`.row`/checkbox/radio → `tick`. Anything can
+opt out with `data-sfx="none"`, and a `[data-sfx]`-less element that matches nothing stays
+silent. Panel-level `sound()` calls were left in place on purpose: they fire on the same
+gesture, `play()`'s per-sound `minMs` floor turns the later one away with `too soon`, and that
+is why a deliberate sound (a chime for an answer, a bell for an alert) always wins over the
+generic tick. The shell grows by the engine and nothing else — measured **+7,680 bytes** on
+`index-*.js` (1,451,018 → 1,458,698), and `verify:trip` still insists the transit JSON and
+leaflet stay out of it.
 
 | sound | what it means | what it is made of |
 |---|---|---|
@@ -242,13 +253,85 @@ transit chunk: the built `index-*.js` carries no audio graph.
 | `ding` | an alert has really armed | C6 + G6 |
 | `alight` | **get off now** | three C6/E6 bells 260 ms apart plus a 66 Hz thump — the only sound allowed while the tab is hidden |
 | `brake` | the timetable cannot support this | noise through a highpass falling 2400 → 620 Hz, saw 240 → 70, 90 → 55 thump |
-| `tick` | a key was pressed | one 1180 → 900 Hz square, 45 ms |
+| `tick` | a key was pressed, or any button anywhere in the app | one 1180 → 900 Hz square, 45 ms |
+| `back` | a tool was left | the same sweep run the other way: 1500 → 265 → 175 Hz, panned +0.9 → −0.7 |
 
 `play()` answers `{ ok, why }` and never throws: `sounds are off`, `this tab is in the
 background`, `too soon` (the per-sound repeat floor), `no such sound`, `this browser has no
 Web Audio`, `graph failed: …`. The last decision is printed under the panel's own switch, so
-silence always has a reason in words. Peaks are capped at 0.34 per voice behind a master of
+silence always has a reason in words.
+
+**Three places to switch, one preference.** The header carries a `volume`/`volumeoff` icon
+button on every screen — next to a `cog` that opens Settings — and every one of the three
+switches writes the same `omni:settings -> sfx` key. Settings subscribes through
+`onSettings()`, so turning sound off from the header unchecks its box live instead of showing a
+stale one; the Settings page also has five test buttons (`Hear a tap`, `Hear a tool open`,
+`Hear a leave`, `Hear an answer`, `Hear an alert armed`) that call the app's own `play()`
+rather than a private demo sound. `qa_transit` proves the chain in a browser: a press on the
+**QR Code** tile builds audio nodes, the back button has its own recipe, the travel panel's row
+follows the header, and with sound off the page reports 0 contexts and 0 nodes.
+
+Peaks are capped at 0.34 per voice behind a master of
 0.5 and a compressor at −12 dB; the browser suite renders the same graphs through an
 `OfflineAudioContext` and asserts peak 0.30 with **zero clipped samples**, 0.85 s of signal,
 different energy in the two ears, and 0 nodes built when the switch is off — off is silence,
 not quieter.
+
+---
+
+## 10. The combined search (`src/core/combo-route.js`)
+
+Plan Journey does not run the metro planner and the bus planner and staple the answers
+together. It searches **one graph** that contains both modes, so a bus can beat the metro, the
+metro can beat a bus, and a journey that needs both is found by the search instead of guessed
+at by a feeder-bus heuristic.
+
+- **Nodes** are `m#<station>` (one node per station, so a station on three lines is still one
+  node and changing lines is a real decision, not a teleport) and `b#<stopIdx>`.
+- **Edges**: every adjacent hop of every published bus direction (2,490 routes, 82,408
+  directed edges, km measured along the shape the bus actually drives, minutes from that
+  direction's own speed), every adjacent station pair of every metro line (608), and the walk
+  links a station publishes to its stops plus the interchange walks inside stations (5,328).
+  5,239 nodes, built in ~120-150 ms and memoised, in memory only - nothing new ships.
+- **Cost** is one `edgeCost(obj, edge)` plus a change penalty: `7` min to change metro line at
+  a gate, `8` min to board anything else (a second DTC ticket, not a tap), `2` min to get into
+  the paid area once per metro chain, walking at `5 km/h`. `price()` prints numbers from the
+  same constants, because a search that optimises a different sum than the one displayed is how
+  a planner starts lying.
+- **The end walk is priced inside the search** through a virtual sink node: the journey is the
+  ride plus getting to the place that was asked for. Without this the search happily stopped a
+  station early - Rajiv Chowk to Hauz Khas once came back as 38 min with 2 km of walking at
+  each end instead of 23 min. And the sink is only offered to a journey that used a vehicle,
+  otherwise "walk to a station, walk to a stop" beats everything and the metro never appears.
+- **Objectives**: `min` (minutes), `fare` (rupees, with walking priced at 50 paise a minute so
+  it cannot wander) and `value` (minutes + ₹2 per minute saved). Seven searches run - the three
+  objectives over both modes, then each mode alone for time and money - and every candidate
+  must be a finished journey, so `only: 'bus'` is the same engine, not a weaker one. Candidates
+  are deduped by their rides (which door the station was left by is not a different journey),
+  then anything both slower and dearer than something already shown is dropped.
+- **Caps**: `MAX_WALK_KM 2`, `MAX_WALK_MIN 20`, `MAX_LEGS 7`, `MAX_MINUTES 360`, six entries at
+  the origin and every published stop within 2 km of the destination as an exit, 260,000 pops
+  per search. A* with `haversine / 0.55 km per minute` toward the destination, and deliberately
+  no heuristic for the fare objective, whose costs are rupees.
+- **Measured**: 117-830 ms per answer, 2-4 options. The metro champion agrees with the metro
+  planner - Rajiv Chowk to Hauz Khas `23 min ₹32` (21 riding + 2 walking) against the metro
+  tool's `21 min ₹32`; AIIMS to Noida Sector 52 `59 min ₹54, 2 changes, 22.71 km` against
+  `57 min ₹54, 2 changes, 22.72 km`. Same fare because it is the same published slab; the
+  minutes differ by exactly the two walks, and `verify:trip` asserts that relationship instead
+  of a constant.
+- **What the per-mode lists could not show**: Anand Vihar ISBT to Nehru Place at 06:42 as
+  `Metro + Bus - 35 min ₹37, 1 change` - RRTS to New Ashok Nagar, 0.32 km to Crown Plaza, bus
+  440 to Govindpuri - where the bus-only answer is 46 min and the metro cannot reach it at that
+  hour. Non-DMRC lines (the RRTS) carry `separateTicket` and a sentence saying their ticket is
+  not part of the DMRC slab.
+- **The UI** (`src/tools/multimodal.jsx`) shows one ranked list with four questions - `Best
+  overall` (the search's own `value`), `Fastest`, `Cheapest`, `Fewest changes` - four mode
+  filters (`Both, whichever wins`, `Metro + bus, both`, `Metro only`, `Bus only`), an `AC bus`
+  price toggle, the departure clock, and fine print that states how many journeys the search
+  found and how many it discarded. The question rows stay on screen when a filter returns
+  nothing, so an empty answer is a state the traveller can leave.
+- `verify:trip` §12 holds 22 checks over this file: the graph is built once, walk links exist
+  only where the published station exits say so, no edge is free, the shown options are
+  Pareto-clean, the caps hold, both modes' champions agree with their own single-mode planner,
+  a place given by name alone still answers, a repeat comes from the memo, and a journey whose
+  two ends are the same place is refused with a note rather than invented.
