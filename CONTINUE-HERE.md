@@ -480,3 +480,30 @@ strings.
 
 
 Do not "fix" the missing map by rewriting the panel — rebuild and push, then re-measure the 404 above.
+
+### Follow-up (shipped AND live): the "N stops" rows fold open (commit `2ea9e60`)
+
+Every turn-by-turn ride row that hides intermediate stops (bus or metro) now carries a
+▾ chevron. Tapping it folds out the real published stations between boarding and alighting
+(names and times straight from the line records in `src/data` — never invented). Tapping a
+folded-out stop lights it in the list, lights the parent ride row, and pans/highlights the
+map pin. Walk/alight rows have no chevron.
+
+| piece | where |
+|---|---|
+| `stepsOf` stamps every step with `pi` (the POINT index it stands at); ride steps carry `via: [{n, at, when}]` via `viaOf(li)` | `src/core/trip.js` |
+| `StepList` chevron + `.vialist` rows (`onPickPt` → `setActive` in point space); ride row `.now` when any of its vias is active | `src/tools/trip-ui.jsx` |
+| `.viachev` (rotate `.up` when open), `.vialist`, `.viarow`, `.vdot`, `.viahint` | `src/styles/theme.css` |
+| gates: verify §15 (14/14 via names match the Yellow Line record, pi validity, walk chevron-free) → **200 checks**; qa §15 (real browser: open/close/reopen, tap lights list+map) → **165 checks** | `scripts/verify_trip.mjs`, `tests/qa_transit.py` |
+
+**Index-space rule (do not regress):** the trip has POINTS (map dots) and STEPS (list rows)
+— two different index spaces. Everything crossing the list↔map boundary must travel as a
+point index (`pi` / `v.at`). The pre-chevron code passed step indices into point-indexed
+`active`; that was a real jump-to-wrong-pin bug, now fixed at the root.
+
+**Live verification recipe that worked here:** feature markers live in the
+`metro-planner-*.js` chunk (NOT `trip-map-*`, NOT the shell). Fetch live
+`index-*.js`, grep the chunk name out of it, fetch that chunk, count
+`viachev/vialist/'Tap a stop'` — expect 1/1/1 and the same byte size as local dist.
+GitHub's Actions `head_sha=` filter needs the FULL 40-char sha; a short sha silently
+returns `total_count: 0`.
