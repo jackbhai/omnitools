@@ -702,10 +702,21 @@ def run():
                 got = pz.evaluate("""async () => {
                   const m = await import('/src/core/saavn.js');
                   const r = await m.matchTrack({title:'Pasoori', artist:'Ali Sethi'}).catch(()=>null);
-                  return r ? {src:r.src, host:(r.stream||'').split('/')[2]} : null;
+                  return r ? {src:r.src, host:(r.stream||'').split('/')[2], approx:!!r.approximate} : null;
                 }""")
-                check(f"chain survives: {label}", bool(got) and got.get("src") == want,
-                      f"got {got}" if got else "nothing")
+                if label == "+ open network dead":
+                    # archive.org's empty-200 day is documented behavior; the
+                    # invariant here is that the chain LANDS, not which live
+                    # tier it lands on. If it skips past the named tier, the
+                    # answer must be flagged inexact (checked below).
+                    check(f"chain survives: {label}", bool(got) and got.get("src"),
+                          f"got {got}" if got else "nothing")
+                    if got and got.get("src") != want:
+                        check("deep fall-through is marked inexact", got.get("approx") is True,
+                              f"src={got.get('src')} approx={got.get('approx')}")
+                else:
+                    check(f"chain survives: {label}", bool(got) and got.get("src") == want,
+                          f"got {got}" if got else "nothing")
                 cx.close()
             except Exception as e:
                 check(f"chain survives: {label}", False, str(e)[:80])

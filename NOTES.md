@@ -128,6 +128,7 @@ python3 tests/qa_transit.py http://localhost:4173/     # transit, 165 checks
 
 npx vite --host 0.0.0.0 --port 5190                    # dev, transforms /src
 python3 tests/qa_new.py                                # app-wide, 157 checks
+python3 tests/qa_arti.py                               # devotional corpus, 39 checks (dev too)
 ```
 
 In this sandbox headless chromium needs the local lib dir:
@@ -197,6 +198,22 @@ After a deploy, verify by bytes, not by hope: fetch the live `index-*.js`,
 pull the lazy chunk name out of it, fetch that chunk, compare size against
 local `dist/` and grep for marker strings. Feature markers live in
 `metro-planner-*.js` (transit), not in the shell, not in `trip-map-*.js`.
+
+## Devotional corpus (arti sangrah)
+
+- `src/data/arti.json`: 270 full texts (62 aarti / 50 chalisa / 44 mantra /
+  114 stotra), scraped once from a public aarti site's pages (Devanagari
+  only, nothing truncated, every item keeps its source URL + fetch date).
+  It is a dynamic-import chunk (~135 KB gzip) — never statically imported,
+  the shell must stay lean. Rebuild: `python3 /home/user/scrape/arti/fetch_ha.py`
+  (resumable ndjson, polite 0.35 s pacing) then `node scripts/build_arti.mjs`,
+  which quality-gates every item (devanagari ratio, no ellipsis, no markup)
+  and drops what fails instead of shipping it.
+- Chant voices (`src/core/tts.js`): device speechSynthesis first (offline,
+  instant), the shared media API's TTS as the studio tier (measured: it
+  throttles above ~1 req/s — sequential calls, one retry, circuit breaker,
+  session blob cache). No fake sync anywhere: highlight = the stanza actually
+  being spoken.
 
 ## Current state
 
