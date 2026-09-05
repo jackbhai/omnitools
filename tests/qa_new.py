@@ -288,7 +288,7 @@ def run():
             first = page.evaluate("""() => {
               const c = [...document.querySelectorAll('.card')]
                 .find(x => /air quality/i.test(x.textContent));
-              return c ? (c.querySelector('.big')?.textContent || '').trim() : null;
+              return c ? c.textContent.replace(/\\s+/g, ' ').trim() : null;
             }""")
             page.fill(".search input", "London")
             page.wait_for_timeout(1600)
@@ -297,7 +297,7 @@ def run():
             second = page.evaluate("""() => {
               const c = [...document.querySelectorAll('.card')]
                 .find(x => /air quality/i.test(x.textContent));
-              return c ? (c.querySelector('.big')?.textContent || '').trim() : null;
+              return c ? c.textContent.replace(/\\s+/g, ' ').trim() : null;
             }""")
             check("a different city reports different air",
                   bool(first and second and first != second), f"Delhi {first} vs London {second}")

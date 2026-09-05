@@ -45,18 +45,24 @@ def main():
     for x in items:
         kinds[x['k']] = kinds.get(x['k'], 0) + 1
     check('all five kinds present', all(k in kinds for k in ('aarti', 'chalisa', 'mantra', 'stotra', 'bhajan')), str(kinds))
-    check('corpus is deep', len(items) >= 300, f"{len(items)} texts")
+    check('corpus is deep', len(items) >= 340, f"{len(items)} texts")
     ids = [x['id'] for x in items]
     check('ids unique', len(ids) == len(set(ids)))
-    bad_src = [x['id'] for x in items if not str(x.get('u', '')).startswith('https://www.hinduaarti.com/')]
+    bad_src = [x['id'] for x in items if not str(x.get('u', '')).startswith(
+        ('https://www.hinduaarti.com/', 'https://mr.wikisource.org/', 'https://hi.wikibooks.org/', 'https://hi.wikisource.org/'))]
     check('every item source-labelled', not bad_src, str(bad_src[:3]))
+    no_lbl = [x['id'] for x in items if not x.get('s')]
+    check('every item names its sangrah', not no_lbl, str(no_lbl[:3]))
+    wk = [x for x in items if x['id'].startswith('wk-')]
+    check('marathi wiki layer present with licence', len(wk) >= 10 and all('CC' in str(x.get('lic', '')) for x in wk), f"{len(wk)} items")
+    kunj = [x for x in items if 'kunj' in x['id'].lower() or 'Kunj' in x.get('t', '')]
+    check('aarti kunj bihari full text anchor', any('गिरिधर कृष्ण मुरारी' in x['ln'] for x in kunj), f"{len(kunj)} items")
     bad_fetched = [x['id'] for x in items if not re.match(r'^\d{4}-\d{2}-\d{2}$', str(x.get('f', '')))]
     check('every item fetched-date', not bad_fetched, str(bad_fetched[:3]))
-    # complete beej mantras really are one line of ~26-35 chars — that is the
-    # whole mantra, not a stub. What must not exist: near-empty bodies, and
-    # anything that is NOT a mantra masquerading as a text with 1-2 lines.
+    # a complete beej mantra really is one line of ~25-35 chars; what must not
+    # exist is a non-mantra item masquerading as a 1-2 line stub
     bad_len = [x['id'] for x in items if x['c'] < 18 or not x['ln'].strip()]
-    check('no empty/one-word texts', not bad_len, str(bad_len[:3]))
+    check('no empty texts', not bad_len, str(bad_len[:3]))
     fake_short = [x['id'] for x in items if x['k'] != 'mantra' and len([l for l in x['ln'].split('\n') if l.strip()]) <= 2]
     check('short items are only real mantras', not fake_short, str(fake_short[:3]))
     trunc = [x['id'] for x in items if '…' in x['ln'] or '...' in x['ln']]
@@ -133,7 +139,13 @@ def main():
         tabs = pg.inner_text('.cats')
         m = re.search(r'Aarti\s+(\d+)\s+FULL', tabs)
         check('aarti tab counts corpus', m and int(m.group(1)) >= 60, tabs[:60].replace('\n', ' '))
-        check('stotra + bhajan tabs present', 'Stotra' in tabs and 'Bhajan' in tabs)
+        check('stotra tab present', 'Stotra' in tabs)
+        check('bhajan tab present', 'Bhajan' in tabs)
+        pg.locator('.cats button:has-text("Bhajan")').first.click()
+        pg.wait_for_timeout(400)
+        check('bhajan tab lists', pg.locator('button[data-arti-row="bhajan"]').count() >= 45, str(pg.locator('button[data-arti-row="bhajan"]').count()))
+        pg.locator('.cats button:has-text("Aarti")').first.click()
+        pg.wait_for_timeout(300)
         rows = pg.locator('button[data-arti-row]')
         check('corpus rows render', rows.count() >= 40, f"{rows.count()} rows")
         rows.first.click()

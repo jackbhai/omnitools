@@ -131,7 +131,9 @@ python3 tests/qa_new.py                                # app-wide, 157 checks
 python3 tests/qa_arti.py                               # devotional corpus, 39 checks (dev too)
 ```
 
-In this sandbox headless chromium needs the local lib dir:
+In this sandbox headless chromium needs the local lib dir, and after a reset
+the SONAME symlinks under ~/.libs are gone even though the .so files are not —
+run `sh scripts/fix_playwright_libs.sh` first if the browser dies.
 `LD_LIBRARY_PATH=/home/user/.libs/usr/lib/x86_64-linux-gnu`, and if a reset
 wiped `~/.cache`, `pip install playwright && python3 -m playwright install
 chromium` plus relinking the versioned `.so`s in `.libs` (unversioned names
@@ -201,10 +203,12 @@ local `dist/` and grep for marker strings. Feature markers live in
 
 ## Devotional corpus (arti sangrah)
 
-- `src/data/arti.json`: 337 full texts (69 aarti / 50 chalisa / 54 mantra /
-  114 stotra / 50 bhajan), scraped once from a public aarti site's pages (Devanagari
-  only, nothing truncated, every item keeps its source URL + fetch date).
-  It is a dynamic-import chunk (~150 KB gzip) — never statically imported,
+- `src/data/arti.json`: 342 full texts (73 aarti / 50 chalisa / 44 mantra /
+  114 stotra / 61 bhajan, 15 of them Marathi aarti + bhupal from Wikimedia), scraped once from a public aarti site's pages plus the wiki
+  layer (Devanagari only, nothing truncated, every item keeps its source
+  URL + fetch date). If a source line itself is ellipsised the item is
+  dropped whole — a hymn with a spliced-out line is worse than no hymn.
+  It is a dynamic-import chunk (~135 KB gzip) — never statically imported,
   the shell must stay lean. Rebuild: `python3 /home/user/scrape/arti/fetch_ha.py`
   (resumable ndjson, polite 0.35 s pacing) then `node scripts/build_arti.mjs`,
   which quality-gates every item (devanagari ratio, no ellipsis, no markup)

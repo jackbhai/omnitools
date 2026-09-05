@@ -1692,7 +1692,7 @@ export function Devotional() {
               <div className="main">
                 <b>{x.t}{x.d ? ` · ${x.d}` : ''} · FULL TEXT {x.ln.split('\n').length} lines</b>
                 <span className="dim sm">{x.c} chars · {first.slice(0, 80)}</span>
-                <span className="dim sm" style={{ fontSize: 11 }}>संग्रह: hinduaarti.com · {x.f}</span>
+                <span className="dim sm" style={{ fontSize: 11 }}>{x.s || 'hinduaarti.com'} · {x.f}{x.lic ? ` · ${x.lic}` : ''}</span>
               </div>
               <Icon n="back" size={14} style={{ transform: 'rotate(180deg)', opacity: .5 }} />
             </button>
