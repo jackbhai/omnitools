@@ -33,6 +33,12 @@ export const mediaAsset = (u) =>
 /** Direct stream/download resolution for a public media URL. */
 export const RESOLVE_API = `${MEDIA_API}alldl?url=`;
 
+/** Voice synthesis for the devotional reader (returns audio/mpeg per text chunk). */
+export const TTS_API = `${MEDIA_API}tts`;
+
+/** The voice catalogue that goes with it (index + language per voice). */
+export const VOICES_API = `${MEDIA_API}voices`;
+
 /** Handwriting page renderer. */
 export const HANDWRITING_API = `${MEDIA_API}hand?text=`;
 
