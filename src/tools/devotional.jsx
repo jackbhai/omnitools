@@ -1567,7 +1567,7 @@ We worship three-eyed Lord Shiva, fragrant, nourisher of all, liberate us from d
 
 /* hinduaarti sangrah — its own async chunk; shell stays lean, texts full */
 function splitSangrah(ARTI) {
-  const HA = { aarti: [], chalisa: [], mantra: [], stotra: [] };
+  const HA = { aarti: [], chalisa: [], mantra: [], stotra: [], bhajan: [] };
   for (const it of (ARTI && ARTI.items ? ARTI.items : [])) { if (HA[it.k]) HA[it.k].push(it); }
   const HA_CHARS = (ARTI && ARTI.items ? ARTI.items : []).reduce((s, x) => s + x.c, 0);
   return { HA, HA_CHARS };
@@ -1639,12 +1639,12 @@ export function Devotional() {
   const { HA, HA_CHARS } = useMemo(() => splitSangrah(ARTI), [ARTI]);
   const N_CUR = AARTIS_FULL.length + CHALISAS_FULL.length + MANTRAS_FULL.length;
   const N_CORP = (ARTI ? ARTI.meta.n : 0) + N_CUR;
-  const IN = { aarti: AARTIS_FULL, chalisa: CHALISAS_FULL, mantra: MANTRAS_FULL, stotra: [] };
+  const IN = { aarti: AARTIS_FULL, chalisa: CHALISAS_FULL, mantra: MANTRAS_FULL, stotra: [], bhajan: [] };
   const matchIn = (x) => !q || ((x.name || '') + ' ' + (x.hi || '') + ' ' + (x.deity || '')).toLowerCase().includes(q.toLowerCase());
   const matchHa = (x) => !q || ((x.t || '') + ' ' + (x.d || '') + ' ' + x.ln.slice(0, 140)).toLowerCase().includes(q.toLowerCase());
   const inRows = IN[tab].filter(matchIn);
   const haRows = HA[tab].filter(matchHa);
-  const cnt = { aarti: AARTIS_FULL.length + HA.aarti.length, chalisa: CHALISAS_FULL.length + HA.chalisa.length, mantra: MANTRAS_FULL.length + HA.mantra.length, stotra: HA.stotra.length };
+  const cnt = { aarti: AARTIS_FULL.length + HA.aarti.length, chalisa: CHALISAS_FULL.length + HA.chalisa.length, mantra: MANTRAS_FULL.length + HA.mantra.length, stotra: HA.stotra.length, bhajan: HA.bhajan.length };
 
   return (<>
     <div className="cats">
@@ -1653,6 +1653,7 @@ export function Devotional() {
         ['chalisa', `Chalisa ${cnt.chalisa} FULL`, 'book'],
         ['mantra', `Mantra ${cnt.mantra} FULL`, 'smile'],
         ['stotra', `Stotra ${cnt.stotra} FULL`, 'music'],
+        ['bhajan', `Bhajan ${cnt.bhajan} FULL`, 'volume'],
       ].map(([v, n, i]) => (
         <button key={v} className={`cat ${tab === v ? 'on' : ''}`} onClick={() => { setTab(v); setPicked(null); }}><Icon n={i} size={13} /> {n}</button>
       ))}

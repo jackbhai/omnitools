@@ -201,10 +201,10 @@ local `dist/` and grep for marker strings. Feature markers live in
 
 ## Devotional corpus (arti sangrah)
 
-- `src/data/arti.json`: 270 full texts (62 aarti / 50 chalisa / 44 mantra /
-  114 stotra), scraped once from a public aarti site's pages (Devanagari
+- `src/data/arti.json`: 337 full texts (69 aarti / 50 chalisa / 54 mantra /
+  114 stotra / 50 bhajan), scraped once from a public aarti site's pages (Devanagari
   only, nothing truncated, every item keeps its source URL + fetch date).
-  It is a dynamic-import chunk (~135 KB gzip) — never statically imported,
+  It is a dynamic-import chunk (~150 KB gzip) — never statically imported,
   the shell must stay lean. Rebuild: `python3 /home/user/scrape/arti/fetch_ha.py`
   (resumable ndjson, polite 0.35 s pacing) then `node scripts/build_arti.mjs`,
   which quality-gates every item (devanagari ratio, no ellipsis, no markup)

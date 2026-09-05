@@ -44,16 +44,21 @@ def main():
     kinds = {}
     for x in items:
         kinds[x['k']] = kinds.get(x['k'], 0) + 1
-    check('all four kinds present', all(k in kinds for k in ('aarti', 'chalisa', 'mantra', 'stotra')), str(kinds))
-    check('corpus is deep', len(items) >= 200, f"{len(items)} texts")
+    check('all five kinds present', all(k in kinds for k in ('aarti', 'chalisa', 'mantra', 'stotra', 'bhajan')), str(kinds))
+    check('corpus is deep', len(items) >= 300, f"{len(items)} texts")
     ids = [x['id'] for x in items]
     check('ids unique', len(ids) == len(set(ids)))
     bad_src = [x['id'] for x in items if not str(x.get('u', '')).startswith('https://www.hinduaarti.com/')]
     check('every item source-labelled', not bad_src, str(bad_src[:3]))
     bad_fetched = [x['id'] for x in items if not re.match(r'^\d{4}-\d{2}-\d{2}$', str(x.get('f', '')))]
     check('every item fetched-date', not bad_fetched, str(bad_fetched[:3]))
-    bad_len = [x['id'] for x in items if x['c'] < 30 or len(x['ln'].split('\n')) < 1]
+    # complete beej mantras really are one line of ~26-35 chars — that is the
+    # whole mantra, not a stub. What must not exist: near-empty bodies, and
+    # anything that is NOT a mantra masquerading as a text with 1-2 lines.
+    bad_len = [x['id'] for x in items if x['c'] < 18 or not x['ln'].strip()]
     check('no empty/one-word texts', not bad_len, str(bad_len[:3]))
+    fake_short = [x['id'] for x in items if x['k'] != 'mantra' and len([l for l in x['ln'].split('\n') if l.strip()]) <= 2]
+    check('short items are only real mantras', not fake_short, str(fake_short[:3]))
     trunc = [x['id'] for x in items if '…' in x['ln'] or '...' in x['ln']]
     check('no truncation ellipses', not trunc, str(trunc[:3]))
     tags = [x['id'] for x in items if re.search(r'[<>{}\[\]|\\_~`#=]|</|function|window\.|__next', x['ln'])]
@@ -128,7 +133,7 @@ def main():
         tabs = pg.inner_text('.cats')
         m = re.search(r'Aarti\s+(\d+)\s+FULL', tabs)
         check('aarti tab counts corpus', m and int(m.group(1)) >= 60, tabs[:60].replace('\n', ' '))
-        check('stotra tab present', 'Stotra' in tabs)
+        check('stotra + bhajan tabs present', 'Stotra' in tabs and 'Bhajan' in tabs)
         rows = pg.locator('button[data-arti-row]')
         check('corpus rows render', rows.count() >= 40, f"{rows.count()} rows")
         rows.first.click()
