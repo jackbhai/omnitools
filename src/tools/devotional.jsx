@@ -16,6 +16,7 @@ import { useData, Spin, Err, Src, Card, Stat } from '../ui/kit';
 import { Icon } from '../ui/icons';
 import { jget } from '../core/engine';
 import { useListen } from '../core/useListen';
+import { rashifalFor } from '../core/rashifal-banks';
 import { idbGet, idbSet } from '../core/idbcache';
 import { allDeviceVoices, deviceVoices, runChant, stanzas, stopAudio, pickStudioVoice, studioChunk } from '../core/tts';
 
@@ -923,137 +924,70 @@ function devToHinglish(hiText) {
   return out.replace(/\s+/g,' ').trim();
 }
 
+/* ---------------------------------------------------------------- RASHIFAL
+ * Overhauled: the old engine fetched one English paragraph and machine-
+ * translated it (audit verdict: WEAK — MT Hinglish). Replaced by a fully
+ * self-contained system: hand-written phrase banks in THREE registers
+ * (proper Hindi / English / Hinglish) in src/core/rashifal-banks.js,
+ * seeded by date + rashi so the same sign reads the same all day and
+ * changes tomorrow. No network, no MT, works offline. Listen reads the
+ * day in the selected register's voice via the shared hook. */
 export function Rashifal() {
-  const [sign, setSign] = useState('aries');
-  const [lang, setLang] = useState('all');
-  const h = useData('rashifal', P.rashifal, { sign }, { ttl: 3600000, deps: [sign] });
-  const [trans, setTrans] = useState({ hi: '', pa: '', ur: '', es: '', hing: '', loading: false });
-  const cur = RASHIS.find(([v]) => v === sign);
-
-  useEffect(() => {
-    if (!h.data?.text) return;
-    const txt = h.data.text.slice(0, 400);
-    if (!txt) return;
-    setTrans((t) => ({ ...t, loading: true }));
-    const pairs = [
-      ['hi', 'en|hi'],
-      ['pa', 'en|pa'],
-      ['ur', 'en|ur'],
-      ['es', 'en|es'],
-    ];
-    Promise.all(pairs.map(async ([key, pair]) => {
-      try {
-        const d = await jget(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(txt)}&langpair=${pair}`);
-        return [key, d.responseData?.translatedText || ''];
-      } catch { return [key, '']; }
-    })).then((arr) => {
-      const obj = {}; arr.forEach(([k, v]) => obj[k] = v);
-      // Generate Hinglish from Hindi translation
-      const hi = obj.hi || '';
-      const hing = hi ? devToHinglish(hi) : '';
-      setTrans({ ...obj, hing, loading: false });
-    });
-  }, [h.data?.text]);
-
+  const [sign, setSign] = useState(0);
+  const [reg, setReg] = useState('hi');
+  const listen = useListen();
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const r = useMemo(() => rashifalFor(sign, dateStr, reg), [sign, dateStr, reg]);
+  useEffect(() => { listen.stop(); }, [sign, reg]);
+  const s = RASHIS[sign];
+  const name = reg === 'hi' ? s[1] : reg === 'hing' ? s[2] : `${s[0][0].toUpperCase()}${s[0].slice(1)}`;
+  const L = reg === 'hi'
+    ? { overall: 'आज का दिन', career: 'करियर व धन', love: 'प्रेम व परिवार', health: 'स्वास्थ्य', lucky: 'शुभ अंक', colour: 'शुभ रंग', score: 'आज का स्कोर', listen: 'सुनें · आज का राशिफल' }
+    : reg === 'hing'
+      ? { overall: 'Aaj ka din', career: 'Career aur paisa', love: 'Pyar aur parivaar', health: 'Health', lucky: 'Lucky number', colour: 'Lucky rang', score: 'Aaj ka score', listen: 'Sunein · Aaj ka rashifal' }
+      : { overall: 'Your day', career: 'Career & money', love: 'Love & family', health: 'Health', lucky: 'Lucky number', colour: 'Lucky colour', score: 'Day score', listen: 'Listen · Today\u2019s reading' };
+  const sections = [
+    ['overall', L.overall, r.overall], ['career', L.career, r.career], ['love', L.love, r.love], ['health', L.health, r.health], ['advice', reg === 'hi' ? 'उपाय' : reg === 'hing' ? 'Upay' : 'Remedy', r.advice],
+  ];
+  const items = sections.map((x) => x[2]);
+  const voiceLang = reg === 'hi' ? 'hi' : 'en';
   return (<>
     <div className="cats">
-      {RASHIS.map(([v, hi, en]) => (
-        <button key={v} className={`cat ${sign === v ? 'on' : ''}`} onClick={() => setSign(v)}>{hi} {en}</button>
+      {RASHIS.map((x, i) => (
+        <button key={x[0]} className={`cat ${sign === i ? 'on' : ''}`} onClick={() => setSign(i)}>{reg === 'hi' ? x[1] : reg === 'hing' ? x[2] : x[0]}</button>
       ))}
     </div>
     <div className="cats" style={{ marginTop: 8 }}>
-      {[
-        ['all', 'All 6 Lang', 'books'],
-        ['hi', 'Hindi', 'type'],
-        ['hinglish', 'Hinglish PRO', 'quote'],
-        ['en', 'English', 'globe'],
-        ['pa', 'Punjabi', 'type'],
-        ['ur', 'Urdu', 'quote'],
-        ['es', 'Spanish', 'earth'],
-      ].map(([v, n, i]) => (
-        <button key={v} className={`cat ${lang === v ? 'on' : ''}`} onClick={() => setLang(v)}><Icon n={i} size={10} /> {n}</button>
+      {[['hi', 'हिंदी'], ['en', 'English'], ['hing', 'Hinglish']].map(([v, n]) => (
+        <button key={v} className={`cat ${reg === v ? 'on' : ''}`} onClick={() => setReg(v)}>{n}</button>
       ))}
+      <span className="dim sm" style={{ alignSelf: 'center' }}>{today.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
     </div>
     <Card style={{ marginTop: 12 }}>
-      <div className="chead"><Icon n="star" size={16} /> {cur ? `${cur[1]} (${cur[2]}) - ${cur[3]}` : sign} · आज का राशिफल · 6 Languages Ultra Deep</div>
-      <div className="dim sm">Aaj ka din kaisa rahega · Daily Rashifal · {new Date().toLocaleDateString('hi-IN')} · MyMemory parallel + Hinglish transliteration PRO</div>
-      {h.loading && <Spin t="Rashifal padh rahe hain - 6 languages ultra" />}
-      {h.error && <Err error={h.error} retry={() => h.run()} />}
-      {h.data && (
-        <>
-          {h.data.date && <div className="dim sm" style={{ margin: '8px 0' }}>{h.data.date} · {h.meta?.id || ''} · 3 sources + 4 translations</div>}
-          {trans.loading && <div className="dim sm" style={{ marginTop: 6 }}>Translating to Hindi Punjabi Urdu Spanish + Hinglish transliteration via MyMemory...</div>}
-
-          {(lang === 'all' || lang === 'en') && (
-            <div style={{ padding: 12, background: 'var(--s2)', borderRadius: 10, marginTop: 8, borderLeft: '3px solid var(--cyan)' }}>
-              <div className="dim sm">English - Original Horoscope - {cur?.[3]}</div>
-              <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--fg)', marginTop: 4 }}>{h.data.text}</div>
-              <div className="dim sm" style={{ marginTop: 6, fontSize: 10 }}>Source: {h.meta?.id || 'freehoroscopeapi'} · verified real · {h.data.text.length} chars</div>
+      <div className="chead"><Icon n="star" size={16} /> {name} · {s[3]}</div>
+      <div className="btnrow" style={{ marginTop: 8 }}>
+        <span className="pill">{L.score}: {r.score}/100</span>
+        <span className="pill">{L.lucky}: {r.luckyNumber}</span>
+        <span className="pill">{L.colour}: {r.luckyColour}</span>
+      </div>
+      <ListenBar listen={listen} onPlayAll={() => listen.playFrom(items, 0, { lang: voiceLang })} label={L.listen} />
+      {sections.map(([key, label, text], i) => {
+        const isOn = listen.active === i;
+        return (
+          <div key={key} style={{ marginTop: 10, padding: 12, background: isOn ? 'var(--s3)' : 'var(--s2)', borderRadius: 12, borderLeft: isOn ? '3px solid #c9a227' : '3px solid transparent' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="dim sm">{label}{isOn ? ' · playing' : ''}</span>
+              <button className="cat" title="Listen from this section" onClick={() => (listen.playing && isOn) ? listen.stop() : listen.playFrom(items, i, { lang: voiceLang })}><Icon n="volume" size={12} /> {listen.playing && isOn ? 'Stop' : 'Listen'}</button>
             </div>
-          )}
-          {(lang === 'all' || lang === 'hi') && (
-            <div style={{ padding: 12, background: 'var(--s2)', borderRadius: 10, marginTop: 8, borderLeft: '3px solid #ff9933' }}>
-              <div className="dim sm">Hindi - हिंदी राशिफल - {cur?.[1]} राशि · MyMemory en→hi</div>
-              <div style={{ fontSize: 14.5, lineHeight: 1.7, color: 'var(--fg)', marginTop: 4 }}>
-                {trans.hi || (cur && `${cur[1]} राशि वालों के लिए आज का दिन: ${h.data.text.slice(0, 300)}... आज आपको अपने काम में सफलता मिलेगी। परिवार का सहयोग मिलेगा।`)}
-              </div>
-              <div className="dim sm" style={{ marginTop: 6, fontSize: 10 }}>MyMemory en→hi {trans.hi ? 'verified real' : 'fallback'} · {trans.hi?.length || 0} chars</div>
-            </div>
-          )}
-          {(lang === 'all' || lang === 'hinglish') && (
-            <div style={{ padding: 12, background: 'var(--s2)', borderRadius: 10, marginTop: 8, borderLeft: '3px solid #ffcc00' }}>
-              <div className="dim sm">Hinglish - Roman Hindi + English Mix · PRO Transliteration · Real devanagari→roman</div>
-              <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--fg2)', marginTop: 4 }}>
-                {trans.hing ? `${trans.hing.slice(0, 400)}...` : ''}
-                <br />
-                <span style={{ fontStyle: 'italic' }}>{cur?.[1]} rashi walo ke liye aaj ka din: {h.data.text.slice(0, 200)}... Aaj aapko kaam me safalta milegi. Parivar ka sahyog milega. Love, career, health sab badhiya rahega.</span>
-              </div>
-              <div className="dim sm" style={{ marginTop: 6, fontSize: 10 }}>Hinglish PRO: Hindi→Roman transliteration {trans.hing ? 'verified' : 'fallback English+Hindi mix'} · {trans.hing?.length || 0} chars</div>
-            </div>
-          )}
-          {(lang === 'all' || lang === 'pa') && (
-            <div style={{ padding: 12, background: 'var(--s2)', borderRadius: 10, marginTop: 8, borderLeft: '3px solid var(--green)' }}>
-              <div className="dim sm">Punjabi - ਪੰਜਾਬੀ ਰਾਸ਼ੀਫਲ - {cur?.[1]} · MyMemory en→pa</div>
-              <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--fg)', marginTop: 4 }}>{trans.pa || `Punjabi: ${h.data.text.slice(0, 200)}...`}</div>
-              <div className="dim sm" style={{ marginTop: 6, fontSize: 10 }}>MyMemory en→pa {trans.pa ? 'verified' : 'loading'} · {trans.pa?.length || 0} chars</div>
-            </div>
-          )}
-          {(lang === 'all' || lang === 'ur') && (
-            <div style={{ padding: 12, background: 'var(--s2)', borderRadius: 10, marginTop: 8, borderLeft: '3px solid #ab47bc' }}>
-              <div className="dim sm">Urdu - اردو زائچہ - {cur?.[0]} · MyMemory en→ur</div>
-              <div style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--fg)', marginTop: 4, textAlign: trans.ur ? 'right' : 'left' }}>{trans.ur || `Urdu: ${h.data.text.slice(0, 200)}...`}</div>
-              <div className="dim sm" style={{ marginTop: 6, fontSize: 10 }}>MyMemory en→ur {trans.ur ? 'verified' : 'loading'} · {trans.ur?.length || 0} chars</div>
-            </div>
-          )}
-          {(lang === 'all' || lang === 'es') && (
-            <div style={{ padding: 12, background: 'var(--s1)', borderRadius: 10, marginTop: 8, borderLeft: '3px solid #29b6f6' }}>
-              <div className="dim sm">Spanish - Horóscopo - {cur?.[0]} · MyMemory en→es</div>
-              <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--fg3)', marginTop: 4 }}>{trans.es || `ES: ${h.data.text.slice(0, 200)}...`}</div>
-              <div className="dim sm" style={{ marginTop: 6, fontSize: 10 }}>MyMemory en→es {trans.es ? 'verified' : 'loading'}</div>
-            </div>
-          )}
-          <div style={{ marginTop: 12, padding: 10, background: 'var(--s1)', borderRadius: 10 }}>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <span className="pill">Rashi: {cur?.[1]} ({cur?.[2]})</span>
-              <span className="pill">English: {cur?.[0]}</span>
-              <span className="pill">Aaj: {new Date().toLocaleDateString('hi-IN')}</span>
-              <span className="pill">Nature: {cur?.[3]}</span>
-              <span className="pill">6 Lang: HI EN Hinglish PA UR ES</span>
-              <span className="pill">Hinglish: {trans.hing?.length || 0} chars PRO</span>
-            </div>
+            <div style={{ fontSize: 15, lineHeight: 1.65, marginTop: 4 }}>{text}</div>
           </div>
-          <div className="btnrow" style={{ marginTop: 12 }}>
-            <button className="btn sm" onClick={() => h.run()}>Refresh + Retranslate 6 Lang</button>
-          </div>
-          <Src meta={h.meta} />
-        </>
-      )}
+        );
+      })}
     </Card>
-    <div className="src"><span className="dot" /><span>Rashifal 6 languages ultra verified · Hindi + English + Hinglish PRO (devanagari→roman) + Punjabi + Urdu + Spanish · MyMemory parallel en→hi/pa/ur/es real · Hinglish transliteration perfect · 3 independent horoscope sources + 4 translations</span></div>
+    <div className="src"><span className="dot" /><span>Rashifal · hand-written readings in Hindi, English and Hinglish — written in-app, no machine translation, no network needed · same sign reads the same all day and refreshes tomorrow · for guidance and reflection</span></div>
   </>);
 }
-
-/* ---------------------------------------------------------------- KUNDLI ULTRA DEEP - 15 PAGES PRO LEVEL */
 
 function ayanamsaLahiri(year) {
   return 23.856 + (year - 2000) * 0.013969 + (year - 2000) * (year - 2000) * 0.0000001;
