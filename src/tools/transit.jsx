@@ -7,7 +7,7 @@
  * Everything is CORS-verified and keyless.
  */
 import React, { useEffect, useState } from 'react';
-import { jget, resolve } from '../core/engine';
+import { jget, resolve, cacheRead } from '../core/engine';
 import { useLoc, LocBar } from '../core/geo';
 import { useData, Spin, Err, Empty, Src, Search, Card, Chips, Field, Stat, fmt } from '../ui/kit';
 import { Icon } from '../ui/icons';
@@ -203,14 +203,60 @@ const AMENITIES = [
 ];
 
 const nearbyPool = [
-  { id: 'overpass-de', label: 'Overpass DE', async run(p) { return near(p, 'https://overpass-api.de/api/interpreter'); } },
-  { id: 'overpass-kumi', label: 'Overpass Kumi', async run(p) { return near(p, 'https://overpass.kumi.systems/api/interpreter'); } },
+  { id: 'overpass-race', label: 'Overpass mirrors', async run(p) { return near(p); } },
 ];
+
+/* Every public Overpass mirror, raced first-good-wins.
+ *
+ * The audit measured the two mirrors this tool used sequentially at
+ * 40–45 s timeouts: with fall-through pooling, a dead first mirror eats
+ * its whole timeout before the second is even asked. Racing turns the
+ * pool into "as fast as the fastest healthy mirror" — each mirror gets
+ * its own 10 s deadline, the first usable answer wins and the rest are
+ * aborted. Four mirrors are raced: the two long-standing public
+ * instances plus the private.coffee and OSM Switzerland mirrors.
+ * (This VM's egress mangles Overpass POSTs, so mirror liveness cannot
+ * be re-verified from here — the race is precisely what makes an
+ * unreachable mirror harmless: it simply never wins.) */
+const NEAR_EPS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://overpass.osm.ch/api/interpreter',
+];
+const EPS = NEAR_EPS;   // metro-lines / bus-routes pools index into the same mirrors
+
+function ovpRace(query, ms = 10000) {
+  return new Promise((resolveP, rejectP) => {
+    let settled = 0, lastErr = new Error('all mirrors failed');
+    const ctrls = NEAR_EPS.map((ep) => {
+      const c = new AbortController();
+      const t = setTimeout(() => c.abort(), ms);
+      fetch(ep, {
+        method: 'POST', signal: c.signal,
+        body: 'data=' + encodeURIComponent(query),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      })
+        .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then((d) => {
+          clearTimeout(t);
+          ctrls.forEach((x) => { if (x !== c) x.abort(); });
+          resolveP(d);
+        })
+        .catch((e) => {
+          clearTimeout(t);
+          lastErr = e;
+          if (++settled === NEAR_EPS.length) rejectP(lastErr);
+        });
+      return c;
+    });
+  });
+}
 
 async function near({ lat, lon, filter, radius }) {
   // nodes-only keeps Overpass fast; ways rarely matter for these amenities
-  const q = `[out:json][timeout:18];node${filter}(around:${radius},${lat},${lon});out 60;`;
-  const d = await ovp(endpointOf(), q, 11000);
+  const q = `[out:json][timeout:12];node${filter}(around:${radius},${lat},${lon});out 40;`;
+  const d = await ovpRace(q);
   const out = (d.elements || []).map((x) => {
     const la = x.lat ?? x.center?.lat, lo = x.lon ?? x.center?.lon;
     if (!la) return null;
@@ -223,9 +269,6 @@ async function near({ lat, lon, filter, radius }) {
   if (!out.length) throw new Error('nothing found nearby');
   return out;
 }
-let _ep = 0;
-const EPS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
-const endpointOf = () => EPS[(_ep++) % EPS.length];
 
 export function Nearby() {
   const { loc } = useLoc();
@@ -235,6 +278,14 @@ export function Nearby() {
   const n = useData('nearby', nearbyPool,
     { lat: loc.lat, lon: loc.lon, filter: f.q, radius },
     { ttl: 6e5, deps: [kind, radius, loc.lat, loc.lon] });
+  /* Overpass can be slow even when it is healthy; past ~8 s the spinner
+     says so instead of leaving a bare "Scanning…" that reads as broken. */
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!n.loading) { setSlow(false); return; }
+    const t = setTimeout(() => setSlow(true), 8000);
+    return () => clearTimeout(t);
+  }, [n.loading]);
   return (<>
     <LocBar />
     <div className="cats" style={{ marginTop: 10 }}>
@@ -243,7 +294,7 @@ export function Nearby() {
     </div>
     <Chips items={[{v:1000,l:'1 km'},{v:2000,l:'2 km'},{v:5000,l:'5 km'},{v:10000,l:'10 km'}]}
       value={radius} onPick={setRadius} />
-    {n.loading && <Spin t="Scanning your area" />}
+    {n.loading && <Spin t={slow ? 'Still looking — the map service is slow right now' : 'Scanning your area'} />}
     {n.error && <Err error={n.error} retry={() => n.run()} />}
     {n.data && (<>
       <div className="dim sm" style={{ margin: '10px 0 8px' }}>{n.data.length} found within {radius/1000} km</div>
@@ -318,18 +369,33 @@ export function TravelGuide() {
 
 /* ------------------------------------------------------------ MANDI PRICES */
 const DGI_KEY = '579b464db66ec23bdd000001cdd3946e44ce4aad7209ff7b23ac571b'; // public sample key
+const MANDI_URL = `https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070` +
+  `?api-key=${DGI_KEY}&format=json&limit=500`;
+function shapeMandi(d) {
+  const rec = d.records || [];
+  if (!rec.length) throw new Error('no records published right now');
+  return rec.map((r) => ({ commodity: r.commodity, market: r.market, district: r.district,
+    state: r.state, min: +r.min_price, max: +r.max_price, modal: +r.modal_price,
+    date: r.arrival_date, variety: r.variety }));
+}
+/* This was the app's only single-source live tool, and its one source is
+ * a government server with real outages (audit 2026-11-13: unreachable
+ * direct AND through the relay — origin error). There is no second
+ * public mandi dataset to fall back to, so resilience here is layered:
+ * two network paths to the official feed (direct, then the relay chain,
+ * whose different egress reaches origins a browser sometimes cannot),
+ * and below the pool the engine serves the last good result from
+ * localStorage — which the UI labels with its saved date instead of
+ * pretending it is live. Only a first-ever visit with the feed down
+ * gets the honest error. */
 const mandiPool = [
   { id: 'datagovin', label: 'data.gov.in', async run() {
       // NOTE: the public sample key returns a small page and server-side
       // filters[state] frequently yields 0 rows, so we pull a page and filter
       // in the client instead of trusting the filter param.
-      const d = await jget(`https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070` +
-        `?api-key=${DGI_KEY}&format=json&limit=500`);
-      const rec = d.records || [];
-      if (!rec.length) throw new Error('no records published right now');
-      return rec.map((r) => ({ commodity: r.commodity, market: r.market, district: r.district,
-        state: r.state, min: +r.min_price, max: +r.max_price, modal: +r.modal_price,
-        date: r.arrival_date, variety: r.variety })); } },
+      return shapeMandi(await jget(MANDI_URL)); } },
+  { id: 'datagovin-relay', label: 'data.gov.in (via relay)', async run() {
+      return shapeMandi(await jget(MANDI_URL, { proxy: true })); } },
 ];
 
 export function Mandi() {
@@ -337,6 +403,7 @@ export function Mandi() {
   const [q, setQ] = useState('');
   const m = useData('mandi', mandiPool, {}, { ttl: 18e5 });
   const rows = m.data || [];
+  const savedAt = m.meta?.stale ? cacheRead('mandi:{}', 0)?.t : null;
   const states = ['All', ...[...new Set(rows.map((r) => r.state).filter(Boolean))].sort()];
   const list = rows
     .filter((x) => state === 'All' || x.state === state)
@@ -344,6 +411,13 @@ export function Mandi() {
   return (<>
     {m.loading && <Spin t="Loading mandi prices" />}
     {m.error && <Err error={m.error} retry={() => m.run()} />}
+    {m.meta?.stale && (
+      <div className="src" style={{ marginBottom: 8 }}>
+        <span className="dot warn" />
+        <span>Live feed unreachable — showing saved prices
+          {savedAt ? <> · Last updated {new Date(savedAt).toLocaleString('en-IN',
+            { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</> : ''}</span>
+      </div>)}
     {m.data && (<>
       <div className="cats">{states.map((s2) =>
         <button key={s2} className={`cat ${state === s2 ? 'on' : ''}`} onClick={() => setState(s2)}>{s2}</button>)}</div>

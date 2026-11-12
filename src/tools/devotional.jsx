@@ -39,80 +39,81 @@ const GITA_CH = [
   [18, 'मोक्षसंन्यासयोग', 'Moksha Sanyas Yog', 'Moksha Sanyasa Yoga'],
 ];
 
+/* ------------------------------------------------------------- GITA FULL — BUNDLED
+ * Complete Bhagavad Gita bundled into the app: 18 chapters, 701 verses
+ * (source dataset count; commonly cited as 700), every verse with Sanskrit +
+ * Roman transliteration + Hindi (Tejomayananda) + English (Sivananda).
+ * Data fetched once from the verified Vedic Scriptures dataset and shipped
+ * as per-chapter chunks in src/data/gita — works fully offline, no API at
+ * runtime. Cross-checked against the gita/gita dataset (both verified live). */
+const GITA_FILES = {
+  1: () => import('../data/gita/ch-01.json'), 2: () => import('../data/gita/ch-02.json'),
+  3: () => import('../data/gita/ch-03.json'), 4: () => import('../data/gita/ch-04.json'),
+  5: () => import('../data/gita/ch-05.json'), 6: () => import('../data/gita/ch-06.json'),
+  7: () => import('../data/gita/ch-07.json'), 8: () => import('../data/gita/ch-08.json'),
+  9: () => import('../data/gita/ch-09.json'), 10: () => import('../data/gita/ch-10.json'),
+  11: () => import('../data/gita/ch-11.json'), 12: () => import('../data/gita/ch-12.json'),
+  13: () => import('../data/gita/ch-13.json'), 14: () => import('../data/gita/ch-14.json'),
+  15: () => import('../data/gita/ch-15.json'), 16: () => import('../data/gita/ch-16.json'),
+  17: () => import('../data/gita/ch-17.json'), 18: () => import('../data/gita/ch-18.json'),
+};
+
 export function Gita() {
-  const [ch, setCh] = useState(1);
-  const [vs, setVs] = useState(1);
+  const [ch, setCh] = useState(2);
   const [lang, setLang] = useState('all');
-  const chapters = useData('gitaChapters', P.gitaChapters, {}, { ttl: 86400000 });
-  const verse = useData('gitaVerses', P.gitaVerses, { chapter: ch, verse: vs }, { ttl: 3600000, deps: [ch, vs] });
-  const curCh = chapters.data?.find((c) => c.number === ch);
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  const [jump, setJump] = useState('');
+  useEffect(() => {
+    let on = 1;
+    setData(null); setErr('');
+    GITA_FILES[ch]().then((m) => { if (on) setData(m.default); }).catch(() => { if (on) setErr('Chapter data could not be loaded from the app bundle. Reopen the app and try again.'); });
+    return () => { on = 0; };
+  }, [ch]);
+  const goJump = () => {
+    const m = String(jump).match(/(\d{1,2})\s*[.:]\s*(\d{1,2})/);
+    if (!m) return;
+    const c = Math.max(1, Math.min(18, parseInt(m[1]))); const v = parseInt(m[2]);
+    if (c !== ch) { setCh(c); setTimeout(() => document.getElementById(`gita-v-${v}`)?.scrollIntoView({ block: 'start' }), 600); }
+    else document.getElementById(`gita-v-${v}`)?.scrollIntoView({ block: 'start' });
+  };
+  const show = (k) => lang === 'all' || lang === k;
   return (<>
     <div className="cats">
       {GITA_CH.map(([n, hi]) => (
-        <button key={n} className={`cat ${ch === n ? 'on' : ''}`} onClick={() => { setCh(n); setVs(1); }}>
-          {n}. {hi.slice(0, 7)}
-        </button>
+        <button key={n} className={`cat ${ch === n ? 'on' : ''}`} onClick={() => setCh(n)}>{n}. {hi.slice(0, 7)}</button>
       ))}
     </div>
     <div className="cats" style={{ marginTop: 8 }}>
-      {[
-        ['all', 'All 3 Lang', 'books'],
-        ['sa', 'Sanskrit', 'book'],
-        ['hi', 'Hindi', 'type'],
-        ['en', 'English', 'globe'],
-        ['hinglish', 'Hinglish', 'quote'],
-      ].map(([v, n, i]) => (
-        <button key={v} className={`cat ${lang === v ? 'on' : ''}`} onClick={() => setLang(v)}><Icon n={i} size={12} /> {n}</button>
+      {[['all', 'All'], ['sa', 'Sanskrit'], ['tr', 'Roman'], ['hi', 'Hindi'], ['en', 'English']].map(([v, n]) => (
+        <button key={v} className={`cat ${lang === v ? 'on' : ''}`} onClick={() => setLang(v)}>{n}</button>
       ))}
+      <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+        <input value={jump} onChange={(e) => setJump(e.target.value)} placeholder="Go to 2.47" style={{ width: 90, background: 'var(--s2)', border: '1px solid var(--s3)', borderRadius: 8, color: 'var(--fg)', padding: 6 }} />
+        <button className="btn sm" onClick={goJump}>Go</button>
+      </span>
     </div>
     <Card style={{ marginTop: 12 }}>
-      <div className="chead"><Icon n="book" size={16} /> Bhagavad Gita · Chapter {ch} Verse {vs} · 700 verses real</div>
-      {curCh && (
-        <>
-          <div className="dim sm" style={{ marginBottom: 6 }}>{curCh.translation || curCh.name} · {curCh.verses} verses · {GITA_CH[ch - 1]?.[2]} · {GITA_CH[ch - 1]?.[3]}</div>
-          {(lang === 'all' || lang === 'en') && curCh?.summary_en && <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--fg2)', marginBottom: 8, padding: 8, background: 'var(--s2)', borderRadius: 8 }}><b>English Summary:</b> {curCh.summary_en.slice(0, 400)}</div>}
-          {(lang === 'all' || lang === 'hi') && curCh?.summary_hi && <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--fg2)', marginBottom: 8, padding: 8, background: 'var(--s2)', borderRadius: 8 }}><b>हिंदी सार:</b> {curCh.summary_hi.slice(0, 400)}</div>}
-        </>
-      )}
-      <div className="btnrow" style={{ marginBottom: 12 }}>
-        <button className="btn sm" onClick={() => setVs((v) => Math.max(1, v - 1))}>Prev</button>
-        <input type="number" min={1} max={curCh?.verses || 78} value={vs} onChange={(e) => setVs(Math.max(1, parseInt(e.target.value) || 1))} style={{ width: 60, textAlign: 'center', background: 'var(--s2)', border: '1px solid var(--s3)', borderRadius: 8, color: 'var(--fg)', padding: 6 }} />
-        <button className="btn sm" onClick={() => setVs((v) => v + 1)}>Next</button>
-        <button className="btn sm ghost" onClick={() => verse.run()}>Refresh</button>
+      <div className="chead"><Icon n="book" size={16} /> Bhagavad Gita · Chapter {ch} — {GITA_CH[ch - 1]?.[1]} · {data ? `${data.verses.length} verses` : ''}</div>
+      {data && (lang === 'all' || lang === 'en') && data.summary_en && <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--fg2)', marginBottom: 8, padding: 8, background: 'var(--s2)', borderRadius: 8 }}><b>Chapter summary (English):</b> {data.summary_en.slice(0, 500)}</div>}
+      {data && (lang === 'all' || lang === 'hi') && data.summary_hi && <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--fg2)', marginBottom: 8, padding: 8, background: 'var(--s2)', borderRadius: 8 }}><b>अध्याय सार (हिंदी):</b> {data.summary_hi.slice(0, 500)}</div>}
+      {!data && !err && <Spin t="Loading chapter from the app — bundled, works offline" />}
+      {err && <Err error={err} retry={() => setCh((c) => c)} />}
+      {data && data.verses.map((v) => (
+        <div key={v.v} id={`gita-v-${v.v}`} style={{ marginTop: 10, padding: 12, background: 'var(--s2)', borderRadius: 12 }}>
+          <div className="dim sm">{ch}.{v.v}</div>
+          {show('sa') && <div style={{ fontSize: 17, lineHeight: 1.7, fontWeight: 700, whiteSpace: 'pre-wrap', marginTop: 4 }}>{v.sa}</div>}
+          {show('tr') && v.tr && <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--fg2)', fontStyle: 'italic', marginTop: 6 }}>{v.tr}</div>}
+          {show('hi') && v.hi && <div style={{ fontSize: 14, lineHeight: 1.65, marginTop: 6 }}><span className="dim sm">हिंदी अर्थ · </span>{v.hi}</div>}
+          {show('en') && v.en && <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 6 }}><span className="dim sm">English · </span>{v.en}</div>}
+        </div>
+      ))}
+      <div className="btnrow" style={{ marginTop: 14 }}>
+        <button className="btn sm" disabled={ch === 1} onClick={() => setCh(ch - 1)}>← Prev chapter</button>
+        <button className="btn sm" disabled={ch === 18} onClick={() => setCh(ch + 1)}>Next chapter →</button>
       </div>
-      {verse.loading && <Spin t="Loading slok - Sanskrit Hindi English" />}
-      {verse.error && <Err error={verse.error} retry={() => verse.run()} />}
-      {verse.data && (
-        <>
-          {(lang === 'all' || lang === 'sa') && (
-            <div style={{ marginTop: 10, padding: 14, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid #ff9933' }}>
-              <div className="dim sm">Sanskrit - मूल श्लोक</div>
-              <div style={{ fontSize: 19, lineHeight: 1.7, fontWeight: 700, color: 'var(--fg)', whiteSpace: 'pre-wrap', marginTop: 6 }}>{verse.data.slok}</div>
-            </div>
-          )}
-          {(lang === 'all' || lang === 'hinglish') && verse.data.transliteration && (
-            <div style={{ marginTop: 10, padding: 12, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid var(--cyan)' }}>
-              <div className="dim sm">Hinglish - Transliteration</div>
-              <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 6, fontStyle: 'italic' }}>{verse.data.transliteration.slice(0, 800)}</div>
-            </div>
-          )}
-          {(lang === 'all' || lang === 'hi') && verse.data.tej && (
-            <div style={{ marginTop: 10, padding: 12, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid var(--green)' }}>
-              <div className="dim sm">Hindi - हिंदी अर्थ (Tej)</div>
-              <div style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 6 }}>{String(verse.data.tej).slice(0, 800)}</div>
-            </div>
-          )}
-          {(lang === 'all' || lang === 'en') && verse.data.siva && (
-            <div style={{ marginTop: 10, padding: 12, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid #ffcc00' }}>
-              <div className="dim sm">English - Translation & Commentary (Siva)</div>
-              <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 6 }}>{String(verse.data.siva).slice(0, 800)}</div>
-            </div>
-          )}
-          <Src meta={verse.meta} />
-        </>
-      )}
     </Card>
-    <div className="src"><span className="dot" /><span>Gita 3 languages verified · Sanskrit OG + Hindi + English + Hinglish · 3 independent sources · 700 verses real</span></div>
+    <div className="src"><span className="dot" /><span>Gita complete · 18 chapters · 701 verses bundled in the app (works offline) · every verse: Sanskrit + Roman transliteration + Hindi meaning + English meaning · jump to any verse with chapter.verse (e.g. 2.47)</span></div>
   </>);
 }
 
