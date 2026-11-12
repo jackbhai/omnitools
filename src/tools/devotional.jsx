@@ -15,7 +15,7 @@ import * as P from '../core/providers';
 import { useData, Spin, Err, Src, Card, Stat } from '../ui/kit';
 import { Icon } from '../ui/icons';
 import { jget } from '../core/engine';
-import { useListen } from '../core/useListen';
+import { useListen, charAtFraction } from '../core/useListen';
 import { rashifalFor } from '../core/rashifal-banks';
 import { idbGet, idbSet } from '../core/idbcache';
 import { allDeviceVoices, deviceVoices, runChant, stanzas, stopAudio, pickStudioVoice, studioChunk } from '../core/tts';
@@ -121,10 +121,10 @@ export function Gita() {
             <span className="dim sm">{ch}.{v.v}{listen.active === vi ? ' · playing' : ''}</span>
             <button className="cat" title="Listen from this verse" onClick={() => (listen.playing && listen.active === vi) ? listen.stop() : listen.playFrom(speakItems, vi, { lang: speakLang })}><Icon n="volume" size={12} /> {listen.playing && listen.active === vi ? 'Stop' : 'Listen'}</button>
           </div>
-          {show('sa') && <div style={{ fontSize: 17, lineHeight: 1.7, fontWeight: 700, whiteSpace: 'pre-wrap', marginTop: 4 }}>{v.sa}</div>}
-          {show('tr') && v.tr && <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--fg2)', fontStyle: 'italic', marginTop: 6 }}>{v.tr}</div>}
-          {show('hi') && v.hi && <div style={{ fontSize: 14, lineHeight: 1.65, marginTop: 6 }}><span className="dim sm">हिंदी अर्थ · </span>{v.hi}</div>}
-          {show('en') && v.en && <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 6 }}><span className="dim sm">English · </span>{v.en}</div>}
+          {show('sa') && <div style={{ fontSize: 17, lineHeight: 1.7, fontWeight: 700, whiteSpace: 'pre-wrap', marginTop: 4 }}>{speakMode === 'sa' ? <WordText text={v.sa} active={listen.active === vi} wordAt={listen.wordAt} reduced={listen.reducedMotion} onWord={(at) => listen.playFrom(speakItems, vi, { lang: speakLang, charAt: at })} /> : v.sa}</div>}
+          {show('tr') && v.tr && <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--fg2)', fontStyle: 'italic', marginTop: 6 }}>{speakMode === 'tr' ? <WordText text={v.tr} active={listen.active === vi} wordAt={listen.wordAt} reduced={listen.reducedMotion} onWord={(at) => listen.playFrom(speakItems, vi, { lang: speakLang, charAt: at })} /> : v.tr}</div>}
+          {show('hi') && v.hi && <div style={{ fontSize: 14, lineHeight: 1.65, marginTop: 6 }}><span className="dim sm">हिंदी अर्थ · </span>{speakMode === 'hi' ? <WordText text={v.hi} active={listen.active === vi} wordAt={listen.wordAt} reduced={listen.reducedMotion} onWord={(at) => listen.playFrom(speakItems, vi, { lang: speakLang, charAt: at })} /> : v.hi}</div>}
+          {show('en') && v.en && <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 6 }}><span className="dim sm">English · </span>{speakMode === 'en' ? <WordText text={v.en} active={listen.active === vi} wordAt={listen.wordAt} reduced={listen.reducedMotion} onWord={(at) => listen.playFrom(speakItems, vi, { lang: speakLang, charAt: at })} /> : v.en}</div>}
         </div>
       ))}
       <div className="btnrow" style={{ marginTop: 14 }}>
@@ -205,19 +205,22 @@ export function Quran() {
   const [playing, setPlaying] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
   const [listenMsg, setListenMsg] = useState('');
+  const [qWordAt, setQWordAt] = useState(0);
+  const qTimer = useRef(null);
   const audioEl = useRef(null);
   const seqTok = useRef({ alive: false });
   useEffect(() => { try { localStorage.setItem('omni:quran:listen', listenLang); } catch { /* ignore */ } }, [listenLang]);
   useEffect(() => { if (activeIdx >= 0) { setPage(Math.floor(activeIdx / PER)); const t = setTimeout(() => document.getElementById(`q-ayah-${activeIdx}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 80); return () => clearTimeout(t); } }, [activeIdx]);
   const stopListen = () => {
     seqTok.current.alive = false;
+    if (qTimer.current) { clearInterval(qTimer.current); qTimer.current = null; }
     try { audioEl.current?.pause(); } catch { /* ignore */ }
     try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
-    setPlaying(false); setActiveIdx(-1);
+    setPlaying(false); setActiveIdx(-1); setQWordAt(0);
   };
   useEffect(() => () => { seqTok.current.alive = false; try { audioEl.current?.pause(); } catch { /* ignore */ } try { window.speechSynthesis?.cancel(); } catch { /* ignore */ } }, []);
   useEffect(() => { stopListen(); setListenMsg(''); }, [surah]);
-  const playFrom = async (startIdx) => {
+  const playFrom = async (startIdx, charAt = 0) => {
     if (!data || !total) return;
     stopListen();
     const tok = { alive: true }; seqTok.current = tok;
@@ -228,16 +231,25 @@ export function Quran() {
       if (dead()) return;
       if (idx >= total) { stopListen(); return; }
       const texts = data[listenLang] || data.en || [];
-      const text = texts[idx];
+      let text = texts[idx];
       if (!text) { deviceSpeak(idx + 1); return; }
+      const base = idx === startIdx ? charAt : 0;
+      if (base > 0) text = text.slice(base);
       setActiveIdx(idx);
+      setQWordAt(base);
       const chunks = ttsChunks(text);
       let ci = 0;
+      let cbase = 0;
       const nextChunk = () => {
         if (dead()) return;
         if (ci >= chunks.length) { deviceSpeak(idx + 1); return; }
-        const u = new SpeechSynthesisUtterance(chunks[ci++]);
+        const myBase = base + cbase;
+        const chunk = chunks[ci];
+        cbase += chunk.length + 1;
+        ci += 1;
+        const u = new SpeechSynthesisUtterance(chunk);
         u.lang = listenLang === 'ur' ? 'ur-PK' : listenLang === 'hi' ? 'hi-IN' : 'en-IN';
+        u.onboundary = (ev) => { if (!dead() && typeof ev.charIndex === 'number') setQWordAt(myBase + ev.charIndex); };
         u.onend = nextChunk;
         u.onerror = nextChunk;
         window.speechSynthesis.speak(u);
@@ -254,7 +266,16 @@ export function Quran() {
           if (idx >= total) { stopListen(); return; }
           if (!urls[idx]) { step(idx + 1); return; }
           setActiveIdx(idx);
+          setQWordAt(idx === startIdx ? charAt : 0);
           el.src = urls[idx];
+          el.onloadedmetadata = () => {
+            if (idx === startIdx && charAt > 0 && el.duration && data.ar?.[idx]) {
+              el.currentTime = Math.min(el.duration - 0.05, (charAt / data.ar[idx].length) * el.duration);
+            }
+          };
+          el.ontimeupdate = () => {
+            if (el.duration && data.ar?.[idx]) setQWordAt(charAtFraction(data.ar[idx], Math.min(1, el.currentTime / el.duration)));
+          };
           el.onended = () => step(idx + 1);
           el.onerror = () => { fails++; if (fails >= 2) { setListenMsg('Recitation audio could not be loaded for this surah. Check your connection, or pick a voice language.'); stopListen(); } else step(idx + 1); };
           el.play().catch(() => { setListenMsg('Tap again to allow audio playback.'); stopListen(); });
@@ -269,15 +290,32 @@ export function Quran() {
         const stepStudio = async (idx) => {
           if (dead()) return;
           if (idx >= total) { stopListen(); return; }
-          const text = texts[idx];
+          let text = texts[idx];
           if (!text) { stepStudio(idx + 1); return; }
+          const base = idx === startIdx ? charAt : 0;
+          if (base > 0) text = text.slice(base);
           setActiveIdx(idx);
+          setQWordAt(base);
           try {
+            let cbase = base;
             for (const chunk of ttsChunks(text)) {
               if (dead()) return;
               const url = await studioChunk(chunk, voice.index, 1);
               if (dead()) return;
-              await new Promise((res) => { el.src = url; el.onended = res; el.onerror = res; el.play().catch(res); });
+              const myBase = cbase;
+              cbase += chunk.length + 1;
+              await new Promise((res) => {
+                el.src = url;
+                el.onended = () => { if (qTimer.current) clearInterval(qTimer.current); res(); };
+                el.onerror = () => { if (qTimer.current) clearInterval(qTimer.current); res(); };
+                el.onloadedmetadata = () => {
+                  if (qTimer.current) clearInterval(qTimer.current);
+                  qTimer.current = setInterval(() => {
+                    if (!dead() && el.duration && isFinite(el.duration)) setQWordAt(myBase + charAtFraction(chunk, Math.min(1, el.currentTime / el.duration)));
+                  }, 110);
+                };
+                el.play().catch(res);
+              });
             }
           } catch { if (!dead()) { setListenMsg('Studio voice interrupted — switching to device voice.'); deviceSpeak(idx); } return; }
           stepStudio(idx + 1);
@@ -357,10 +395,10 @@ export function Quran() {
                 <div className="dim sm">{surah}:{idx + 1}{activeIdx === idx ? ' · playing' : ''}</div>
                 <button className="cat" title="Listen from this ayah" onClick={() => (playing && activeIdx === idx) ? stopListen() : playFrom(idx)}><Icon n="volume" size={12} /> {playing && activeIdx === idx ? 'Stop' : 'Listen'}</button>
               </div>
-              {show('ar') && data.ar?.[idx] && <div style={{ fontSize: 21, lineHeight: 1.9, textAlign: 'right', fontWeight: 600, marginTop: 6, fontFamily: 'serif' }}>{data.ar[idx]}</div>}
-              {show('en') && data.en?.[idx] && <div style={{ fontSize: 14.5, lineHeight: 1.7, marginTop: 8 }}><span className="dim sm">English (Asad) · </span>{data.en[idx]}</div>}
-              {show('hi') && data.hi?.[idx] && <div style={{ fontSize: 14.5, lineHeight: 1.7, marginTop: 8 }}><span className="dim sm">हिंदी · </span>{data.hi[idx]}</div>}
-              {show('ur') && data.ur?.[idx] && <div style={{ fontSize: 17, lineHeight: 1.8, textAlign: 'right', marginTop: 8 }}><span className="dim sm">اردو (Jalandhry) · </span>{data.ur[idx]}</div>}
+              {show('ar') && data.ar?.[idx] && <div dir="rtl" style={{ fontSize: 21, lineHeight: 1.9, textAlign: 'right', fontWeight: 600, marginTop: 6, fontFamily: 'serif' }}><WordText text={data.ar[idx]} active={activeIdx === idx && listenLang === 'ar'} wordAt={qWordAt} reduced={REDUCED_MOTION} onWord={(at) => playFrom(idx, at)} /></div>}
+              {show('en') && data.en?.[idx] && <div style={{ fontSize: 14.5, lineHeight: 1.7, marginTop: 8 }}><span className="dim sm">English (Asad) · </span><WordText text={data.en[idx]} active={activeIdx === idx && listenLang === 'en'} wordAt={qWordAt} reduced={REDUCED_MOTION} onWord={(at) => playFrom(idx, at)} /></div>}
+              {show('hi') && data.hi?.[idx] && <div style={{ fontSize: 14.5, lineHeight: 1.7, marginTop: 8 }}><span className="dim sm">हिंदी · </span><WordText text={data.hi[idx]} active={activeIdx === idx && listenLang === 'hi'} wordAt={qWordAt} reduced={REDUCED_MOTION} onWord={(at) => playFrom(idx, at)} /></div>}
+              {show('ur') && data.ur?.[idx] && <div dir="rtl" style={{ fontSize: 17, lineHeight: 1.8, textAlign: 'right', marginTop: 8 }}><span className="dim sm">اردو (Jalandhry) · </span><WordText text={data.ur[idx]} active={activeIdx === idx && listenLang === 'ur'} wordAt={qWordAt} reduced={REDUCED_MOTION} onWord={(at) => playFrom(idx, at)} /></div>}
             </div>
           ))}
           <div className="btnrow" style={{ marginTop: 12 }}>
@@ -391,6 +429,30 @@ function ListenBar({ listen, onPlayAll, label = 'Listen · Read aloud' }) {
       <span className="dim sm" style={{ alignSelf: 'center' }}>{listen.playing ? 'Playing — tap any line to jump there' : 'or tap Listen on any line to hear from there'}</span>
       {listen.msg && <span className="dim sm" style={{ alignSelf: 'center' }}>{listen.msg}</span>}
     </div>
+  );
+}
+
+/* Word-level rendering for the ACTIVE line of a reader: every word is a
+ * tappable span; the currently-spoken word (estimated position — weighted
+ * by word length over the chunk/ayah duration, never frame-exact) glows
+ * and gently scales up (stilled under prefers-reduced-motion). */
+const REDUCED_MOTION = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function WordText({ text, active, wordAt, onWord, reduced }) {
+  if (!active || !text) return <span>{text}</span>;
+  const tokens = String(text).split(/(\s+)/);
+  let pos = 0;
+  return (
+    <span>
+      {tokens.map((tok, i) => {
+        if (!tok.trim()) { pos += tok.length; return <span key={i}>{tok}</span>; }
+        const at = pos; pos += tok.length;
+        const isOn = wordAt >= at && wordAt < at + tok.length + 1;
+        return (
+          <span key={i} onClick={(e) => { e.stopPropagation(); if (onWord) onWord(at); }}
+            style={{ cursor: 'pointer', borderRadius: 4, padding: '0 1px', background: isOn ? 'rgba(255,170,0,.42)' : 'transparent', transform: isOn && !reduced ? 'scale(1.07)' : 'none', display: 'inline-block', transition: 'transform 170ms ease, background 170ms ease' }}>{tok}</span>
+        );
+      })}
+    </span>
   );
 }
 
@@ -510,8 +572,8 @@ export function Bible() {
             <span className="dim sm">{book[0]} {chapter}:{i + 1}{isOn ? ' · playing' : ''}</span>
             {text && <button className="cat" title="Listen from this verse" onClick={() => (listen.playing && isOn) ? listen.stop() : listen.playFrom(speakRows, i, { lang: speakLang })}><Icon n="volume" size={12} /> {listen.playing && isOn ? 'Stop' : 'Listen'}</button>}
           </div>
-          {verses.en[i] && <div style={{ fontSize: 15, lineHeight: 1.65, marginTop: 4 }}>{verses.en[i]}</div>}
-          {verses.hi[i] && <div style={{ fontSize: 15, lineHeight: 1.7, marginTop: verses.en[i] ? 6 : 4 }}>{verses.hi[i]}</div>}
+          {verses.en[i] && <div style={{ fontSize: 15, lineHeight: 1.65, marginTop: 4 }}>{speakLang === 'en' ? <WordText text={verses.en[i]} active={listen.active === i} wordAt={listen.wordAt} reduced={listen.reducedMotion} onWord={(at) => listen.playFrom(speakRows, i, { lang: speakLang, charAt: at })} /> : verses.en[i]}</div>}
+          {verses.hi[i] && <div style={{ fontSize: 15, lineHeight: 1.7, marginTop: verses.en[i] ? 6 : 4 }}>{speakLang === 'hi' ? <WordText text={verses.hi[i]} active={listen.active === i} wordAt={listen.wordAt} reduced={listen.reducedMotion} onWord={(at) => listen.playFrom(speakRows, i, { lang: speakLang, charAt: at })} /> : verses.hi[i]}</div>}
         </div>
       );
     })}
@@ -597,8 +659,9 @@ function GBLines({ lines, lang, listen, items }) {
             <button className="cat" title="Listen from this line" onClick={() => (listen.playing && isOn) ? listen.stop() : listen.playFrom(items, idx, { lang: 'pa' })}><Icon n="volume" size={12} /> {listen.playing && isOn ? 'Stop' : 'Listen'}</button>
           </div>
           {show('g') && <div style={{ fontSize: 18, lineHeight: 1.75, fontWeight: 600, marginTop: 4 }}>{l.g}</div>}
-          {show('r') && l.r && <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--fg2)', fontStyle: 'italic', marginTop: 4 }}>{l.r}</div>}
-          {show('ht') && l.ht && <div style={{ fontSize: 14.5, lineHeight: 1.65, marginTop: 4 }}><span className="dim sm">हिंदी लिपि · </span>{l.ht}</div>}
+          {show('ht') && l.ht && <div style={{ fontSize: 14.5, lineHeight: 1.65, marginTop: 4 }}><span className="dim sm">हिंदी लिपि · </span>{(l.ht || !l.r) ? <WordText text={l.ht} active={isOn} wordAt={listen.wordAt} reduced={listen.reducedMotion} onWord={(at) => listen.playFrom(items, idx, { lang: 'pa', charAt: at })} /> : l.ht}</div>}
+          {show('r') && l.r && !l.ht && <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--fg2)', fontStyle: 'italic', marginTop: 4 }}><WordText text={l.r} active={isOn} wordAt={listen.wordAt} reduced={listen.reducedMotion} onWord={(at) => listen.playFrom(items, idx, { lang: 'pa', charAt: at })} /></div>}
+          {show('r') && l.r && l.ht && <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--fg2)', fontStyle: 'italic', marginTop: 4 }}>{l.r}</div>}
           {show('e') && l.e && <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 4 }}><span className="dim sm">English · </span>{l.e}</div>}
           {lang === 'all' && l.pu && <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 4 }}><span className="dim sm">ਪੰਜਾਬੀ ਅਰਥ · </span>{l.pu}</div>}
         </div>
@@ -1736,18 +1799,37 @@ function ChantPlayer({ text, lang = 'hi', showText = true, id = '' }) {
   useEffect(() => {
     if (cur >= 0 && box.current) { const el = box.current.children[cur]; if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
   }, [cur]);
+  const [wordI, setWordI] = useState(-1);
+  useEffect(() => {
+    if (cur < 0 || !stz[cur]) { setWordI(-1); return; }
+    const text = stz[cur].join('\n');
+    const words = text.split(/\s+/).filter(Boolean);
+    if (!words.length) return;
+    const lens = []; let acc = 0;
+    for (const w of words) { lens.push(acc); acc += w.length + 1; }
+    const cps = (engine === 'studio' ? 15.5 : 13.0) * rate;
+    const t0 = Date.now();
+    const iv = setInterval(() => {
+      const chars = ((Date.now() - t0) / 1000) * cps;
+      let wi = 0;
+      for (let i = 0; i < lens.length; i++) { if (lens[i] <= chars) wi = i; else break; }
+      setWordI(wi);
+    }, 130);
+    return () => clearInterval(iv);
+  }, [cur, stz, engine, rate]);
   const hasSpeech = typeof window !== 'undefined' && 'speechSynthesis' in window;
   const busy = status === 'play' || status === 'synth';
   const stop = () => { tok.current.alive = false; tok.current = { alive: true }; stopAudio(); setStatus('idle'); setCur(-1); };
   /* play(eng, from): from = stanza index to start at — tapping any stanza
    * starts the recitation FROM that stanza (same pattern as other readers). */
-  const play = async (eng, from = 0) => {
+  const play = async (eng, from = 0, charAt = 0) => {
     const e = eng || engine;
     stopAudio(); setMsg(''); if (eng) setEngine(eng);
     const t = { alive: true };
     tok.current.alive = false; tok.current = t;
     setStatus('synth');
-    const part = from > 0 ? stz.slice(from) : stz;
+    let part = from > 0 ? stz.slice(from) : stz;
+    if (charAt > 0 && stz[from]) part = [[stz[from].join('\n').slice(charAt)], ...part.slice(1)];
     const r = await runChant(part, {
       lang, engine: e, loop, rate,
       on: (ev) => { if (!t.alive) return; if (ev.status) setStatus(ev.status); if (ev.cur !== undefined) setCur(from + ev.cur); if (ev.msg) setMsg(ev.msg); if (ev.label) setLabel(ev.label); },
@@ -1771,9 +1853,27 @@ function ChantPlayer({ text, lang = 'hi', showText = true, id = '' }) {
     </div>
     {showText ? (
       <div ref={box} style={{ marginTop: 10, fontSize: 16, lineHeight: 1.85, fontWeight: 500 }}>
-        {stz.map((s, i) => (
-          <div key={i} title="Tap to listen from this stanza" onClick={() => play(engine, i)} style={{ padding: '8px 12px', margin: '2px -12px', borderRadius: 10, cursor: 'pointer', borderLeft: `3px solid ${cur === i ? '#ff9933' : 'transparent'}`, background: cur === i ? 'var(--s2)' : 'transparent', whiteSpace: 'pre-wrap' }}>{s.join('\n')}</div>
-        ))}
+        {stz.map((s, i) => {
+          if (cur !== i || !busy) return (
+            <div key={i} title="Tap to listen from this stanza" onClick={() => play(engine, i)} style={{ padding: '8px 12px', margin: '2px -12px', borderRadius: 10, cursor: 'pointer', borderLeft: '3px solid transparent', background: 'transparent', whiteSpace: 'pre-wrap' }}>{s.join('\n')}</div>
+          );
+          let wCounter = -1; let charPos = 0;
+          return (
+            <div key={i} title="Tap a word to listen from that word" onClick={() => play(engine, i)} style={{ padding: '8px 12px', margin: '2px -12px', borderRadius: 10, cursor: 'pointer', borderLeft: '3px solid #ff9933', background: 'var(--s2)', whiteSpace: 'pre-wrap' }}>
+              {s.map((line, li) => {
+                const tokens = line.split(/(\s+)/);
+                const els = tokens.map((tok, ti) => {
+                  if (!tok.trim()) { charPos += tok.length; return <span key={ti}>{tok}</span>; }
+                  wCounter += 1; const myW = wCounter; const myChar = charPos; charPos += tok.length;
+                  const isOn = wordI === myW;
+                  return <span key={ti} onClick={(e) => { e.stopPropagation(); play(engine, i, myChar); }} style={{ borderRadius: 4, padding: '0 1px', background: isOn ? 'rgba(255,170,0,.42)' : 'transparent', transform: isOn && !REDUCED_MOTION ? 'scale(1.07)' : 'none', display: 'inline-block', transition: 'transform 170ms ease, background 170ms ease' }}>{tok}</span>;
+                });
+                charPos += 1;
+                return <span key={li}>{els}{li < s.length - 1 ? '\n' : ''}</span>;
+              })}
+            </div>
+          );
+        })}
       </div>
     ) : null}
   </>);
