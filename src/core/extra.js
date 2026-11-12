@@ -22,6 +22,7 @@
  */
 
 import { proxyBase } from './settings';
+import { cacheRead, cacheWrite } from './engine';
 
 const enc = encodeURIComponent;
 
@@ -46,21 +47,25 @@ async function getJson(url, { ms = 18000, relay = false } = {}) {
 
 /* ---------------------------------------------------------------- LAUNCHES */
 
-/* Three routes to the same manifest.
+/* Three routes to launch data.
  *
  * This API rate-limits by IP and answers HTTP 429 — measured, a handful of
  * requests inside a minute is enough, and it then refuses everyone on that
- * address. With one route that meant the whole tool went blank for a while;
- * the tests caught it doing exactly that.
+ * address. Audited again 2026-11-13: the production host was throttling
+ * (429, "try again in 36 s") while the project's own development mirror
+ * answered 200 with the full upcoming manifest, so the mirror now goes
+ * FIRST and production is the backup rather than the other way round.
+ * rocketlaunch.live's free JSON feed is a wholly different operator and a
+ * different response shape, so it is normalised below rather than
+ * pretended to be the same; it is the final leg.
  *
- * `lldev` is the project's own development mirror: same shape, separate
- * budget, verified 192 upcoming launches. rocketlaunch.live is a wholly
- * different operator and a different response shape, so it is normalised
- * below rather than pretended to be the same.
+ * On top of the chain, results are cached for an hour (engine cache,
+ * localStorage-backed): launch manifests change slowly, and the cache is
+ * what keeps a throttled minute from ever reaching the user.
  */
 const LL_HOSTS = [
-  'https://ll.thespacedevs.com/2.2.0',
   'https://lldev.thespacedevs.com/2.2.0',
+  'https://ll.thespacedevs.com/2.2.0',
 ];
 const LL = LL_HOSTS[0];
 
@@ -102,30 +107,50 @@ const shapeRll = (r) => ({
   windowEnd: r.win_close || '',
 });
 
+const LAUNCH_TTL = 3600_000;   // 1 hour — see the chain comment above
+
 /** Upcoming launches, soonest first. */
 export async function upcomingLaunches({ limit = 30 } = {}) {
+  const key = `launches:upcoming:${limit}`;
+  const hit = cacheRead(key, LAUNCH_TTL);
+  if (hit?.fresh) return hit.data;
   /* NOT mode=list. That parameter looks like a bandwidth win and silently
      drops launch_service_provider, pad and rocket.configuration — measured,
      all three came back undefined. The full record is 5 KB and has them. */
+  let out;
   try {
     const d = await llGet(`/launch/upcoming/?limit=${limit}`);
     const list = (d.results || []).map(shapeLaunch);
-    if (list.length) return { total: d.count || list.length, list };
+    if (list.length) out = { total: d.count || list.length, list };
   } catch { /* fall through to the other operator */ }
-  const alt = await getJson(`${RLL}/next/5`, { ms: 20000, relay: true });
-  const list = (alt.result || []).map(shapeRll);
-  return { total: alt.count || list.length, list };
+  if (!out) {
+    const alt = await getJson(`${RLL}/next/5`, { ms: 20000, relay: true });
+    const list = (alt.result || []).map(shapeRll);
+    out = { total: alt.count || list.length, list };
+  }
+  if (out.list.length) cacheWrite(key, out);
+  return out;
 }
 
 /** Launches that already happened, newest first. */
 export async function pastLaunches({ limit = 30 } = {}) {
+  const key = `launches:past:${limit}`;
+  const hit = cacheRead(key, LAUNCH_TTL);
+  if (hit?.fresh) return hit.data;
   const d = await llGet(`/launch/previous/?limit=${limit}`);
-  return { total: d.count || 0, list: (d.results || []).map(shapeLaunch) };
+  const out = { total: d.count || 0, list: (d.results || []).map(shapeLaunch) };
+  if (out.list.length) cacheWrite(key, out);
+  return out;
 }
 
 export async function searchLaunches(q, { limit = 30 } = {}) {
+  const key = `launches:search:${q}:${limit}`;
+  const hit = cacheRead(key, LAUNCH_TTL);
+  if (hit?.fresh) return hit.data;
   const d = await llGet(`/launch/?search=${enc(q)}&limit=${limit}&ordering=-net`);
-  return { total: d.count || 0, list: (d.results || []).map(shapeLaunch) };
+  const out = { total: d.count || 0, list: (d.results || []).map(shapeLaunch) };
+  cacheWrite(key, out);
+  return out;
 }
 
 export const launchCountdown = (ts) => {
