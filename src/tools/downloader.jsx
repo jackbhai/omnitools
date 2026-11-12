@@ -11,7 +11,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { jget } from '../core/engine';
-import { resolveJson, cleanMediaUrl } from '../core/audio-resolve';
+import { resolveJson, cleanMediaUrl, ytRelayJson } from '../core/audio-resolve';
 import { Card, Spin, Err, Chips, Copy, fmt } from '../ui/kit';
 import { Icon } from '../ui/icons';
 
@@ -37,6 +37,10 @@ const firstGot = (ps) => new Promise((res) => {
     () => { if (--left === 0) res(null); },
   ));
 });
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** A promise with a deadline: resolves null when the time runs out first. */
+const within = (ms, p) => Promise.race([p, sleep(ms).then(() => null)]);
 
 const THUMBS = [
   ['maxresdefault', 'Max (1280×720)'], ['sddefault', 'SD (640×480)'],
@@ -79,6 +83,10 @@ export function Downloader() {
   const [err, setErr] = useState('');
   const [info, setInfo] = useState(null);
   const [stageTxt, setStageTxt] = useState('');
+  /* The download outcome, kept on screen until the next action — the
+     transient progress note fades after 5 s, and a finished (or failed)
+     download used to fade with it, looking like the tap did nothing. */
+  const [dlMsg, setDlMsg] = useState(null);
 
   const fetchInfo = async (ov) => {
     /* Normalise first: share-tracking params (si, utm_…, obrf) stripped,
@@ -87,7 +95,7 @@ export function Downloader() {
     const rawUrl = cleanMediaUrl(ov ?? url);
     if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return;
     setUrl(rawUrl);
-    setBusy(true); setErr(''); setInfo(null); setStageTxt('');
+    setBusy(true); setErr(''); setInfo(null); setStageTxt(''); setDlMsg(null);
     const id = ytId(rawUrl);
     let got = null;
 
@@ -141,6 +149,7 @@ export function Downloader() {
          case ≈17 s — the old serial stack (30 s resolver, then three
          mirrors at 12 s apiece, two of them dead) is what left the
          spinner running past half a minute with no answer at all. */
+      const t0 = Date.now();
       const resolverLeg = (async () => {
         try {
           return mapResolver(await resolveJson(rawUrl, {
@@ -154,6 +163,35 @@ export function Downloader() {
         return g;
       }));
       got = await firstGot([resolverLeg, pipedLeg]);
+      if (got && !(got.qualities && got.qualities.length)) {
+        /* The first answer carries a single file and no quality list.
+           That is what the broad resolver returns for YouTube when the
+           app's own relay misses its draw: resolveJson falls through to
+           the proxied resolver chain, whose YouTube answer is one best
+           file with no per-quality streams — while the relay itself,
+           when it lands, returns the full quality list in ~1 s. Its draw
+           is a race of player identities and can miss once (measured:
+           the same Short failed twice, then answered rich on the third
+           draw), so before settling for the single file, give the
+           still-running leg plus ONE fresh relay draw a short grace
+           window to come back richer. The window is what is left of the
+           ~17 s worst case this race already had, capped at 3 s — when
+           the first answer is already rich (the common case) nothing
+           here runs and nothing gets slower. */
+        const grace = Math.min(3000, Math.max(0, 17000 - (Date.now() - t0)));
+        if (grace > 400) {
+          setStageTxt('Checking for quality options…');
+          const retry = (async () => {
+            const d = await ytRelayJson(id, grace);
+            return d ? mapResolver(d, 'resolver') : null;
+          })();
+          /* The leg that produced the poor answer has already settled —
+             racing it again would hand the same answer straight back. */
+          const other = got.via === 'piped' ? resolverLeg : pipedLeg;
+          const richer = await within(grace, firstGot([other, retry]));
+          if (richer && richer.qualities && richer.qualities.length) got = richer;
+        }
+      }
     }
 
     // 1) Primary resolver — broadest platform coverage (Instagram, TikTok, FB, X, etc)
@@ -245,6 +283,7 @@ export function Downloader() {
     abortRef.current = ctrl;
     setSaving(name);
     setNote('Starting…');
+    setDlMsg(null);
     const t0 = Date.now();
     // Try direct first, then via proxy if CORS fails
     const { proxyBase } = await import('../core/settings');
@@ -276,12 +315,16 @@ export function Downloader() {
         } else {
           blob = await res.blob();
         }
+        /* A stream that ends instantly with an empty body is a failure
+           wearing a success costume — never save (or report) 0 bytes. */
+        if (!blob.size) throw new Error('empty file');
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = name;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 15000);
         setNote(`Saved (${(blob.size / 1048576).toFixed(1)} MB)`);
+        setDlMsg({ kind: 'ok', text: `Saved ${name} (${(blob.size / 1048576).toFixed(1)} MB)` });
         abortRef.current = null;
         setSaving('');
         setTimeout(() => setNote(''), 5000);
@@ -293,10 +336,20 @@ export function Downloader() {
         if (tryUrl === u) { setNote('Direct failed, trying via proxy…'); continue; }
       }
     }
-    // All failed - fallback to opening in new tab
+    // All fetches failed — last resort is handing the raw link to the
+    // browser. Report it either way: this used to fire window.open and
+    // clear the note 5 s later, so when the browser blocked the popup
+    // (common — the call sits behind two awaited fetches, far from the
+    // tap) the download simply looked like it did nothing at all.
     if (lastErr?.name !== 'AbortError') {
-      setNote('Opening in a new tab…');
-      window.open(u, '_blank', 'noopener');
+      const w = window.open(u, '_blank', 'noopener');
+      if (w) {
+        setNote('Opened in a new tab');
+        setDlMsg({ kind: 'info', text: 'The direct download failed, so the file was opened in a new tab instead. If it plays there instead of saving, use your browser menu to download it. If the tab shows an error, the link has expired — tap Fetch again and download straight away.' });
+      } else {
+        setNote('Download failed');
+        setDlMsg({ kind: 'err', text: 'The download failed, and the browser blocked the backup tab as well. Check your connection, tap Fetch again, then retry the download.' });
+      }
     }
     abortRef.current = null;
     setSaving('');
@@ -344,6 +397,11 @@ export function Downloader() {
       </Card>)}
     {!saving && note && (
       <div className="src"><span className="dot" /><span>{note}</span></div>)}
+    {!saving && dlMsg && (dlMsg.kind === 'err' ? (
+      <div className="err" style={{ marginTop: 10 }}><h4>Download failed</h4><p>{dlMsg.text}</p></div>
+    ) : (
+      <div className="src" style={{ marginTop: 6 }}>
+        <span className={dlMsg.kind === 'info' ? 'dot warn' : 'dot'} /><span>{dlMsg.text}</span></div>))}
 
     {info && (<>
       <Card style={{ marginTop: 12 }}>

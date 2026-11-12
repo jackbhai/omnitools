@@ -214,6 +214,18 @@ async function ytViaRelay(id, capMs = 7000) {
 }
 
 /**
+ * One direct draw at the relay's own resolver, for a caller that already
+ * holds a poorer answer and wants a short second chance at the rich one
+ * (the downloader's quality list). The relay's draw is a race of player
+ * identities and can miss once, then land a second later — a fresh draw
+ * is a genuinely new chance, not a repeat of the same one. Null on any
+ * miss; never throws.
+ */
+export async function ytRelayJson(id, capMs = 3000) {
+  try { return await ytViaRelay(id, capMs); } catch { return null; }
+}
+
+/**
  * Resolve one URL through every route there is, inside ONE hard deadline.
  *
  * WHAT WAS WRONG (the "stuck on Reading the link\u2026" hang, measured
