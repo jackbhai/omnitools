@@ -488,95 +488,284 @@ const json = (obj, status = 200) =>
    Client identities, tried in order. YouTube disables these one at a time, so
    the list matters more than any single entry. */
 const YT_CLIENTS = [
-  { name: 'ANDROID_VR', version: '1.60.19', id: '28',
-    ua: 'com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; GB) gzip',
+  /* Wave 1 — measured 2026-11-13: current ANDROID and IOS versions answer
+     OK with direct urls on every test video, ANDROID including a muxed
+     itag-18 stream. The previous 19.x versions of both had started
+     returning HTTP 400, which is what killed this route. */
+  { name: 'ANDROID', version: '20.10.38', id: '3',
+    ua: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14) gzip',
+    extra: { androidSdkVersion: 34, osName: 'Android', osVersion: '14' } },
+  { name: 'IOS', version: '20.10.4', id: '5',
+    ua: 'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_1 like Mac OS X)',
+    extra: { deviceMake: 'Apple', deviceModel: 'iPhone16,2',
+             osName: 'iPhone', osVersion: '18.3.1.22D72' } },
+  { name: 'ANDROID_VR', version: '1.65.10', id: '28',
+    ua: 'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12; GB) gzip',
     extra: { androidSdkVersion: 32, deviceMake: 'Oculus', deviceModel: 'Quest 3',
              osName: 'Android', osVersion: '12' } },
-  { name: 'IOS', version: '19.45.4', id: '5',
-    ua: 'com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1_0 like Mac OS X)',
-    extra: { deviceMake: 'Apple', deviceModel: 'iPhone16,2',
-             osName: 'iPhone', osVersion: '18.1.0.22B83' } },
-  { name: 'ANDROID', version: '19.44.38', id: '3',
-    ua: 'com.google.android.youtube/19.44.38 (Linux; U; Android 11) gzip',
-    extra: { androidSdkVersion: 30, osName: 'Android', osVersion: '11' } },
-  { name: 'MWEB', version: '2.20241202.07.00', id: '2',
-    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
+  { name: 'VISIONOS', version: '1.02', id: '101',
+    ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
+    extra: { deviceMake: 'Apple', deviceModel: 'RealityDevice14,1',
+             osName: 'visionOS', osVersion: '2.0' } },
+  /* Wave 2 — the long tail. Each of these works sometimes; they are raced,
+     never queued, so a dead one costs nothing. */
+  { name: 'MWEB', version: '2.20250210.01.00', id: '2',
+    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1',
+    extra: {} },
+  { name: 'TVHTML5', version: '7.20250205.16.00', id: '7',
+    ua: 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold (Sony, BRAVIA_ATV3_4K)',
     extra: {} },
   { name: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', version: '2.0', id: '85',
     ua: 'Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15',
     extra: {} },
+  { name: 'WEB_EMBEDDED_PLAYER', version: '1.20250210.01.00', id: '56',
+    ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+    extra: {}, thirdParty: { embedUrl: 'https://www.youtube.com/' } },
+  { name: 'IOS_MUSIC', version: '7.27.2', id: '26',
+    ua: 'com.google.ios.youtubemusic/7.27.2 (iPhone16,2; U; CPU iOS 18_3_1 like Mac OS X)',
+    extra: { deviceMake: 'Apple', deviceModel: 'iPhone16,2',
+             osName: 'iPhone', osVersion: '18.3.1.22D72' } },
+  { name: 'WEB_CREATOR', version: '1.20250210.01.00', id: '55',
+    ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+    extra: {} },
+  { name: 'ANDROID_TESTSUITE', version: '1.9', id: '30',
+    ua: 'com.google.android.youtube/1.9 (Linux; U; Android 11) gzip',
+    extra: { androidSdkVersion: 30, osName: 'Android', osVersion: '11' } },
 ];
 
 async function ytPlayer(videoId, client) {
-  const body = {
-    context: {
-      client: {
-        clientName: client.name,
-        clientVersion: client.version,
-        hl: 'en', gl: 'IN',
-        ...client.extra,
-      },
+  const ctx = {
+    client: {
+      clientName: client.name,
+      clientVersion: client.version,
+      hl: 'en', gl: 'IN',
+      ...client.extra,
     },
+  };
+  if (client.thirdParty) ctx.thirdParty = client.thirdParty;
+  const body = {
+    context: ctx,
     videoId,
     contentCheckOk: true,
     racyCheckOk: true,
   };
-  const r = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': client.ua,
-      'X-YouTube-Client-Name': client.id,
-      'X-YouTube-Client-Version': client.version,
-      'Accept-Language': 'en-IN,en;q=0.9',
-      Origin: 'https://www.youtube.com',
-    },
-    body: JSON.stringify(body),
-  });
+  /* Hard per-client cap: a hanging identity must never stall the route. */
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
+  let r;
+  try {
+    r = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': client.ua,
+        'X-YouTube-Client-Name': client.id,
+        'X-YouTube-Client-Version': client.version,
+        'Accept-Language': 'en-IN,en;q=0.9',
+        Origin: 'https://www.youtube.com',
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } finally { clearTimeout(timer); }
   if (!r.ok) throw new Error(`${client.name} HTTP ${r.status}`);
   return r.json();
 }
 
-/** Pick the best DIRECT audio url — anything needing a cipher is unusable here. */
-function pickAudio(data) {
+/**
+ * Pick DIRECT streams — anything needing a cipher is unusable here.
+ * Returns the best audio, a muxed video url when the client offers one
+ * (itag 22/18-style progressive formats), and a quality list built from
+ * muxed formats first, then adaptive video-only streams.
+ */
+function pickStreams(data) {
   const sd = data?.streamingData || {};
-  const all = [...(sd.adaptiveFormats || []), ...(sd.formats || [])];
-  const audio = all.filter((f) => (f.mimeType || '').startsWith('audio/') && f.url);
-  if (!audio.length) return null;
+  const muxed = (sd.formats || []).filter((f) => f.url && (f.mimeType || '').startsWith('video/'));
+  const adapt = (sd.adaptiveFormats || []).filter((f) => f.url);
+  const audio = adapt.filter((f) => (f.mimeType || '').startsWith('audio/'));
+  const vonly = adapt.filter((f) => (f.mimeType || '').startsWith('video/'));
+  if (!audio.length && !muxed.length && !vonly.length) return null;
+
   audio.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-  // prefer m4a: it seeks reliably in a plain <audio> element
-  const m4a = audio.find((f) => (f.mimeType || '').includes('mp4'));
-  return m4a || audio[0];
+  // prefer m4a for the headline audio: it seeks reliably in a plain element
+  const bestAudio = audio.find((f) => (f.mimeType || '').includes('mp4')) || audio[0] || null;
+  const ext = (f) => ((f.mimeType || '').split(';')[0].split('/')[1] || '').trim();
+  const audioOptions = audio.slice(0, 4).map((f) => ({
+    quality: `${Math.round((f.bitrate || 0) / 1000)} kbps ${ext(f)}`.trim(),
+    url: f.url, size: f.contentLength ? +f.contentLength : undefined,
+  }));
+
+  const label = (f, suffix = '') => (f.qualityLabel || (f.height ? `${f.height}p` : 'Video')) + suffix;
+  const qualities = [];
+  const muxedSorted = [...muxed].sort((a, b) => (b.height || 0) - (a.height || 0));
+  for (const f of muxedSorted) {
+    qualities.push({ quality: label(f), url: f.url, mime: f.mimeType || '',
+      size: f.contentLength ? +f.contentLength : undefined });
+  }
+  /* Adaptive lists repeat heights across codecs — one row per label. */
+  const seenQ = new Set(qualities.map((q) => q.quality));
+  const vonlySorted = [...vonly].sort((a, b) => (b.height || 0) - (a.height || 0));
+  for (const f of vonlySorted) {
+    const q = label(f, ' (no audio)');
+    if (seenQ.has(q.replace(' (no audio)', '')) || seenQ.has(q)) continue;
+    seenQ.add(q);
+    qualities.push({ quality: q, url: f.url, mime: f.mimeType || '',
+      size: f.contentLength ? +f.contentLength : undefined });
+  }
+
+  const bestMuxed = muxed.find((f) => f.itag === 22) || muxedSorted[0] || null;
+  return {
+    audioUrl: bestAudio ? bestAudio.url : null,
+    audioBitrate: bestAudio ? (bestAudio.bitrate || 0) : 0,
+    audioMime: bestAudio ? (bestAudio.mimeType || '') : '',
+    audioOptions,
+    videoUrl: bestMuxed ? bestMuxed.url : null,
+    qualities: qualities.slice(0, 10),
+  };
 }
 
-async function resolveYouTube(videoId) {
-  const tried = [];
-  for (const client of YT_CLIENTS) {
+/** First promise to fulfil with a non-null value wins; null when all settle empty. */
+function firstHit(promises) {
+  return new Promise((resolve) => {
+    let left = promises.length;
+    if (!left) return resolve(null);
+    for (const p of promises) {
+      Promise.resolve(p).then(
+        (v) => { if (v) resolve(v); else if (--left === 0) resolve(null); },
+        () => { if (--left === 0) resolve(null); },
+      );
+    }
+  });
+}
+
+/**
+ * Like firstHit, but a result matching `prefer` wins the moment it lands;
+ * a non-preferred result is only used once every promise has settled.
+ * This is how a muxed (audio+video) answer beats a faster video-only one
+ * without ever waiting longer than the slowest identity in the wave.
+ */
+function bestHit(promises, prefer) {
+  return new Promise((resolve) => {
+    let left = promises.length;
+    let fallback = null;
+    if (!left) return resolve(null);
+    for (const p of promises) {
+      Promise.resolve(p).then(
+        (v) => {
+          if (v && prefer(v)) return resolve(v);
+          if (v && !fallback) fallback = v;
+          if (--left === 0) resolve(fallback);
+        },
+        () => { if (--left === 0) resolve(fallback); },
+      );
+    }
+  });
+}
+
+async function ytViaClient(videoId, client, tried) {
+  try {
+    const data = await ytPlayer(videoId, client);
+    const status = data?.playabilityStatus?.status;
+    const streams = pickStreams(data);
+    if (!streams) { tried.push(`${client.name}:${status || 'no-streams'}`); return null; }
+    const d = data.videoDetails || {};
+    return {
+      success: true,
+      via: client.name,
+      mediaInfo: {
+        ...streams,
+        title: d.title || '',
+        author: d.author || '',
+        duration: +(d.lengthSeconds || 0),
+        thumbnail: (d.thumbnail?.thumbnails || []).slice(-1)[0]?.url || '',
+        bitrate: streams.audioBitrate,
+        mime: streams.audioMime,
+      },
+      tried,
+    };
+  } catch (e) {
+    tried.push(`${client.name}:${String(e.message).slice(0, 40)}`);
+    return null;
+  }
+}
+
+/* Piped mirrors — the same three the music side measured alive. Their
+   /streams answers carry per-quality video + audio lists. YouTube blocks
+   some mirror IPs per video, so this is a fallback leg, never the only one. */
+const PIPED_API = [
+  'https://api.piped.private.coffee',
+  'https://pipedapi.wireway.ch',
+  'https://pipedapi.ducks.party',
+];
+
+async function ytViaPiped(videoId, tried) {
+  const one = async (base) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
     try {
-      const data = await ytPlayer(videoId, client);
-      const status = data?.playabilityStatus?.status;
-      const fmt = pickAudio(data);
-      if (!fmt) { tried.push(`${client.name}:${status || 'no-audio'}`); continue; }
-      const d = data.videoDetails || {};
+      const r = await fetch(`${base}/streams/${videoId}`, {
+        signal: ctrl.signal,
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      const vids = (d.videoStreams || []).filter((v) => v.url);
+      const auds = (d.audioStreams || []).filter((a) => a.url)
+        .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+      if (!vids.length && !auds.length) throw new Error('empty');
+      const muxed = vids.filter((v) => !v.videoOnly);
       return {
         success: true,
-        via: client.name,
+        via: 'piped',
         mediaInfo: {
-          audioUrl: fmt.url,
-          videoUrl: null,
+          audioUrl: auds[0]?.url || null,
+          videoUrl: (muxed[0] || vids[0])?.url || null,
           title: d.title || '',
-          author: d.author || '',
-          duration: +(d.lengthSeconds || 0),
-          thumbnail: (d.thumbnail?.thumbnails || []).slice(-1)[0]?.url || '',
-          bitrate: fmt.bitrate || 0,
-          mime: fmt.mimeType || '',
+          author: d.uploader || '',
+          duration: +(d.duration || 0),
+          thumbnail: d.thumbnailUrl || '',
+          qualities: vids.map((v) => ({
+            quality: (v.quality || 'Video') + (v.videoOnly ? ' (no audio)' : ''),
+            url: v.url, mime: v.mimeType || '',
+            size: v.contentLength ? +v.contentLength : undefined,
+          })),
+          audioOptions: auds.slice(0, 4).map((a) => ({
+            quality: `${Math.round((a.bitrate || 0) / 1000)} kbps ${((a.mimeType || '').split(';')[0].split('/')[1] || '').trim()}`.trim(),
+            url: a.url, size: a.contentLength ? +a.contentLength : undefined,
+          })),
         },
         tried,
       };
     } catch (e) {
-      tried.push(`${client.name}:${String(e.message).slice(0, 40)}`);
-    }
+      tried.push(`piped:${String(e.message).slice(0, 30)}`);
+      return null;
+    } finally { clearTimeout(timer); }
+  };
+  return firstHit(PIPED_API.map(one));
+}
+
+async function resolveYouTube(videoId) {
+  const tried = [];
+  /* Wave 1 races the four identities that currently answer; wave 2 races
+     the long tail; the Piped mirrors are the final leg. Racing instead of
+     the old serial walk is what keeps this route near a second when it
+     works — and bounded when it does not. */
+  const hasMuxed = (r) => !!(r && r.mediaInfo && r.mediaInfo.videoUrl);
+  const wave1 = () => bestHit(YT_CLIENTS.slice(0, 4).map((c) => ytViaClient(videoId, c, tried)), hasMuxed);
+  const first = await wave1();
+  if (first) return first;
+  const wave2 = await bestHit(YT_CLIENTS.slice(4).map((c) => ytViaClient(videoId, c, tried)), hasMuxed);
+  if (wave2) return wave2;
+  /* A wall of LOGIN_REQUIRED usually means this egress IP was flagged for
+     bursting, and the flag is measured in seconds — one paused retry of
+     the best wave rescues a fair share of those. Only paid on failure. */
+  if (tried.some((t) => t.includes('LOGIN_REQUIRED'))) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const retry = await wave1();
+    if (retry) return retry;
   }
+  const piped = await ytViaPiped(videoId, tried);
+  if (piped) return piped;
   return { success: false, error: 'no client returned a playable stream', tried };
 }
 

@@ -2,23 +2,41 @@
  * Universal downloader — separate buttons for VIDEO (with quality picker),
  * AUDIO extraction and THUMBNAIL grabbing, exactly as requested.
  *
- * Sources: the resolver (100+ platforms) primary, Piped mirrors as fallback for
- * YouTube (they expose per-quality stream lists).
+ * Sources: for YouTube, two legs race — the app's own relay resolver
+ * (which itself walks several player identities, then Piped mirrors) and
+ * the Piped mirrors called directly for their per-quality stream lists;
+ * first success wins, worst case bounded. Every other platform goes to
+ * the broad resolver, unchanged. Instagram stories are the one known
+ * dead end: they need a login, and the error says so plainly.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { jget } from '../core/engine';
-import { resolveJson } from '../core/audio-resolve';
+import { resolveJson, cleanMediaUrl } from '../core/audio-resolve';
 import { Card, Spin, Err, Chips, Copy, fmt } from '../ui/kit';
 import { Icon } from '../ui/icons';
 
-const PIPED = ['https://api.piped.private.coffee', 'https://pipedapi.kavin.rocks', 'https://pipedapi.adminforge.de'];
+/* The three mirrors the music side measured alive (2026-11-12). The two
+   that used to sit here are gone — one answers 526, the other redirects
+   to a parked page — and each dead mirror used to cost a full serial
+   timeout on every YouTube fetch. */
+const PIPED = ['https://api.piped.private.coffee', 'https://pipedapi.wireway.ch', 'https://pipedapi.ducks.party'];
 /** Filenames must not contain path or reserved characters. */
 const sanitize = (t) => String(t || 'download').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
 
 const ytId = (u) => {
-  const m = String(u).match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([A-Za-z0-9_-]{11})/);
+  const m = String(u).match(/(?:v=|youtu\.be\/|shorts\/|live\/|embed\/)([A-Za-z0-9_-]{11})/);
   return m ? m[1] : null;
 };
+
+/** First promise to settle with a non-null value wins; null when all settle empty. */
+const firstGot = (ps) => new Promise((res) => {
+  let left = ps.length;
+  if (!left) return res(null);
+  ps.forEach((p) => Promise.resolve(p).then(
+    (v) => { if (v) res(v); else if (--left === 0) res(null); },
+    () => { if (--left === 0) res(null); },
+  ));
+});
 
 const THUMBS = [
   ['maxresdefault', 'Max (1280×720)'], ['sddefault', 'SD (640×480)'],
@@ -60,37 +78,101 @@ export function Downloader() {
   }, []);   // eslint-disable-line
   const [err, setErr] = useState('');
   const [info, setInfo] = useState(null);
+  const [stageTxt, setStageTxt] = useState('');
 
   const fetchInfo = async (ov) => {
-    const rawUrl = String(ov ?? url).trim();
-    if (!rawUrl) return;
-    setBusy(true); setErr(''); setInfo(null);
+    /* Normalise first: share-tracking params (si, utm_…, obrf) stripped,
+       youtu.be / shorts / live forms canonicalised — resolvers answer
+       noticeably better to a clean watch URL. */
+    const rawUrl = cleanMediaUrl(ov ?? url);
+    if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return;
+    setUrl(rawUrl);
+    setBusy(true); setErr(''); setInfo(null); setStageTxt('');
     const id = ytId(rawUrl);
     let got = null;
 
-    // 1) Primary resolver — broadest platform coverage (YouTube, Instagram, TikTok, FB, X, etc)
-    // Instagram is slow: needs 30-45s, retry twice
     const isInsta = /instagram\.com|instagr\.am/i.test(rawUrl);
+    const isStory = /instagram\.com\/stories\//i.test(rawUrl);
     const isTikTok = /tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com/i.test(rawUrl);
-    const resolverMs = isInsta ? 45000 : isTikTok ? 35000 : 30000;
-    for (let attempt = 0; attempt < (isInsta ? 2 : 1) && !got; attempt++) {
-      try {
-        const d = await resolveJson(rawUrl, { ms: resolverMs });
-        const m = d.mediaInfo || {};
-        const videoUrl = m.videoUrl || d.url || (Array.isArray(d.links) ? d.links[0] : '') || '';
-        const audioUrl = m.audioUrl || '';
-        if (videoUrl || audioUrl) {
-          got = {
-            title: m.title || d.title || 'Media', author: m.author || '', platform: m.platform || d.platform || '',
-            thumb: m.thumbnail || m.coverImage || d.thumbnail || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : ''),
-            audio: audioUrl || null, video: videoUrl || null,
-            qualities: (Array.isArray(m.qualities) ? m.qualities : [])
-              .filter((q) => q && q.url)
-              .map((q) => ({ q: q.quality || q.q || 'Video', url: q.url, size: q.size || q.contentLength })),
-            audioOptions: [], id, via: attempt ? `resolver-retry${attempt+1}` : 'resolver',
-          };
-        }
-      } catch { /* try again */ }
+
+    const mapResolver = (d, via) => {
+      const m = d.mediaInfo || {};
+      const videoUrl = m.videoUrl || d.url || (Array.isArray(d.links) ? d.links[0] : '') || '';
+      const audioUrl = m.audioUrl || '';
+      if (!videoUrl && !audioUrl) return null;
+      return {
+        title: m.title || d.title || 'Media', author: m.author || '', platform: m.platform || d.platform || '',
+        thumb: m.thumbnail || m.coverImage || d.thumbnail || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : ''),
+        audio: audioUrl || null, video: videoUrl || null,
+        qualities: (Array.isArray(m.qualities) ? m.qualities : [])
+          .filter((q) => q && q.url)
+          .map((q) => ({ q: q.quality || q.q || 'Video', url: q.url, size: q.size || q.contentLength })),
+        audioOptions: (Array.isArray(m.audioOptions) ? m.audioOptions : [])
+          .filter((a) => a && a.url)
+          .map((a) => ({ q: a.quality || a.q || 'Audio', url: a.url, size: a.size || a.contentLength })),
+        id, via,
+      };
+    };
+    const mapPiped = (d) => {
+      const vids = (d.videoStreams || []).filter((v) => v.url);
+      const auds = (d.audioStreams || []).filter((a) => a.url)
+        .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+      if (!vids.length && !auds.length) return null;
+      return {
+        title: d.title || 'Video', author: d.uploader || '',
+        platform: 'YouTube', thumb: d.thumbnailUrl || '',
+        audio: auds[0]?.url || null,
+        video: (vids.find((v) => !v.videoOnly) || vids[0])?.url || null,
+        duration: d.duration,
+        qualities: vids.map((v) => ({
+          q: v.quality + (v.videoOnly ? ' (no audio)' : ''), url: v.url,
+          mime: v.mimeType, size: v.contentLength })),
+        audioOptions: auds.map((a) => ({
+          q: `${Math.round((a.bitrate || 0) / 1000)} kbps ${(a.mimeType || '').split('/')[1] || ''}`,
+          url: a.url, size: a.contentLength })),
+        id, via: 'piped',
+      };
+    };
+
+    if (id) {
+      /* YouTube: race both legs, first success wins. The resolver leg is
+         internally budgeted (its own relay attempt, then a capped proxy
+         chain); the Piped leg races three mirrors at 8 s each. Worst
+         case ≈17 s — the old serial stack (30 s resolver, then three
+         mirrors at 12 s apiece, two of them dead) is what left the
+         spinner running past half a minute with no answer at all. */
+      const resolverLeg = (async () => {
+        try {
+          return mapResolver(await resolveJson(rawUrl, {
+            ms: 10000, onProgress: (s) => setStageTxt(s),
+          }), 'resolver');
+        } catch { return null; }
+      })();
+      const pipedLeg = firstGot(PIPED.map(async (base) => {
+        const g = mapPiped(await jget(`${base}/streams/${id}`, { ms: 8000 }));
+        if (!g) throw new Error('empty');
+        return g;
+      }));
+      got = await firstGot([resolverLeg, pipedLeg]);
+    }
+
+    // 1) Primary resolver — broadest platform coverage (Instagram, TikTok, FB, X, etc)
+    // Instagram is slow: measured ~30 s for a reel, so the leg gets a
+    // genuinely longer budget (the resolver chain's cap is raised with
+    // it — a 45 s request under a 20 s cap could never succeed), and the
+    // staged progress text keeps the wait honest. Retry twice.
+    if (!got && !id) {
+      const resolverMs = isInsta ? 45000 : isTikTok ? 35000 : 30000;
+      for (let attempt = 0; attempt < (isInsta ? 2 : 1) && !got; attempt++) {
+        try {
+          const d = await resolveJson(rawUrl, {
+            ms: resolverMs,
+            ...(isInsta ? { cap: resolverMs } : {}),
+            onProgress: (s) => setStageTxt(s),
+          });
+          got = mapResolver(d, attempt ? `resolver-retry${attempt + 1}` : 'resolver');
+        } catch { /* try again */ }
+      }
     }
 
     // 2) Instagram direct scrape fallback via proxy (og:video)
@@ -123,37 +205,11 @@ export function Downloader() {
       } catch { /* ignore */ }
     }
 
-    // 3) Piped — gives an explicit per-quality list for YouTube
-    if (!got && id) {
-      for (const base of PIPED) {
-        try {
-          const d = await jget(`${base}/streams/${id}`, { ms: 12000 });
-          const vids = (d.videoStreams || []).filter((v) => v.url);
-          const auds = (d.audioStreams || []).sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-          if (vids.length || auds.length) {
-            got = {
-              title: d.title || got?.title || 'Video', author: d.uploader || got?.author || '',
-              platform: 'YouTube', thumb: d.thumbnailUrl || got?.thumb || '',
-              audio: auds[0]?.url || got?.audio || null,
-              video: vids[0]?.url || got?.video || null,
-              duration: d.duration,
-              qualities: vids.map((v) => ({
-                q: v.quality + (v.videoOnly ? ' (no audio)' : ''), url: v.url,
-                mime: v.mimeType, size: v.contentLength })),
-              audioOptions: auds.map((a) => ({
-                q: `${Math.round((a.bitrate || 0) / 1000)} kbps ${(a.mimeType || '').split('/')[1] || ''}`,
-                url: a.url, size: a.contentLength })),
-              id, via: got ? 'direct + index' : 'piped',
-            };
-            break;
-          }
-        } catch { /* next mirror */ }
-      }
-    }
-
-    // 4) Helpful error
+    // 3) Helpful error — stories get their own honest answer, not the generic one
     if (!got) {
-      if (isInsta) {
+      if (isStory) {
+        setErr('That is an Instagram story link. Stories are only visible to logged-in Instagram accounts, so no public downloader can fetch them. Reels and posts work here — paste one of those instead.');
+      } else if (isInsta) {
         setErr('Instagram did not answer in time (it can take 30–45 s). Check the reel is public, then tap Fetch again.');
       } else if (isTikTok) {
         setErr('TikTok did not answer this time. Check the link is public, wait a few seconds, then tap Fetch again.');
@@ -161,7 +217,7 @@ export function Downloader() {
         setErr('No source could read this link. It may be private, region-locked, or from a site we cannot read — public YouTube, Instagram, TikTok, X and Facebook links work best.');
       }
     }
-    setInfo(got); setBusy(false);
+    setInfo(got); setBusy(false); setStageTxt('');
   };
 
   const [saving, setSaving] = useState('');
@@ -263,7 +319,11 @@ export function Downloader() {
         try { setUrl(await navigator.clipboard.readText()); } catch {} }}><Icon n="list" size={18} /> Paste</button>
     </div>
 
-    {busy && <Spin t="Reading the link" />}
+    {busy && <Spin t={stageTxt || 'Reading the link'} />}
+    {busy && /instagram\.com|instagr\.am/i.test(url) && !/stories\//i.test(url) && (
+      <div className="dim sm" style={{ marginTop: 6 }}>
+        Instagram is slow to answer — a reel can take 30–45 s. Keep this tab open.
+      </div>)}
     {err && <div className="err" style={{ marginTop: 12 }}><h4>Couldn't fetch</h4><p>{err}</p></div>}
 
     {saving && (

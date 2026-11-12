@@ -88,8 +88,15 @@ const publicPool = () => (PROXIES.filter(usable).length ? PROXIES.filter(usable)
 export function cleanMediaUrl(raw) {
   try {
     const u = new URL(String(raw).trim());
-    for (const k of ['si', 'igsi', 'igshid', 'feature', 'utm_source', 'utm_medium',
+    for (const k of ['si', 'igsi', 'igshid', 'igsh', 'obrf', 'dlrf', 'feature', 'utm_source', 'utm_medium',
                      'utm_campaign', 'fbclid', 'gclid', '_r', 's']) u.searchParams.delete(k);
+    /* Instagram media identity lives entirely in the path — every query
+       param on an IG link is share junk, and some of it (a pasted ?dlrf=
+       token) makes the resolver return an empty body instead of media.
+       Drop the whole query string for IG hosts. */
+    if (/(^|\.)instagram\.com$/i.test(u.hostname) || /(^|\.)instagr\.am$/i.test(u.hostname)) {
+      u.search = '';
+    }
     if (u.hostname.endsWith('youtu.be')) {
       const id = u.pathname.slice(1);
       if (id) return `https://www.youtube.com/watch?v=${id}`;
@@ -226,10 +233,16 @@ async function ytViaRelay(id, capMs = 7000) {
  *   stage 2  the verified public pool, raced with small staggers.
  *   stage 3  one retry (bench cleared), only if \u22655 s of budget remain.
  * Every attempt is capped at the time actually left, and the total budget
- * is min(ms, 20 s): the caller ALWAYS gets data or an error inside it.
+ * is min(ms, cap): the caller ALWAYS gets data or an error inside it.
+ * The cap defaults to 20 s; only the downloader's Instagram leg raises it.
  */
-function viaProxy(target, { ms = 20000, onProgress, retry = true } = {}) {
-  const BUDGET = Math.max(4000, Math.min(ms || 20000, 20000));
+function viaProxy(target, { ms = 20000, cap = 20000, onProgress, retry = true } = {}) {
+  /* `cap` is the hard ceiling on the budget. It defaults to 20 s, which is
+     what keeps music resolution snappy; the downloader raises it for
+     Instagram, whose resolver leg legitimately needs ~30 s — under the
+     old fixed cap that leg could never succeed, however patient the
+     caller asked to be. */
+  const BUDGET = Math.max(4000, Math.min(ms || 20000, cap));
   const deadline = Date.now() + BUDGET;
   const left = () => deadline - Date.now();
 
@@ -284,10 +297,12 @@ function viaProxy(target, { ms = 20000, onProgress, retry = true } = {}) {
     }
     /* Stage 1: the relay alone, once. It has no rate limit but is NOT
        always fast (0.07 s warm, 6-13 s cold) — inside a 20 s budget it
-       gets one honest chance, not two. */
+       gets one honest chance, not two. On a raised-cap call (Instagram)
+       it gets a proportionally longer chance, since it is the only leg
+       that can carry a ~30 s upstream answer end to end. */
     const own = proxyBase();
     if (own && left() > 1500) {
-      try { return await stage([relayJob(own, 8000)]); } catch { /* fall through */ }
+      try { return await stage([relayJob(own, cap > 20000 ? 40000 : 8000)]); } catch { /* fall through */ }
     }
     /* Stage 2: the public pool. */
     if (left() > 1500) {
