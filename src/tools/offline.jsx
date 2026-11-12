@@ -219,14 +219,27 @@ export function AgeCalc() {
 
 export function TaxCalc() {
   const [inc, setInc] = useState(1200000);
-  // New regime FY 2025-26 slabs
+  const [salaried, setSalaried] = useState(true);
+  // New regime FY 2025-26. Salaried income first loses the ₹75,000 standard
+  // deduction; the section 87A rebate (up to ₹60,000 at taxable ≤ ₹12L) is
+  // then tapered by marginal relief, so just above ₹12L the tax can never
+  // exceed the amount earned over ₹12L. The old version skipped both, which
+  // overstated the tax for nearly every salaried user.
+  const ded = salaried ? 75000 : 0;
+  const taxable = Math.max(0, inc - ded);
   const slabs = [[400000,0],[800000,.05],[1200000,.10],[1600000,.15],[2000000,.20],[2400000,.25],[Infinity,.30]];
   let tax = 0, prev = 0;
-  for (const [lim, rate] of slabs) { if (inc > prev) { tax += (Math.min(inc, lim) - prev) * rate; prev = lim; } else break; }
-  const rebate = inc <= 1200000 ? tax : 0;
-  const net = Math.max(0, tax - rebate), cess = net * 0.04;
-  return (<><Field label="Annual income (₹)" type="number" inputMode="numeric" value={inc} onChange={(e)=>setInc(+e.target.value)} /><Card><div className="chead">New regime · FY 2025-26</div><div className="kv"><span>Gross tax</span><b>₹{fmt(tax)}</b></div>
+  for (const [lim, rate] of slabs) { if (taxable > prev) { tax += (Math.min(taxable, lim) - prev) * rate; prev = lim; } else break; }
+  let rebate = 0, relief = 0, net = tax;
+  if (taxable <= 1200000) { rebate = Math.min(tax, 60000); net = tax - rebate; }
+  else if (tax > taxable - 1200000) { net = taxable - 1200000; relief = tax - net; }
+  const cess = net * 0.04;
+  return (<><Field label="Annual income (₹)" type="number" inputMode="numeric" value={inc} onChange={(e)=>setInc(+e.target.value)} /><Chips items={[{v:'sal',l:'Salaried'},{v:'oth',l:'Other income'}]} value={salaried?'sal':'oth'} onPick={(v)=>setSalaried(v==='sal')} /><Card><div className="chead">New regime · FY 2025-26</div>
+      {ded > 0 && <div className="kv"><span>Standard deduction</span><b>−₹{fmt(ded)}</b></div>}
+      {ded > 0 && <div className="kv"><span>Taxable income</span><b>₹{fmt(taxable)}</b></div>}
+      <div className="kv"><span>Gross tax</span><b>₹{fmt(tax)}</b></div>
       {rebate > 0 && <div className="kv"><span>87A rebate</span><b style={{color:'var(--green)'}}>−₹{fmt(rebate)}</b></div>}
+      {relief > 0 && <div className="kv"><span>Marginal relief</span><b style={{color:'var(--green)'}}>−₹{fmt(relief)}</b></div>}
       <div className="kv"><span>Health &amp; edu cess 4%</span><b>₹{fmt(cess)}</b></div><div className="kv"><span>Total tax</span><b style={{color:'var(--green)',fontSize:17}}>₹{fmt(net+cess)}</b></div><div className="kv"><span>Take home</span><b>₹{fmt(inc-net-cess)}</b></div><div className="src"><span className="dot warn" /><span>Indicative only — verify with a CA</span></div></Card></>);
 }
 
