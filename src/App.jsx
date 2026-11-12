@@ -631,7 +631,8 @@ function PresenceChip() {
   return (
     <span className="pill" title="People using the app right now — counted by a once-a-minute heartbeat, so treat it as approximate"
       style={pres.fresh ? undefined : { opacity: 0.55 }}>
-      <span className="dot" style={pres.fresh ? undefined : { background: 'var(--fg3)', boxShadow: 'none' }} />
+      <span className={`dot ${pres.fresh ? 'pres-dot' : ''}`}
+        style={pres.fresh ? undefined : { background: 'var(--fg3)', boxShadow: 'none' }} />
       {pres.n} online now{pres.fresh ? '' : ' · last known'}
     </span>);
 }
@@ -641,7 +642,8 @@ function PresenceRow() {
   if (!pres) return null;
   return (
     <div className="src" style={pres.fresh ? undefined : { opacity: 0.6 }}>
-      <span className="dot" style={pres.fresh ? undefined : { background: 'var(--fg3)', boxShadow: 'none' }} />
+      <span className={`dot ${pres.fresh ? 'pres-dot' : ''}`}
+        style={pres.fresh ? undefined : { background: 'var(--fg3)', boxShadow: 'none' }} />
       <span style={{ flex: 1 }}>{pres.n} online now</span>
       <span className="src-meta">{pres.fresh ? 'live count · approximate' : 'last known count'}</span>
     </div>);

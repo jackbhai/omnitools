@@ -1095,3 +1095,56 @@ input[type="color"] {
   .toast{animation:none}
   .sec-body{transition:none}
 }
+
+/* ================================================================
+   DESIGN & MOTION — finish pass over the existing identity.
+   Everything runs through the theme variables; motion is
+   transform/opacity only and yields to reduced-motion. */
+
+/* Presence: a soft pulse on the live dot (chrome only, costs nothing
+   on scroll). The stale state renders without it, by design. */
+.pres-dot{position:relative}
+.pres-dot::after{content:'';position:absolute;inset:-4px;border-radius:50%;
+  border:1px solid var(--green);opacity:0;animation:prespulse 2.4s ease-out infinite}
+@keyframes prespulse{0%{transform:scale(.55);opacity:.55}
+  70%{transform:scale(1.55);opacity:0}100%{transform:scale(1.55);opacity:0}}
+
+/* Keyboard and desktop focus must be as designed as touch. */
+:focus-visible{outline:2px solid var(--green);outline-offset:2px;border-radius:6px}
+::selection{background:var(--green);color:#00110A}
+
+/* Layered surfaces: cards sit ON the background, not in it. */
+.card{box-shadow:0 10px 28px rgba(0,0,0,.20)}
+.cont-card{box-shadow:0 6px 18px rgba(0,0,0,.16)}
+
+/* Glass only on fixed chrome, where the blur area never scrolls. */
+@supports (backdrop-filter:blur(1px)){
+  .topbar{background:color-mix(in srgb,var(--bg) 84%,transparent);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+  .mini{background:color-mix(in srgb,var(--s1) 86%,transparent);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+}
+
+/* Entry motion for views and cards — a 240ms rise, then stillness. */
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.main-area>div{animation:rise .24s ease both}
+.sec,.shelf .cont-card{animation:rise .24s ease both}
+
+/* Press + hover feedback, consistent across every tappable surface. */
+.btn:active{transform:scale(.97)}
+.cat:active{transform:scale(.95)}
+.rowbtn:active,.iconbtn:active{transform:scale(.92)}
+@media(hover:hover){
+  .tile:hover{transform:translateY(-2px);border-color:var(--line2)}
+  .row:hover{background:rgba(127,127,127,.05)}
+  .cont-card:hover{border-color:var(--line2)}
+  .cat:hover{border-color:var(--line2)}
+}
+
+@media(prefers-reduced-motion:no-preference){
+  html{scroll-behavior:smooth}
+}
+@media(prefers-reduced-motion:reduce){
+  .pres-dot::after{animation:none}
+  .main-area>div,.sec,.shelf .cont-card{animation:none}
+}
