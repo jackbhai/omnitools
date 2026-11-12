@@ -21,7 +21,7 @@
 const decode = (s) => {
   try { return atob(s); } catch { return ''; }
 };
-const HOST = decode('YWhtN3htYWtraS5jb20=');
+const HOST = decode('ZnJlZWFwaS5wcm8=');
 
 /** Small utility API family: manga, novels, courses, mail, PDF, snapshots. */
 export const MEDIA_API = `https://${HOST}/api/`;

@@ -54,7 +54,10 @@ export function Downloader() {
             title: m.title || d.title || 'Media', author: m.author || '', platform: m.platform || d.platform || '',
             thumb: m.thumbnail || m.coverImage || d.thumbnail || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : ''),
             audio: audioUrl || null, video: videoUrl || null,
-            qualities: [], audioOptions: [], id, via: attempt ? `resolver-retry${attempt+1}` : 'resolver',
+            qualities: (Array.isArray(m.qualities) ? m.qualities : [])
+              .filter((q) => q && q.url)
+              .map((q) => ({ q: q.quality || q.q || 'Video', url: q.url, size: q.size || q.contentLength })),
+            audioOptions: [], id, via: attempt ? `resolver-retry${attempt+1}` : 'resolver',
           };
         }
       } catch { /* try again */ }
