@@ -11,7 +11,8 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Stat } from '../ui/kit';
 import { Icon } from '../ui/icons';
-import { ENGINE_VERSIONS, AYANAMSAS, HOUSE_SYSTEMS, NODE_TYPES, RASHI_NAMES, RASHI_NAMES_HI } from '../core/kundli/constants.js';
+import { ENGINE_VERSIONS, AYANAMSAS, HOUSE_SYSTEMS, NODE_TYPES, RASHI_NAMES, RASHI_NAMES_HI, NAKSHATRAS, RASHI_LORDS } from '../core/kundli/constants.js';
+import { LAGNA_TEXT, RASHI_TEXT, NAKSHATRA_TEXT, NAKSHATRA_TEXT_HI, BHAVA_TEXT, YOGA_TEXT, DASHA_TEXT, DASHA_TEXT_HI } from '../core/kundli-interpret.js';
 import { searchLocation, getLocationByCoords } from '../core/kundli/locationDB.js';
 import { calculateKundli, exportChartJSON, exportRawTable } from '../core/kundli/index.js';
 import { generateInterpretation } from '../core/kundli/ai.js';
@@ -184,6 +185,52 @@ function GemstoneCard({ gem, type }) {
         </div>
       )}
     </div>
+  );
+}
+
+
+function KundliReading({ result }) {
+  const [lang, setLang] = useState('en');
+  if (!result) return null;
+  const lagnaIdx = RASHI_NAMES.indexOf(result.ascendant.sidereal.rashiName);
+  const moonIdx = RASHI_NAMES.indexOf(result.moonRashi);
+  const nakIdx = NAKSHATRAS.indexOf(result.nakshatra.nakshatra);
+  const pick = (obj) => obj ? (lang === 'hi' ? obj.hi : lang === 'hing' ? obj.hing : obj.en) : '';
+  const curDasha = result.dasha.dashaSequence.find((d) => d.startAge <= result.age && d.endAge > result.age);
+  const yogaLine = (name) => { const hit = YOGA_TEXT.find(([k]) => String(name || '').includes(k)); return hit ? hit[1] : ''; };
+  return (
+    <Card style={{ marginTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <div className="chead"><Icon n="book" size={16} /> Traditional Reading — Lagna · Rashi · Nakshatra · Bhava · Yoga · Dasha</div>
+        <div className="cats">
+          {[['en', 'English'], ['hi', 'हिंदी'], ['hing', 'Hinglish']].map(([v, n]) => (
+            <button key={v} className={`cat ${lang === v ? 'on' : ''}`} onClick={() => setLang(v)}>{n}</button>
+          ))}
+        </div>
+      </div>
+      {lagnaIdx >= 0 && <div style={{ marginTop: 10 }}><b>Lagna · {result.ascendant.sidereal.rashiName} ({result.ascendant.sidereal.rashiHi}) · Lord {RASHI_LORDS[lagnaIdx]}</b><div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 2 }}>{pick(LAGNA_TEXT[lagnaIdx])}</div></div>}
+      {moonIdx >= 0 && <div style={{ marginTop: 10 }}><b>Moon Rashi · {result.moonRashi} ({result.moonRashiHi}) · Lord {RASHI_LORDS[moonIdx]}</b><div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 2 }}>{pick(RASHI_TEXT[moonIdx])}</div></div>}
+      {nakIdx >= 0 && <div style={{ marginTop: 10 }}><b>Nakshatra · {result.nakshatra.nakshatra} Pada {result.nakshatra.pada} · Lord {result.nakshatra.lord}</b><div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 2 }}>{lang === 'hi' ? NAKSHATRA_TEXT_HI[nakIdx] : NAKSHATRA_TEXT[nakIdx][1]}</div></div>}
+      <div className="chead" style={{ marginTop: 14, fontSize: 13 }}>The 12 Bhavas in this chart</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))', gap: 8, marginTop: 8 }}>
+        {result.houses.map((h) => (
+          <div key={h.num} style={{ padding: 10, background: 'var(--s2)', borderRadius: 10 }}>
+            <div style={{ fontSize: 12.5 }}><b>House {h.num} · {BHAVA_TEXT[h.num - 1][0]}</b></div>
+            <div className="dim sm">{h.rashi} ({h.rashiHi}) · Lord {h.lord}{h.planets?.length ? ` · Planets: ${h.planets.map((p) => p.name).join(', ')}` : ' · Empty'}</div>
+            <div style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--fg2)', marginTop: 3 }}>{BHAVA_TEXT[h.num - 1][1]}</div>
+          </div>
+        ))}
+      </div>
+      {result.yogas?.length > 0 && (<>
+        <div className="chead" style={{ marginTop: 14, fontSize: 13 }}>Yogas found ({result.yogas.length})</div>
+        {result.yogas.slice(0, 8).map((y, i) => (
+          <div key={i} style={{ fontSize: 13, lineHeight: 1.55, marginTop: 5 }}><b>{y.name}</b>{y.strength ? ` · ${y.strength}` : ''}{yogaLine(y.name) ? <span style={{ color: 'var(--fg2)' }}> — {yogaLine(y.name)}</span> : null}</div>
+        ))}
+      </>)}
+      {curDasha && <div style={{ marginTop: 12 }}><b>Current Vimshottari Dasha · {curDasha.lord}</b><div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 2 }}>{(lang === 'hi' ? DASHA_TEXT_HI : DASHA_TEXT)[curDasha.lord] || ''}</div>
+        <div className="dim sm" style={{ marginTop: 4 }}>{result.dasha.dashaSequence.map((d) => `${d.lord} ${d.years}y`).join(' → ')}</div></div>}
+      <div className="dim sm" style={{ marginTop: 10 }}>Traditional interpretive texts keyed to the computed chart above — for guidance and reflection. Ayanamsa in use: {result.ayanamsa.ayanamsaName} ({result.ayanamsa.value.toFixed(2)}°).</div>
+    </Card>
   );
 }
 
@@ -676,6 +723,8 @@ export function Kundli() {
               <Stat l="Sade Sati" v={result.doshas.sadeSati.description.slice(0, 30)} />
               <Stat l="Current Dasha" v={`${result.dasha.dashaSequence.find(d => d.startAge <= result.age && d.endAge > result.age)?.lord || ''} Age ${result.age}`} />
             </div>
+
+            <KundliReading result={result} />
 
             {validationResult && (
               <Card style={{ marginTop: 12, border: '1px solid #15803d' }}>
