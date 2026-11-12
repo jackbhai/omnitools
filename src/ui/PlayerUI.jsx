@@ -1,7 +1,51 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePlayer, PRESETS, chain } from '../core/player';
-import { isFav, toggleFav } from '../core/library';
+import { isFav, toggleFav, playlists, addToPlaylist } from '../core/library';
+import { downloadTrack, offlineHas, offlineDelete } from '../core/offline-store';
+import { toast, SkelRows } from './kit';
 import { Icon } from './icons';
+
+/* Save the current track's audio on the device (IndexedDB) so it plays
+   with no network. Shows live progress; a saved track's button removes
+   the copy again. Hosts that refuse cross-origin reads fail honestly. */
+export function OfflineBtn({ track, className = 'btn ghost sm' }) {
+  const [state, setState] = useState('idle');   // idle | busy | saved | error
+  const [pct, setPct] = useState(-1);
+  const key = track?.id ?? track?.url ?? track?.stream;
+  useEffect(() => {
+    let live = true;
+    if (key) offlineHas(key).then((h) => { if (live) setState(h ? 'saved' : 'idle'); });
+    return () => { live = false; };
+  }, [key]);
+  if (!track || !key) return null;
+  const click = async (e) => {
+    e?.stopPropagation?.();
+    if (state === 'busy') return;
+    if (state === 'saved') {
+      await offlineDelete(key);
+      setState('idle');
+      toast('Offline copy removed');
+      return;
+    }
+    setState('busy'); setPct(-1);
+    try {
+      const r = await downloadTrack(track, (p) => setPct(p));
+      setState('saved');
+      toast(r?.already ? 'Already saved offline' : 'Saved — plays without internet');
+    } catch (err) {
+      setState('error');
+      toast(err.message || 'Could not save this track');
+      setTimeout(() => setState('idle'), 2400);
+    }
+  };
+  return (
+    <button className={className} aria-label={state === 'saved' ? 'Remove offline copy' : 'Save offline'}
+      title={state === 'saved' ? 'Saved on this device — tap to remove' : 'Save on this device for offline play'}
+      onClick={click} style={{ color: state === 'saved' ? 'var(--green)' : state === 'error' ? 'var(--bad)' : '' }}>
+      <Icon n={state === 'saved' ? 'check' : 'download'} size={15} />
+      {state === 'busy' && <span className="sm">{pct >= 0 ? ` ${Math.round(pct * 100)}%` : ' …'}</span>}
+    </button>);
+}
 
 const mmss = (s) => (!s || !isFinite(s)) ? '0:00'
   : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -78,6 +122,7 @@ export function FullPlayer() {
   const p = usePlayer();
   const [tab, setTab] = useState('art');       // art | lyrics | eq | queue
   const [sleepOpen, setSleepOpen] = useState(false);
+  const [plOpen, setPlOpen] = useState(false);
   const [shared, setShared] = useState(false);
   const [fav, setFav] = useState(false);
   const cv = useRef(null);
@@ -308,7 +353,7 @@ export function FullPlayer() {
           <Icon n="x" size={16} /></button>
         <button className="iconbtn" aria-label="Sleep timer"
           onClick={() => setSleepOpen((v) => !v)}
-          style={{ color: p.sleep ? 'var(--green)' : '' }}>
+          style={{ color: (p.sleepLeft > 0 || p.sleepTrack) ? 'var(--green)' : '' }}>
           <Icon n={p.sleep ? 'timer' : 'clock'} size={17} /></button>
       </div>
 
@@ -380,7 +425,8 @@ export function FullPlayer() {
                 when the URL does not say. */}
             {quality && <span className="chip"><Icon n="wave" size={11} /> {quality}</span>}
             {p.rate !== 1 && <span className="chip on"><Icon n="bolt" size={11} /> {p.rate}&times;</span>}
-            {p.sleep > 0 && <span className="chip on"><Icon n="moon" size={11} /> {p.sleep}m</span>}
+            {p.sleepLeft > 0 && <span className="chip on"><Icon n="timer" size={11} /> {mmss(p.sleepLeft)}</span>}
+            {p.sleepTrack && <span className="chip on"><Icon n="moon" size={11} /> stops after this track</span>}
           </div>
           {/* Which tier answered. A close match from a fallback network must
               never be presented as the original recording. */}
@@ -392,17 +438,35 @@ export function FullPlayer() {
                 : `via ${p.via}`}</span>
             </div>)}
           {p.err && <div className="err" style={{ marginTop: 12 }}><p>{p.err}</p></div>}
+          <MoreLikeThis p={p} track={t} />
         </>)}
 
         {tab === 'lyrics' && (
           <div className="lyrics" ref={lyrRef}>
-            {!p.lyrics && <div className="state"><span>No lyrics found for this track</span></div>}
-            {p.lyrics && (
+            {!p.lyrics && (
+              <div className="state"><span>No lyrics found for this track</span>
+                <button className="btn ghost sm" onClick={() => p.retryLyrics()}>
+                  <Icon n="refresh" size={14} /> Try another source</button>
+              </div>)}
+            {p.lyrics && (<>
               <div className="lyr-src dim sm">
                 {p.lyrics.via ? `via ${p.lyrics.via} · ` : ''}
                 {p.lyrics.exact ? 'matched to this exact recording' : 'closest match by name'}
                 {p.lyrics.synced ? ' · tap a line to jump' : ''}
-              </div>)}
+              </div>
+              <div className="btnrow" style={{ justifyContent: 'center', marginBottom: 10 }}>
+                <button className="btn ghost sm" onClick={() => {
+                  const text = p.lyrics.synced
+                    ? p.lyrics.synced.map((l) => l.line).join('\n')
+                    : (p.lyrics.plain || '');
+                  if (!text) { toast('Nothing to copy yet'); return; }
+                  navigator.clipboard?.writeText(text)
+                    .then(() => toast('Lyrics copied'))
+                    .catch(() => toast('Copy was blocked by the browser'));
+                }}><Icon n="doc" size={14} /> Copy lyrics</button>
+                <button className="btn ghost sm" onClick={() => p.retryLyrics()}>
+                  <Icon n="refresh" size={14} /> Try another source</button>
+              </div></>)}
             {p.lyrics?.synced && p.lyrics.synced.map((l, i) => (
               <p key={i} data-i={i} className={i === activeLine ? 'lyr on' : 'lyr'}
                 onClick={() => p.seek(l.t)}>{l.line}</p>))}
@@ -558,16 +622,105 @@ export function FullPlayer() {
             <Icon n={fav ? 'staron' : 'star'} size={15} /></button>
           <button className="btn ghost sm" aria-label="Share" onClick={share}>
             <Icon n={shared ? 'check' : 'link'} size={15} /></button>
+          <button className={`btn ghost sm ${plOpen ? 'on' : ''}`} aria-label="Add to playlist"
+            title="Add to a playlist" onClick={() => setPlOpen((v) => !v)}>
+            <Icon n="list" size={15} /></button>
           {t.dlUrl && <a className="btn sm" href={t.dlUrl} download target="_blank" rel="noreferrer"
             aria-label="Download"><Icon n="download" size={16} /></a>}
+          <OfflineBtn track={t} />
         </div>
+        {plOpen && (
+          <div className="btnrow" style={{ justifyContent: 'center' }}>
+            {playlists().length === 0
+              ? <span className="dim sm">No playlists yet — create one in Music, then Library</span>
+              : playlists().map((pl) => (
+                <button key={pl.id} className="cat" onClick={() => {
+                  addToPlaylist(pl.id, t);
+                  toast(`Added to ${pl.name}`);
+                  setPlOpen(false);
+                }}><Icon n="plus" size={13} /> {pl.name}</button>))}
+          </div>)}
         {sleepOpen && (
           <div className="btnrow" style={{ justifyContent: 'center' }}>
-            {[0, 15, 30, 45, 60].map((m) => (
-              <button key={m} className={`cat ${p.sleep === m ? 'on' : ''}`}
-                onClick={() => { p.setSleep(m); setSleepOpen(false); }}>
+            {[0, 10, 20, 30, 45, 60].map((m) => (
+              <button key={m} className={`cat ${!p.sleepTrack && p.sleep === m ? 'on' : ''}`}
+                onClick={() => {
+                  p.setSleep(m);
+                  if (m) toast(`Sleep timer — ${m} minutes`);
+                  setSleepOpen(false);
+                }}>
                 {m === 0 ? 'Off' : `${m}m`}</button>))}
+            <button className={`cat ${p.sleepTrack ? 'on' : ''}`}
+              onClick={() => {
+                p.setSleepTrack(!p.sleepTrack);
+                if (!p.sleepTrack) toast('Will stop at the end of this track');
+                setSleepOpen(false);
+              }}>
+              End of track</button>
+            {p.sleepLeft > 0 && (
+              <span className="chip on"><Icon n="timer" size={11} /> {mmss(p.sleepLeft)} left</span>)}
           </div>)}
       </div>
     </div>);
+}
+
+/* ---------------------------------------------------------- more like this
+   Related listening, loaded lazily after the essentials have painted:
+   more from the same artist, and a radio-style "you may also like" built
+   from this track. Both come from the same engines search and radio use;
+   a section that finds nothing says so instead of padding with filler. */
+function MoreLikeThis({ p, track }) {
+  const [rel, setRel] = useState(null);
+  const [fromArtist, setFromArtist] = useState(null);
+  useEffect(() => {
+    setRel(null); setFromArtist(null);
+    if (!track?.title) return undefined;
+    let dead = false;
+    const id = setTimeout(async () => {
+      try {
+        const { radioQueue, searchMusic } = await import('../core/music');
+        const [r, a] = await Promise.all([
+          radioQueue(track, { limit: 8 }).catch(() => []),
+          track.artist
+            ? searchMusic(track.artist, { deep: false }).then((x) => x.tracks || []).catch(() => [])
+            : Promise.resolve([]),
+        ]);
+        if (dead) return;
+        const notThis = (x) => x && x.id !== track.id;
+        setRel((r || []).filter(notThis).slice(0, 6));
+        setFromArtist((a || []).filter(notThis).slice(0, 6));
+      } catch { if (!dead) { setRel([]); setFromArtist([]); } }
+    }, 700);
+    return () => { dead = true; clearTimeout(id); };
+  }, [track?.id]);   // eslint-disable-line
+
+  if (!track?.title) return null;
+  const rows = (list) => (
+    <div className="list">
+      {list.map((x, i) => (
+        <div className="row" key={x.id || i} onClick={() => p.play(x, list)}
+          style={{ cursor: 'pointer' }}>
+          {x.art
+            ? <img src={x.art} alt="" loading="lazy"
+                style={{ width: 42, height: 42, borderRadius: 9, objectFit: 'cover', flex: '0 0 auto', background: 'var(--s3)' }}
+                onError={(e) => { e.target.style.visibility = 'hidden'; }} />
+            : <span className="cont-ic" style={{ width: 42, height: 42 }}><Icon n="music" size={17} /></span>}
+          <div className="main"><b style={{ fontSize: 13 }}>{(x.title || '').slice(0, 50)}</b>
+            <span className="dim sm">{x.artist || ''}</span></div>
+          <Icon n="play" size={17} style={{ color: 'var(--green)', flex: '0 0 auto' }} />
+        </div>))}
+    </div>);
+
+  return (<>
+    {track.artist && (<>
+      <div className="seclabel">More from {track.artist}</div>
+      {fromArtist === null ? <SkelRows n={2} h={50} />
+        : fromArtist.length ? rows(fromArtist)
+        : <div className="state sm">No other songs found for this artist</div>}
+    </>)}
+    <div className="seclabel">You may also like</div>
+    {rel === null ? <SkelRows n={2} h={50} />
+      : rel.length ? rows(rel)
+      : <div className="state sm">No similar songs found right now</div>}
+  </>);
 }

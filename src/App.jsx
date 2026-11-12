@@ -25,7 +25,7 @@ import { TrainJourney } from './tools/train-journey';
 import { Medicine as MedicineDeep } from './tools/medicine';
 import { Handwriting } from './tools/handwriting';
 import { Hub } from './tools/travel-hub';
-import { Spin } from './ui/kit';
+import { Spin, Section, SkelRows, Toaster, toast } from './ui/kit';
 import * as W from './tools/world';
 import { News } from './tools/news';
 import { Screen } from './tools/screen';
@@ -37,7 +37,49 @@ import * as D from './tools/devotional';
 import { Kundli as KundliPro } from './tools/kundli';
 import { Settings } from './tools/settings';
 import { providerStats } from './core/engine';
+import { searchMusic } from './core/music';
+import { history as libHistory } from './core/library';
+import { recent as tvRecent } from './core/iptv';
+import { getLiveStatus } from './core/live-status';
 import { Icon } from './ui/icons';
+
+/* ------------------------------------------------------ universal search
+   One box, three kinds of answer: tools, songs, channels. Matching is
+   forgiving about spelling — case, spaces and punctuation are normalised
+   away, and a small alias map covers the Hinglish words people actually
+   type (gaana, samachar, mausam, dawai…). */
+const normQ = (s) => String(s || '').toLowerCase()
+  .replace(/[^a-z0-9\u0900-\u097F]+/g, ' ').replace(/\s+/g, ' ').trim();
+const ALIASES = {
+  gaana: 'music', gana: 'music', geet: 'music', songs: 'music',
+  samachar: 'news', khabar: 'news', mausam: 'weather',
+  dawai: 'med', dava: 'med', dawa: 'med', paisa: 'currency',
+};
+function toolMatches(t, q) {
+  const hay = normQ(`${t.n} ${t.d} ${t.c}`);
+  return normQ(q).split(' ').filter(Boolean)
+    .every((tok) => hay.includes(tok) || ALIASES[tok] === t.id);
+}
+
+/* Channel index for the home search: two broad, light lists (not the
+   19 MB complete index), fetched once on first use and kept in memory. */
+let chanIndexCache = null;
+let chanIndexBusy = null;
+function loadChanIndex() {
+  if (chanIndexCache) return Promise.resolve(chanIndexCache);
+  if (chanIndexBusy) return chanIndexBusy;
+  chanIndexBusy = (async () => {
+    try {
+      const TV = await import('./core/iptv');
+      const urls = (TV.PLAYLISTS[0]?.urls || [])
+        .filter((u) => u.includes('playlist_india') || u.includes('countries/in.m3u'));
+      const rows = await TV.loadPlaylist(urls, { ms: 20000 });
+      chanIndexCache = rows;
+      return rows;
+    } catch { return []; }
+  })();
+  return chanIndexBusy;
+}
 
 /* ------------------------------------------------------------ travel hubs
    Eleven separate Travel tiles were impossible to tell apart. They are now
@@ -182,8 +224,12 @@ const TOOLS = [
 const CATS = ['All', 'Travel', 'India', 'Bhakti', 'Health', 'Everyday', 'Convert', 'Music',
               'Time', 'Money', 'Learn', 'Media', 'Space', 'Text', 'Dev', 'Generate'];
 
+/* The hash may carry share/pl params after the tool id (#dl?url=…) —
+   the route is only the part before ? or &. */
+const readRoute = () => (location.hash.slice(1) || '').split(/[?&]/)[0];
+
 export default function App() {
-  const [route, setRoute] = useState(() => location.hash.slice(1) || '');
+  const [route, setRoute] = useState(readRoute);
   const [cat, setCat] = useState('All');
   const [q, setQ] = useState('');
   const [showStatus, setShowStatus] = useState(false);
@@ -193,27 +239,70 @@ export default function App() {
   const [fav, setFav] = useState(() => {
     try { return JSON.parse(localStorage.getItem('omni:fav') || '[]'); } catch { return []; }
   });
+  const [recentTools, setRecentTools] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('omni:recent') || '[]'); } catch { return []; }
+  });
 
   useEffect(() => {
-    const h = () => { setRoute(location.hash.slice(1) || ''); window.scrollTo(0, 0); };
+    const h = () => { setRoute(readRoute()); window.scrollTo(0, 0); };
     addEventListener('hashchange', h); return () => removeEventListener('hashchange', h);
   }, []);
   useEffect(() => { localStorage.setItem('omni:fav', JSON.stringify(fav)); }, [fav]);
+  useEffect(() => {
+    if (!route) return;
+    setRecentTools((cur) => {
+      const nxt = [route, ...cur.filter((x) => x !== route)].slice(0, 8);
+      try { localStorage.setItem('omni:recent', JSON.stringify(nxt)); } catch {}
+      return nxt;
+    });
+  }, [route]);
 
   const tool = TOOLS.find((t) => t.id === route);
   const shown = useMemo(() => {
     let list = TOOLS;
     if (cat === 'Fav') list = list.filter((t) => fav.includes(t.id));
     else if (cat !== 'All') list = list.filter((t) => t.c === cat);
-    if (q.trim()) {
-      const s = q.toLowerCase();
-      list = list.filter((t) => (t.n + ' ' + t.d + ' ' + t.c).toLowerCase().includes(s));
-    }
+    if (q.trim()) list = list.filter((t) => toolMatches(t, q));
     return list;
   }, [cat, q, fav]);
 
+  /* Songs + channels for the universal search, debounced. */
+  const [uni, setUni] = useState({ songs: null, chans: null, loading: false });
+  useEffect(() => {
+    const s = q.trim();
+    if (s.length < 2) { setUni({ songs: null, chans: null, loading: false }); return undefined; }
+    setUni((u) => ({ ...u, loading: true }));
+    let dead = false;
+    const t = setTimeout(async () => {
+      const [songs, chans] = await Promise.all([
+        searchMusic(s, { deep: false }).then((r) => (r.tracks || []).slice(0, 8)).catch(() => []),
+        loadChanIndex().then((rows) => {
+          const nq = normQ(s);
+          return rows.filter((c) => normQ(`${c.name} ${c.group || ''}`).includes(nq)).slice(0, 10);
+        }).catch(() => []),
+      ]);
+      if (!dead) setUni({ songs, chans, loading: false });
+    }, 450);
+    return () => { dead = true; clearTimeout(t); };
+  }, [q]);
+
   const go = (id) => { location.hash = id; };
   const offCount = TOOLS.filter((t) => t.t === 'off').length;
+
+  const tileBtn = (t) => (
+    <button className="tile" key={t.id} onClick={() => go(t.id)}>
+      {t.t === 'live' ? <span className="live" /> : <span className="off">OFF</span>}
+      <span className="ic"><Icon n={t.i} size={24} /></span>
+      <b>{t.n}</b>
+      <small>{t.d}</small>
+    </button>);
+  const catsRow = (
+    <div className="cats">
+      {fav.length > 0 && (
+        <button className={`cat ${cat === 'Fav' ? 'on' : ''}`} onClick={() => setCat('Fav')}>
+          <Icon n="staron" size={13} /> {fav.length}</button>)}
+      {CATS.map((c) => <button key={c} className={`cat ${cat === c ? 'on' : ''}`} onClick={() => setCat(c)}>{c}</button>)}
+    </div>);
 
   return (
    <LocProvider>
@@ -228,8 +317,11 @@ export default function App() {
           <span>{tool ? tool.d : `${TOOLS.length} tools · no login`}</span>
         </div>
         {tool && (
-          <button className="iconbtn" aria-label="Favourite" onClick={() => setFav((f) =>
-            f.includes(tool.id) ? f.filter((x) => x !== tool.id) : [...f, tool.id])}>
+          <button className="iconbtn" aria-label="Favourite" onClick={() => {
+            const has = fav.includes(tool.id);
+            setFav((f) => has ? f.filter((x) => x !== tool.id) : [...f, tool.id]);
+            toast(has ? 'Removed from pinned tools' : 'Pinned — find it on the home shelf');
+          }}>
             <Icon n={fav.includes(tool.id) ? 'staron' : 'star'} size={18}
               style={{ color: fav.includes(tool.id) ? 'var(--green)' : '' }} />
           </button>)}
@@ -262,32 +354,40 @@ export default function App() {
             </div>
           </div>
 
+          {!q.trim() && <Shelf fav={fav} recentTools={recentTools} go={go} />}
+
           <div className="search">
             <Icon n="search" size={18} />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tools…" enterKeyHint="search" />
+            <input value={q} onChange={(e) => setQ(e.target.value)}
+              placeholder="Search tools, songs, channels…" enterKeyHint="search" />
             {q && <button onClick={() => setQ('')} aria-label="Clear"
               style={{ background: 'none', border: 0, color: 'var(--fg3)', display: 'grid', placeItems: 'center' }}>
               <Icon n="x" size={17} /></button>}
           </div>
 
-          <div className="cats">
-            {fav.length > 0 && (
-              <button className={`cat ${cat === 'Fav' ? 'on' : ''}`} onClick={() => setCat('Fav')}>
-                <Icon n="staron" size={13} /> {fav.length}</button>)}
-            {CATS.map((c) => <button key={c} className={`cat ${cat === c ? 'on' : ''}`} onClick={() => setCat(c)}>{c}</button>)}
-          </div>
-
-          {shown.length === 0
-            ? <div className="state">No tools match &ldquo;{q}&rdquo;</div>
-            : <div className="grid">
-                {shown.map((t) => (
-                  <button className="tile" key={t.id} onClick={() => go(t.id)}>
-                    {t.t === 'live' ? <span className="live" /> : <span className="off">OFF</span>}
-                    <span className="ic"><Icon n={t.i} size={24} /></span>
-                    <b>{t.n}</b>
-                    <small>{t.d}</small>
-                  </button>))}
-              </div>}
+          {q.trim() ? (<>
+            <div className="seclabel">Tools · {shown.length}</div>
+            {shown.length === 0
+              ? <div className="state">No tool matched — songs and channels are below.</div>
+              : <div className="grid">{shown.map(tileBtn)}</div>}
+            <UniResults uni={uni} go={go} />
+          </>) : cat === 'All' ? (<>
+            {catsRow}
+            {CATS.slice(1).map((c, i) => {
+              const list = TOOLS.filter((t) => t.c === c);
+              if (!list.length) return null;
+              return (
+                <Section key={c} id={`home-cat-${c}`} title={c}
+                  badge={`${list.length} tools`} defaultOpen={i < 2} sticky>
+                  <div className="grid">{list.map(tileBtn)}</div>
+                </Section>);
+            })}
+          </>) : (<>
+            {catsRow}
+            {shown.length === 0
+              ? <div className="state">No tools match &ldquo;{q}&rdquo;</div>
+              : <div className="grid">{shown.map(tileBtn)}</div>}
+          </>)}
 
           <div className="hr" />
           <p className="dim sm">
@@ -309,6 +409,8 @@ export default function App() {
       </nav>
       <MiniPlayer />
       <FullPlayer />
+      <Toaster />
+      <ScrollTopBtn />
     </Shell>
     </PlayerProvider>
    </LocProvider>
@@ -328,11 +430,40 @@ function StatusPanel({ onClose, offCount, total }) {
     return () => clearInterval(t);
   }, []);
   const healthy = stats.filter((s) => !s.open).length;
+  /* The six services a user feels, probed live (cached three minutes). */
+  const [liveRows, setLiveRows] = useState(null);
+  const [liveAt, setLiveAt] = useState(0);
+  useEffect(() => {
+    let dead = false;
+    getLiveStatus().then((r) => { if (!dead) { setLiveRows(r.rows); setLiveAt(r.at); } });
+    return () => { dead = true; };
+  }, []);
+  const recheck = () => {
+    setLiveRows(null);
+    getLiveStatus(true).then((r) => { setLiveRows(r.rows); setLiveAt(r.at); });
+  };
   return (
     <div className="card" style={{ margin: '12px 16px' }}>
       <div className="chead">System status
         <button className="iconbtn" style={{ marginLeft: 'auto', width: 28, height: 28 }}
           onClick={onClose} aria-label="Close"><Icon n="x" size={15} /></button></div>
+      <div className="chead" style={{ fontSize: 12, marginTop: 2 }}>Live status
+        <button className="rowbtn" style={{ marginLeft: 'auto' }} aria-label="Recheck services"
+          onClick={recheck}><Icon n="refresh" size={15} /></button></div>
+      {!liveRows ? <SkelRows n={3} h={24} /> : liveRows.map((s) => (
+        <div className="src" key={s.id}>
+          <span className={`dot ${s.state === 'down' ? 'bad' : s.state === 'slow' ? 'warn' : ''}`} />
+          <span style={{ flex: 1 }}>{s.name}</span>
+          <span className="src-meta">
+            {s.state === 'down' ? (s.note || 'not answering')
+              : `${(s.ms / 1000).toFixed(1)}s${s.state === 'slow' ? ' · slow' : ''}`}
+          </span>
+        </div>))}
+      {liveAt > 0 && (
+        <div className="dim sm" style={{ margin: '2px 0 10px' }}>
+          Last checked {new Date(liveAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          {' · '}{Math.max(0, Math.round((Date.now() - liveAt) / 1000))}s ago · real probes, cached 3 minutes
+        </div>)}
       <div className="g3">
         <div className="stat"><div className="v" style={{ color: 'var(--green)' }}>{offCount}</div><div className="l">Offline-safe</div></div>
         <div className="stat"><div className="v">{total - offCount}</div><div className="l">Live tools</div></div>
@@ -351,4 +482,136 @@ function StatusPanel({ onClose, offCount, total }) {
         <span>Failed sources are skipped for 60s, then retried automatically.</span></div>
     </div>
   );
+}
+
+/* ------------------------------------------------------------ home shelf
+   The top of home answers "where was I?" before "what exists?": resume
+   the last song or channel, then pinned tools, then recently used ones.
+   Everything reads the same stores the features themselves write, so the
+   shelf can never promise something the app does not have. */
+function Shelf({ fav, recentTools, go }) {
+  let lastSong = null;
+  let lastChan = null;
+  try { lastSong = libHistory()[0] || null; } catch {}
+  try { lastChan = tvRecent()[0] || null; } catch {}
+  const favTools = TOOLS.filter((t) => fav.includes(t.id));
+  const recent = recentTools
+    .map((id) => TOOLS.find((t) => t.id === id))
+    .filter((t) => t && !fav.includes(t.id));
+  if (!lastSong && !lastChan && !favTools.length && !recent.length) return null;
+
+  const chip = (t) => (
+    <button key={t.id} className="cat shelf-chip" onClick={() => go(t.id)}>
+      <Icon n={t.i} size={14} /> {t.n}</button>);
+
+  return (
+    <div className="shelf">
+      {(lastSong || lastChan) && (
+        <Section id="shelf-continue" title="Continue" icon="play">
+          <div className="shelf-col">
+            {lastSong && (
+              <button className="cont-card" onClick={() => {
+                try { sessionStorage.setItem('omni:music:resume', JSON.stringify(lastSong)); } catch {}
+                go('music');
+              }}>
+                {lastSong.art
+                  ? <img src={lastSong.art} alt="" loading="lazy" />
+                  : <span className="cont-ic"><Icon n="music" size={18} /></span>}
+                <span className="cont-tx"><b>{lastSong.title}</b>
+                  <small>{lastSong.artist || 'Song'} · tap to resume</small></span>
+                <Icon n="play" size={18} style={{ color: 'var(--green)', flex: '0 0 auto' }} />
+              </button>)}
+            {lastChan && (
+              <button className="cont-card" onClick={() => {
+                try { sessionStorage.setItem('omni:tv:open', JSON.stringify(lastChan)); } catch {}
+                go('tv');
+              }}>
+                {lastChan.logo
+                  ? <img src={lastChan.logo} alt="" loading="lazy" />
+                  : <span className="cont-ic"><Icon n="film" size={18} /></span>}
+                <span className="cont-tx"><b>{lastChan.name}</b>
+                  <small>{lastChan.group || 'Channel'} · tap to watch</small></span>
+                <Icon n="play" size={18} style={{ color: 'var(--green)', flex: '0 0 auto' }} />
+              </button>)}
+          </div>
+        </Section>)}
+      {favTools.length > 0 && (
+        <Section id="shelf-fav" title="Pinned tools" icon="staron" badge={`${favTools.length}`}>
+          <div className="shelf-row">{favTools.map(chip)}</div>
+        </Section>)}
+      {recent.length > 0 && (
+        <Section id="shelf-recent" title="Recently used" icon="clock"
+          badge={`${recent.length}`} defaultOpen={false}>
+          <div className="shelf-row">{recent.map(chip)}</div>
+        </Section>)}
+    </div>);
+}
+
+/* ------------------------------------------------- universal search hits
+   Songs play right here through the shared player; a channel hands off
+   to the TV tool, which opens it on arrival. */
+function UniResults({ uni, go }) {
+  const p = usePlayer();
+  const { songs, chans, loading } = uni;
+  const openChan = (c) => {
+    try { sessionStorage.setItem('omni:tv:open', JSON.stringify(c)); } catch {}
+    go('tv');
+  };
+  return (<>
+    <div className="seclabel">Songs{songs ? ` · ${songs.length}` : ''}</div>
+    {loading && !songs ? <SkelRows n={3} h={52} />
+      : songs && songs.length ? (
+        <div className="list" style={{ marginBottom: 4 }}>
+          {songs.map((t, i) => (
+            <div className="row" key={t.id || i} onClick={() => p.play(t, songs)}
+              style={{ cursor: 'pointer' }}>
+              {t.art
+                ? <img src={t.art} alt="" loading="lazy"
+                    style={{ width: 44, height: 44, borderRadius: 9, objectFit: 'cover', flex: '0 0 auto', background: 'var(--s3)' }}
+                    onError={(e) => { e.target.style.visibility = 'hidden'; }} />
+                : <span className="cont-ic"><Icon n="music" size={18} /></span>}
+              <div className="main"><b style={{ fontSize: 13.5 }}>{(t.title || '').slice(0, 54)}</b>
+                <span className="dim sm">{t.artist || ''}</span></div>
+              <Icon n="play" size={18} style={{ color: 'var(--green)', flex: '0 0 auto' }} />
+            </div>))}
+        </div>)
+      : <div className="state sm">No songs matched — the Music tab searches deeper.</div>}
+    <div className="seclabel">TV channels{chans ? ` · ${chans.length}` : ''}</div>
+    {loading && !chans ? <SkelRows n={2} h={52} />
+      : chans && chans.length ? (
+        <div className="list">
+          {chans.map((c, i) => (
+            <div className="row" key={(c.id || 'c') + i} onClick={() => openChan(c)}
+              style={{ cursor: 'pointer' }}>
+              {c.logo
+                ? <img src={c.logo} alt="" loading="lazy"
+                    style={{ width: 44, height: 44, borderRadius: 9, objectFit: 'contain', flex: '0 0 auto', background: 'var(--s3)' }}
+                    onError={(e) => { e.target.style.visibility = 'hidden'; }} />
+                : <span className="cont-ic"><Icon n="film" size={18} /></span>}
+              <div className="main"><b style={{ fontSize: 13.5 }}>{c.name}</b>
+                <span className="dim sm">{c.group || 'Channel'}</span></div>
+              <Icon n="play" size={18} style={{ color: 'var(--green)', flex: '0 0 auto' }} />
+            </div>))}
+        </div>)
+      : <div className="state sm">No channel matched — open TV for the full list.</div>}
+  </>);
+}
+
+/* --------------------------------------------------------- scroll to top */
+function ScrollTopBtn() {
+  const p = usePlayer();
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const on = () => setShow(window.scrollY > 700);
+    addEventListener('scroll', on, { passive: true });
+    on();
+    return () => removeEventListener('scroll', on);
+  }, []);
+  if (!show) return null;
+  return (
+    <button className="scrolltop" aria-label="Back to top"
+      style={{ bottom: `calc(${p?.track ? 148 : 84}px + var(--safe-b))` }}
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+      <Icon n="up" size={18} />
+    </button>);
 }

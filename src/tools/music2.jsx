@@ -26,11 +26,14 @@ import { catalogueReady, searchCatalogue, searchArtists, artistPage, albumTracks
          chartTracks, chartArtists, chartPlaylists, playlistEntries,
          radioStations, radioTracks, toPlayable, toPlayableList,
          REGIONS, TOP_ARTISTS } from '../core/catalogue';
-import { Spin, Err, Empty, Card, fmt } from '../ui/kit';
+import { Spin, Err, Empty, Card, fmt, Section, SkelRows, toast } from '../ui/kit';
 import { Icon } from '../ui/icons';
+import { OfflineBtn } from '../ui/PlayerUI';
+import { offlineAll, offlineDelete } from '../core/offline-store';
 import { favourites, isFav, toggleFav, history, topPlayed, playlists,
          createPlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist,
-         clearHistory, onLibrary, libraryStats } from '../core/library';
+         clearHistory, onLibrary, libraryStats,
+         encodePlaylistShare, decodePlaylistShare, importSharedPlaylist } from '../core/library';
 import { getSettings, setSetting, testProxy, usingBuiltin, BUILTIN_PROXY } from '../core/settings';
 import * as SRC from '../core/sources';
 import { HomeTab } from './music-home';
@@ -64,8 +67,57 @@ export function Music() {
   const [tab, setTab] = useState('home');
   const [, bump] = useState(0);
   useEffect(() => onWarm(() => bump((n) => n + 1)), []);
+  const [sharedPl, setSharedPl] = useState(null);
+
+  /* A shared playlist link (?pl=…) offers itself for import, once. */
+  useEffect(() => {
+    try {
+      const pl = new URLSearchParams(location.search).get('pl');
+      if (pl) {
+        const d = decodePlaylistShare(pl);
+        if (d) setSharedPl(d);
+      }
+    } catch {}
+  }, []);
+
+  /* "Continue" from the home shelf: a song the user tapped there resumes
+     here, through the normal resolving play path. */
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('omni:music:resume');
+      if (!raw) return;
+      sessionStorage.removeItem('omni:music:resume');
+      const t = JSON.parse(raw);
+      if (t?.id) setTimeout(() => player.play(t, [t]), 400);
+    } catch {}
+  }, []);   // eslint-disable-line
+
+  const clearShareParam = () => {
+    try {
+      const u = new URL(location.href);
+      u.searchParams.delete('pl');
+      window.history.replaceState(null, '', u);
+    } catch {}
+  };
 
   return (<>
+    {sharedPl && (
+      <Card style={{ marginBottom: 12, border: '1px solid var(--green)' }}>
+        <div className="chead"><Icon n="list" size={16} /> Shared playlist</div>
+        <b style={{ fontSize: 14 }}>{sharedPl.name}</b>
+        <div className="dim sm" style={{ margin: '2px 0 10px' }}>
+          {sharedPl.tracks.length} songs — import it into your library?
+        </div>
+        <div className="btnrow">
+          <button className="btn sm" onClick={() => {
+            importSharedPlaylist(sharedPl);
+            toast('Playlist added to your library');
+            clearShareParam(); setSharedPl(null); setTab('library');
+          }}><Icon n="check" size={14} /> Import</button>
+          <button className="btn ghost sm" onClick={() => { clearShareParam(); setSharedPl(null); }}>
+            Dismiss</button>
+        </div>
+      </Card>)}
     <div className="tabs" role="tablist" style={{ marginBottom: 12 }}>
       {TABS.map(([id, ic, label]) => (
         <button key={id} role="tab" aria-selected={tab === id}
@@ -138,6 +190,7 @@ function TrackList({ tracks, player, onPlay, loading, more, onMore, onRemove }) 
             <div style={{ display: 'flex', gap: 2, alignItems: 'center', flex: '0 0 auto' }}>
               {t.id && isCached(t.id) && !active &&
                 <span className="tag g" title="Already loaded — plays instantly">ready</span>}
+              {t.kind !== 'station' && <OfflineBtn track={t} className="rowbtn" />}
               {t.id && (
                 <button className="rowbtn" aria-label={isFav(t.id) ? 'Remove favourite' : 'Add favourite'}
                   onClick={(e) => { e.stopPropagation(); toggleFav(t); }}>
@@ -735,6 +788,103 @@ function RadioTab({ player }) {
   </>);
 }
 
+/* --------------------------------------------------------- offline view
+   Songs saved on the device (IndexedDB, via the download button on any
+   track row). They play from the saved bytes — no network, no resolving,
+   no expiry. The queue is built from object URLs, revoked on the way out. */
+const fmtBytes = (b) => (!b ? '0 KB'
+  : b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB`
+  : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB`
+  : `${Math.max(1, Math.round(b / 1e3))} KB`);
+
+function OfflineView({ player }) {
+  const [recs, setRecs] = useState(null);
+  const [est, setEst] = useState(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const urlsRef = useRef([]);
+  const load = useCallback(async () => {
+    setRecs(await offlineAll());
+    try { setEst(await navigator.storage?.estimate?.()); } catch { setEst(null); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => () => { urlsRef.current.forEach((u) => URL.revokeObjectURL(u)); }, []);
+
+  if (recs === null) return <SkelRows n={3} />;
+  const total = recs.reduce((a, r) => a + (r.size || 0), 0);
+
+  const playAt = (i) => {
+    urlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+    urlsRef.current = [];
+    const list = recs.map((r) => {
+      const u = URL.createObjectURL(r.blob);
+      urlsRef.current.push(u);
+      return { id: r.id || r.key, title: r.title, artist: r.artist, art: r.art,
+               dur: r.dur, stream: u, src: 'offline' };
+    });
+    player.play(list[i], list);
+  };
+  const remove = async (r) => {
+    await offlineDelete(r.key);
+    toast('Offline copy removed');
+    load();
+  };
+  const clearAll = async () => {
+    if (!confirmClear) { setConfirmClear(true); return; }
+    for (const r of recs) await offlineDelete(r.key);
+    setConfirmClear(false);
+    toast('All offline songs removed');
+    load();
+  };
+
+  return (
+    <Section id="music-offline" title="Offline songs"
+      badge={recs.length ? `${recs.length} songs · ${fmtBytes(total)}` : ''}>
+      {recs.length === 0
+        ? <Empty t="Nothing saved yet — tap the download button on any song and it lands here, ready to play without internet" />
+        : (<>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0 8px' }}>
+            <span className="dim sm" style={{ flex: 1 }}>
+              {recs.length} songs · {fmtBytes(total)} on this device
+              {est?.usage ? ` · the app is using ${fmtBytes(est.usage)} in total` : ''}
+            </span>
+            <button className="btn ghost sm" onClick={clearAll}
+              style={{ color: confirmClear ? 'var(--bad)' : '' }}>
+              <Icon n="trash" size={13} /> {confirmClear ? 'Tap again to confirm' : 'Clear all'}</button>
+          </div>
+          <div className="list">
+            {recs.map((r, i) => {
+              const active = player.track && (player.track.id ?? player.track.url) === (r.id || r.key);
+              return (
+                <div className="row" key={r.key} onClick={() => playAt(i)}
+                  style={{ cursor: 'pointer', background: active ? 'rgba(0,255,156,.07)' : '' }}>
+                  {r.art
+                    ? <img src={r.art} alt="" loading="lazy"
+                        style={{ width: 46, height: 46, borderRadius: 9, objectFit: 'cover', flex: '0 0 auto', background: 'var(--s3)' }}
+                        onError={(e) => { e.target.style.visibility = 'hidden'; }} />
+                    : <div style={{ width: 46, height: 46, borderRadius: 9, background: 'var(--s3)',
+                        display: 'grid', placeItems: 'center', flex: '0 0 auto' }}>
+                        <Icon n="music" size={20} style={{ opacity: .55 }} /></div>}
+                  <div className="main">
+                    <b style={{ fontSize: 13.5, color: active ? 'var(--green)' : '' }}>{(r.title || '').slice(0, 54)}</b>
+                    <span className="dim sm">{r.artist || ''}{r.dur ? ` · ${mmss(r.dur)}` : ''} · {fmtBytes(r.size)}</span>
+                    <span className="dim sm">
+                      {r.dur && r.size ? `≈${Math.round((r.size * 8) / r.dur / 1000)} kbps · ` : ''}
+                      saved {r.at ? new Date(r.at).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                    </span>
+                  </div>
+                  <button className="rowbtn" aria-label="Delete offline copy"
+                    onClick={(e) => { e.stopPropagation(); remove(r); }}>
+                    <Icon n="trash" size={16} style={{ color: 'var(--fg3)' }} /></button>
+                  <span style={{ color: active && player.playing ? 'var(--green)' : 'var(--fg2)',
+                                 display: 'grid', placeItems: 'center', paddingLeft: 3 }}>
+                    <Icon n={active && player.playing ? 'pause' : 'play'} size={18} /></span>
+                </div>);
+            })}
+          </div>
+        </>)}
+    </Section>);
+}
+
 /* -------------------------------------------------------------- library tab */
 /**
  * Favourites, recently played, most played, your own playlists — and the
@@ -747,6 +897,7 @@ function LibraryTab({ player }) {
   const [view, setView] = useState('fav');
   const [openPl, setOpenPl] = useState(null);
   const [newName, setNewName] = useState('');
+  const [shareUrl, setShareUrl] = useState(null);
 
   const stats = libraryStats();
   const favs = favourites();
@@ -778,7 +929,35 @@ function LibraryTab({ player }) {
               const sh = [...pl.tracks].sort(() => Math.random() - 0.5);
               player.setShuffle(true); playList(player, sh, 0);
             }}><Icon n="swap" size={15} /> Shuffle</button>
+            <button className="btn ghost sm" onClick={() => {
+              const u = `${location.origin}${location.pathname}?pl=${encodePlaylistShare(pl)}#music`;
+              setShareUrl({ id: pl.id, url: u });
+              if (navigator.clipboard) {
+                navigator.clipboard.writeText(u)
+                  .then(() => toast('Playlist link copied'))
+                  .catch(() => {});
+              }
+            }}><Icon n="link" size={15} /> Share</button>
           </div>
+          {shareUrl && shareUrl.id === pl.id && (
+            <div className="card center" style={{ marginBottom: 12 }}>
+              <img alt="QR code for the playlist link" loading="lazy"
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(shareUrl.url)}&bgcolor=000000&color=00FF9C`}
+                style={{ width: 160, height: 160, borderRadius: 12, background: '#000' }} />
+              <div className="dim sm" style={{ margin: '8px 0' }}>
+                Anyone opening this link or scanning the code can import the playlist.
+              </div>
+              <div className="btnrow" style={{ justifyContent: 'center' }}>
+                <button className="btn ghost sm" onClick={() => {
+                  if (navigator.clipboard) {
+                    navigator.clipboard.writeText(shareUrl.url)
+                      .then(() => toast('Playlist link copied')).catch(() => {});
+                  }
+                }}><Icon n="link" size={14} /> Copy link</button>
+                <button className="btn ghost sm" onClick={() => setShareUrl(null)}>
+                  <Icon n="x" size={14} /> Hide</button>
+              </div>
+            </div>)}
           <TrackList tracks={pl.tracks} player={player}
             onPlay={(t, i) => playList(player, pl.tracks, i)}
             onRemove={(t) => removeFromPlaylist(pl.id, t.id)} />
@@ -800,9 +979,11 @@ function LibraryTab({ player }) {
 
     <div className="cats">
       {[['fav', 'Favourites'], ['recent', 'Recent'], ['top', 'Most played'],
-        ['lists', 'My playlists'], ['setup', 'Speed']].map(([v, l]) => (
+        ['lists', 'My playlists'], ['offline', 'Offline'], ['setup', 'Speed']].map(([v, l]) => (
         <button key={v} className={`cat ${view === v ? 'on' : ''}`} onClick={() => setView(v)}>{l}</button>))}
     </div>
+
+    {view === 'offline' && <OfflineView player={player} />}
 
     {view === 'lists' && (<>
       <div className="fld" style={{ marginTop: 10 }}>

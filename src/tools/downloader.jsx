@@ -5,7 +5,7 @@
  * Sources: the resolver (100+ platforms) primary, Piped mirrors as fallback for
  * YouTube (they expose per-quality stream lists).
  */
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { jget } from '../core/engine';
 import { resolveJson } from '../core/audio-resolve';
 import { Card, Spin, Err, Chips, Copy, fmt } from '../ui/kit';
@@ -25,17 +25,47 @@ const THUMBS = [
   ['hqdefault', 'HQ (480×360)'], ['mqdefault', 'MQ (320×180)'],
 ];
 
+/**
+ * A link shared into the app (manifest share_target) lands here as
+ * ?url= / ?text= / ?title= — in the query string, or occasionally inside
+ * the hash when a browser appends it there. Pull the first real URL out.
+ */
+function sharedUrl() {
+  try {
+    const fromParams = (p) => {
+      const direct = p.get('url');
+      if (direct && /^https?:\/\//i.test(direct)) return direct;
+      const text = p.get('text') || '';
+      const m = text.match(/https?:\/\/\S+/);
+      return m ? m[0] : '';
+    };
+    const fromSearch = fromParams(new URLSearchParams(location.search));
+    if (fromSearch) return fromSearch;
+    const qi = location.hash.indexOf('?');
+    if (qi >= 0) return fromParams(new URLSearchParams(location.hash.slice(qi + 1)));
+  } catch {}
+  return '';
+}
+
 export function Downloader() {
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(sharedUrl);
   const [busy, setBusy] = useState(false);
+  /* Arriving with a shared link means the intent is obvious — fetch it. */
+  const autoFetched = useRef(false);
+  useEffect(() => {
+    if (autoFetched.current) return;
+    autoFetched.current = true;
+    const s = sharedUrl();
+    if (s) fetchInfo(s);
+  }, []);   // eslint-disable-line
   const [err, setErr] = useState('');
   const [info, setInfo] = useState(null);
 
-  const fetchInfo = async () => {
-    if (!url.trim()) return;
+  const fetchInfo = async (ov) => {
+    const rawUrl = String(ov ?? url).trim();
+    if (!rawUrl) return;
     setBusy(true); setErr(''); setInfo(null);
-    const id = ytId(url);
-    const rawUrl = url.trim();
+    const id = ytId(rawUrl);
     let got = null;
 
     // 1) Primary resolver — broadest platform coverage (YouTube, Instagram, TikTok, FB, X, etc)
@@ -227,7 +257,7 @@ export function Downloader() {
         enterKeyHint="go" onKeyDown={(e) => e.key === 'Enter' && fetchInfo()} />
     </div>
     <div className="btnrow">
-      <button className="btn" style={{ flex: 1 }} disabled={busy || !url.trim()} onClick={fetchInfo}>
+      <button className="btn" style={{ flex: 1 }} disabled={busy || !url.trim()} onClick={() => fetchInfo()}>
         {busy ? 'Fetching…' : <><Icon n="search" size={16} /> Fetch</>}</button>
       <button className="btn ghost" onClick={async () => {
         try { setUrl(await navigator.clipboard.readText()); } catch {} }}><Icon n="list" size={18} /> Paste</button>

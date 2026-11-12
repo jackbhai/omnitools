@@ -10,7 +10,8 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Icon } from '../ui/icons';
-import { Card, Spin, Empty, Err } from '../ui/kit';
+import { OfflineBtn } from '../ui/PlayerUI';
+import { Card, Spin, Empty, Err, Section } from '../ui/kit';
 import { usePlayer } from '../core/player';
 import { searchMusic } from '../core/music';
 import { catalogueReady, searchCatalogue, toPlayableList, TOP_ARTISTS } from '../core/catalogue';
@@ -284,7 +285,8 @@ export function HomeTab({ player }) {
     </>)}
 
     {/* Recommended songs */}
-    <div className="chead">Recommended For You</div>
+    <Section id="mh-recs" title="Recommended For You"
+      badge={recs?.length ? `${recs.length} songs` : ''}>
     {busy && <Spin t="Finding songs for you" />}
     {err && <Err error={err} retry={loadRecs} />}
     {recs?.length > 0 && (<>
@@ -311,41 +313,41 @@ export function HomeTab({ player }) {
     {recs?.length === 0 && !busy && !err && (
       <Empty t="No recommendations yet — try adding more preferences" />
     )}
+    </Section>
 
     {/* Favorite artist songs */}
-    {artistSongs?.tracks?.length > 0 && (<>
-      <div className="chead" style={{ marginTop: 18 }}>
-        <Icon n="smile" size={14} /> {artistSongs.artist}
-      </div>
+    {artistSongs?.tracks?.length > 0 && (
+      <Section id="mh-artist" title={artistSongs.artist} icon="smile"
+        badge={`${artistSongs.tracks.length} songs`}>
       <div className="list">
         {artistSongs.tracks.map((t, i) => (
           <TrackRow key={t.id || i} track={t} player={player}
             onPlay={() => playList(artistSongs.tracks, i)} />
         ))}
       </div>
-    </>)}
+      </Section>)}
 
     {/* Recently played */}
-    {history().length > 0 && (<>
-      <div className="chead" style={{ marginTop: 18 }}>Recently Played</div>
+    {history().length > 0 && (
+      <Section id="mh-recent" title="Recently Played" badge={`${Math.min(5, history().length)} of ${history().length}`}>
       <div className="list">
         {history().slice(0, 5).map((t, i) => (
           <TrackRow key={t.id || i} track={t} player={player}
             onPlay={() => playList(history().slice(0, 10), i)} />
         ))}
       </div>
-    </>)}
+      </Section>)}
 
     {/* Top played */}
-    {topPlayed(5).length > 0 && (<>
-      <div className="chead" style={{ marginTop: 18 }}>Your Most Played</div>
+    {topPlayed(5).length > 0 && (
+      <Section id="mh-top" title="Your Most Played" defaultOpen={false}>
       <div className="list">
         {topPlayed(5).map((t, i) => (
           <TrackRow key={t.id || i} track={t} player={player}
             onPlay={() => playList(topPlayed(10), i)} />
         ))}
       </div>
-    </>)}
+      </Section>)}
   </>);
 }
 
@@ -372,6 +374,7 @@ function TrackRow({ track, player, onPlay }) {
         </span>
       </div>
       <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+        <OfflineBtn track={track} className="rowbtn" />
         {track.id && (
           <button className="rowbtn"
             onClick={(e) => { e.stopPropagation(); toggleFav(track); }}

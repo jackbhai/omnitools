@@ -158,3 +158,82 @@ export const WMO = {
   99: ['Severe storm', 'wind'],
 };
 export const wmo = (c) => WMO[c] || ['—', 'thermo'];
+
+/* ------------------------------------------------------- collapsible
+   One pattern for every foldable block in the app: home sections, shelf
+   rows, settings groups, status groups. The open/closed choice is
+   remembered per section id, the animation is a grid-rows transition
+   (transform/opacity-class performance, no measured heights), and the
+   header can stay stuck to the top of long lists. */
+export function useFold(id, defaultOpen = true) {
+  const key = `omni:sec:${id}`;
+  const [open, setOpen] = useState(() => {
+    try {
+      const v = localStorage.getItem(key);
+      return v === null ? defaultOpen : v === '1';
+    } catch { return defaultOpen; }
+  });
+  const toggle = useCallback(() => {
+    setOpen((o) => {
+      try { localStorage.setItem(key, o ? '0' : '1'); } catch {}
+      return !o;
+    });
+  }, [key]);
+  return [open, toggle];
+}
+
+export function Section({ id, title, badge, icon, defaultOpen = true, sticky = false, children, right }) {
+  const [open, toggle] = useFold(id, defaultOpen);
+  return (
+    <section className="sec">
+      <button className={`sec-h ${open ? '' : 'closed'} ${sticky ? 'sticky' : ''}`}
+        onClick={toggle} aria-expanded={open}>
+        {icon && <Icon n={icon} size={16} style={{ color: 'var(--green)' }} />}
+        <span className="sec-t">{title}</span>
+        {badge && <span className="sec-badge">{badge}</span>}
+        {right}
+        <Icon n="chevron" size={16} className="chev" />
+      </button>
+      <div className="sec-body" style={{ gridTemplateRows: open ? '1fr' : '0fr' }}>
+        <div className="sec-inner">{open && children}</div>
+      </div>
+    </section>);
+}
+
+/* ------------------------------------------------------------- toast
+   One-line confirmations for things the user just did — saved, copied,
+   timer set. A tiny emitter so any component can announce without prop
+   drilling; <Toaster/> is mounted once in the shell. */
+const toastSubs = new Set();
+export function toast(msg) {
+  for (const f of toastSubs) { try { f(String(msg)); } catch {} }
+}
+
+export function Toaster() {
+  const [items, setItems] = useState([]);
+  useEffect(() => {
+    const push = (msg) => {
+      const id = Date.now() + Math.random();
+      setItems((cur) => [...cur.slice(-2), { id, msg }]);
+      setTimeout(() => setItems((cur) => cur.filter((x) => x.id !== id)), 2600);
+    };
+    toastSubs.add(push);
+    return () => toastSubs.delete(push);
+  }, []);
+  if (!items.length) return null;
+  return (
+    <div className="toasts" role="status">
+      {items.map((t) => <div className="toast" key={t.id}>{t.msg}</div>)}
+    </div>);
+}
+
+/* ---------------------------------------------------------- skeleton
+   Placeholder rows while a list resolves — the shape of what is coming,
+   never a blank flash. */
+export function SkelRows({ n = 4, h = 56 }) {
+  return (
+    <div aria-hidden="true">
+      {Array.from({ length: n }, (_, i) => (
+        <div className="skel" key={i} style={{ height: h, marginBottom: 8 }} />))}
+    </div>);
+}

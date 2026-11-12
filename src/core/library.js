@@ -153,6 +153,48 @@ export function importLibrary(json) {
   return { favourites: nf, playlists: np };
 }
 
+/* ------------------------------------------------------- playlist share
+   A playlist travels as a link: name + (id, title, artist) per track,
+   JSON → base64url in a `?pl=` query param. Ids are all a track needs —
+   the receiving side re-resolves streams on play, exactly like a locally
+   saved playlist, so a shared link never carries an expiring stream URL. */
+const SHARE_MAX = 150;
+
+export function encodePlaylistShare(pl) {
+  const data = {
+    v: 1, n: pl?.name || 'Shared playlist',
+    t: (pl?.tracks || []).slice(0, SHARE_MAX)
+      .map((t) => [t.id, t.title || '', t.artist || '']),
+  };
+  const json = JSON.stringify(data);
+  return btoa(unescape(encodeURIComponent(json)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** Parse a `?pl=` payload back into { name, tracks } or null. */
+export function decodePlaylistShare(s) {
+  try {
+    const b64 = String(s || '').replace(/-/g, '+').replace(/_/g, '/');
+    if (!b64) return null;
+    const d = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    if (!d || d.v !== 1 || !Array.isArray(d.t)) return null;
+    const tracks = d.t
+      .filter((x) => Array.isArray(x) && x[0])
+      .map((x) => ({ id: x[0], title: x[1] || '', artist: x[2] || '',
+                     art: '', dur: null, needsResolve: true }));
+    if (!tracks.length) return null;
+    return { name: String(d.n || 'Shared playlist').slice(0, 60), tracks };
+  } catch { return null; }
+}
+
+/** Save a decoded shared playlist as a new local playlist. */
+export function importSharedPlaylist(shared) {
+  if (!shared?.tracks?.length) return null;
+  const pl = createPlaylist(shared.name);
+  if (pl) addToPlaylist(pl.id, shared.tracks);
+  return pl;
+}
+
 export function libraryStats() {
   return {
     favourites: favourites().length,

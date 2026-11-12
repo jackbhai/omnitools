@@ -8,7 +8,24 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Stat } from '../ui/kit';
+import { Card, Stat, useFold } from '../ui/kit';
+
+/* A Settings group that folds shut — the choice is remembered per group,
+   so the page opens the way the user left it. */
+function Fold({ id, head, style, defaultOpen = true, children }) {
+  const [open, toggle] = useFold(id, defaultOpen);
+  return (
+    <Card style={style}>
+      <button className="fold-h" onClick={toggle} aria-expanded={open}>
+        <span className="chead" style={{ flex: 1, textAlign: 'left', margin: 0 }}>{head}</span>
+        <Icon n="chevron" size={16} className="chev"
+          style={{ transform: open ? '' : 'rotate(-90deg)', transition: 'transform .2s' }} />
+      </button>
+      <div className="sec-body" style={{ gridTemplateRows: open ? '1fr' : '0fr' }}>
+        <div className="sec-inner">{open && children}</div>
+      </div>
+    </Card>);
+}
 import { Icon } from '../ui/icons';
 import { THEMES, getCurrentThemeId, getCustomTheme, saveCustomTheme, applyTheme, getAllThemes } from '../core/theme.js';
 import { getPWAInfo, triggerInstall, onInstallPrompt, getCacheStatus, clearAllCaches, getOfflineStatus } from '../core/pwa.js';
@@ -192,8 +209,8 @@ export function Settings() {
         )}
 
         {/* PWA Section */}
-        <Card style={{ marginTop: 16, background: 'var(--s2)' }}>
-          <div className="chead"><Icon n="box" size={16} /> PWA - App-like Experience - Install as App</div>
+        <Fold id="set-pwa" defaultOpen={false} style={{ marginTop: 16, background: 'var(--s2)' }}
+          head={<><Icon n="box" size={16} /> PWA - App-like Experience - Install as App</>}>
           <div className="dim sm">Progressive Web App - Use like native app, works offline, install to home screen</div>
           
           <div className="g2" style={{ marginTop: 12 }}>
@@ -240,11 +257,11 @@ export function Settings() {
             • Service worker caches app shell (network-first for index.html, cache-first for hashed assets)<br/>
             • Medicine shards cached on first use (40 most recent kept) - offline after first search
           </div>
-        </Card>
+        </Fold>
 
         {/* Themes Section */}
-        <Card style={{ marginTop: 16, background: 'var(--s2)' }}>
-          <div className="chead"><Icon n="palette" size={16} /> Themes - Standard + Make Your Own</div>
+        <Fold id="set-themes" style={{ marginTop: 16, background: 'var(--s2)' }}
+          head={<><Icon n="palette" size={16} /> Themes - Standard + Make Your Own</>}>
           <div className="dim sm">Choose theme or create your own custom theme - All themes use real SVG icons, no emoji - AMOLED battery saving</div>
 
           <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
@@ -331,11 +348,11 @@ export function Settings() {
               </div>
             </Card>
           )}
-        </Card>
+        </Fold>
 
         {/* Features Toggle */}
-        <Card style={{ marginTop: 16, background: 'var(--s2)' }}>
-          <div className="chead"><Icon n="cog" size={16} /> Features - Standard Settings</div>
+        <Fold id="set-features" defaultOpen={false} style={{ marginTop: 16, background: 'var(--s2)' }}
+          head={<><Icon n="cog" size={16} /> Features - Standard Settings</>}>
           <div className="dim sm">Enable/disable features, proxy settings, and more</div>
           
           <div style={{ marginTop: 12 }}>
@@ -368,11 +385,11 @@ export function Settings() {
               <div className="dim sm" style={{ fontSize: 10, marginTop: 4 }}>Free tier 100k req/day - worker/omni-proxy.js - Host allow-list so cannot be repurposed as open proxy</div>
             </div>
           </div>
-        </Card>
+        </Fold>
 
         {/* Live Check System */}
-        <Card style={{ marginTop: 16, border: '2px solid var(--green)', background: 'var(--s2)' }}>
-          <div className="chead"><Icon n="signal" size={18} /> Live Check System - Feature Health + % Working + Live Logs</div>
+        <Fold id="set-livecheck" style={{ marginTop: 16, border: '2px solid var(--green)', background: 'var(--s2)' }}
+          head={<><Icon n="signal" size={18} /> Live Check System - Feature Health + % Working + Live Logs</>}>
           <div className="dim sm">One button checks all features - Which working, which not, % working per category, live logs show what is being checked in real-time - Professional QA system</div>
 
           <div className="btnrow" style={{ marginTop: 12 }}>
@@ -470,7 +487,7 @@ export function Settings() {
             • Provider stats integration - shows which providers healthy/failing<br/>
             • Professional QA - same system used for pre-commit checks
           </div>
-        </Card>
+        </Fold>
       </Card>
 
       <div className="src"><span className="dot" /><span>Settings v1.0 - PWA App-like + Themes 7 + Custom Theme Maker + Live Check System - PWA: standalone display, SW network-first shell cache-first hashed assets, offline ready, install prompt, cache management - Themes: dark default AMOLED black + light + amoled pure black + ocean + forest + sunset + midnight purple + custom maker with color pickers for --bg --s1 --s2 --s3 --line --green --cyan --fg etc live preview save to localStorage - Features: proxy settings autoRadio useBuiltin sfx (app-wide sound effects, synthesised locally, with audible test buttons) - Live Check: button checks all features health % working per feature/category overall % with live logs timestamp type real-time progress - Professional settings page - No fake data - Verified</span></div>

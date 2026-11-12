@@ -398,22 +398,57 @@ export function PlayerProvider({ children }) {
   const [treb, setTreb] = useState(0);
   const [comp, setComp] = useState(false);
   const [rate, setRate] = useState(1);
-  const [sleep, setSleep] = useState(0);
+  /* Sleep timer, two shapes: stop after N minutes (with a live countdown),
+     or stop at the end of the current track. `sleep` stays the chosen
+     minute count so the UI chip keeps its meaning. */
+  const [sleep, setSleepMin] = useState(0);
+  const [sleepEnd, setSleepEnd] = useState(0);
+  const [sleepLeft, setSleepLeft] = useState(0);
+  const [sleepTrack, setSleepTrackState] = useState(false);
+  const setSleep = useCallback((mins) => {
+    if (mins > 0) {
+      setSleepMin(mins);
+      setSleepEnd(Date.now() + mins * 60000);
+      setSleepLeft(mins * 60);
+      setSleepTrackState(false);
+    } else {
+      setSleepMin(0); setSleepEnd(0); setSleepLeft(0);
+    }
+  }, []);
+  const setSleepTrack = useCallback((on) => {
+    setSleepTrackState(!!on);
+    if (on) { setSleepMin(0); setSleepEnd(0); setSleepLeft(0); }
+  }, []);
   /* Which source actually answered — shown under the title so a fallback is
      never mistaken for the original. */
   const [via, setVia] = useState('');
   /* Lyrics ride along in the background, never blocking a play. The pool
      matches on exact title+artist+duration first, so `via` says who answered
      and `exact` says whether it was that recording or a name-only guess. */
+  const lyricsArgsRef = useRef(null);
   const grabLyrics = (m) => {
     if (!m || (!m.title && !m.name)) { setLyrics(null); return; }
-    resolve('lyrics', lyricsPool, {
+    const args = {
       title: m.title || m.name || '', artist: m.artist || '',
       album: m.album || '', length: Math.round(+(m.dur || m.duration) || 0) || null,
-    }, { ttl: 864e5 })
+    };
+    lyricsArgsRef.current = args;
+    resolve('lyrics', lyricsPool, args, { ttl: 864e5 })
       .then((r) => setLyrics(r.data ? { ...r.data, via: r.cached ? 'cache' : r.label } : null))
       .catch(() => setLyrics(null));
   };
+  /* "Try another source" — the cached answer may be a name-only match or
+     an empty one. This goes back to the pool directly, skipping the
+     engine's 24-hour cache, so the other lyrics routes get their turn. */
+  const retryLyrics = useCallback(async () => {
+    const args = lyricsArgsRef.current;
+    if (!args) return;
+    setLyrics(null);
+    try {
+      const d = await lyricsPool(args);
+      setLyrics(d ? { ...d, via: d.via || 'fresh check' } : null);
+    } catch { setLyrics(null); }
+  }, []);
   /* Whether the browser will let script READ this stream's samples. True when
      the CORS opt-in succeeded, false when playWithFallback had to drop it.
      The visualiser and equaliser both depend on it, and both say so plainly
@@ -862,12 +897,22 @@ export function PlayerProvider({ children }) {
     } catch {}
   }, [toggle, step]);
 
-  /* sleep timer */
+  /* sleep timer — ticks the visible countdown down, then pauses */
   useEffect(() => {
-    if (!sleep) return;
-    const t = setTimeout(() => { audio.current?.pause(); setPlaying(false); setSleep(0); }, sleep * 60000);
-    return () => clearTimeout(t);
-  }, [sleep]);
+    if (!sleepEnd) return;
+    const tick = () => {
+      const left = Math.max(0, Math.round((sleepEnd - Date.now()) / 1000));
+      setSleepLeft(left);
+      if (left <= 0) {
+        try { audio.current?.pause(); } catch {}
+        setPlaying(false);
+        setSleepMin(0); setSleepEnd(0);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [sleepEnd]);
 
   /**
    * Bring the EQ graph up on demand.
@@ -903,8 +948,8 @@ export function PlayerProvider({ children }) {
   const value = {
     audio, yt, stage, track, playing, loading, pos, dur, queue, idx, shuffle, repeat, full, miniHidden, err, lyrics, via,
     canViz,
-    eq, preset, bass, treb, comp, rate, sleep,
-    play, toggle, step, seek, retry, extendQueue, setRadio, setShuffle, setRepeat, setFull, setMiniHidden, setSleep, applyPreset,
+    eq, preset, bass, treb, comp, rate, sleep, sleepLeft, sleepTrack,
+    play, toggle, step, seek, retry, retryLyrics, extendQueue, setRadio, setShuffle, setRepeat, setFull, setMiniHidden, setSleep, setSleepTrack, applyPreset,
     eqOn, enableEq,
     stop: () => {
       try { audio.current?.pause(); } catch {}
@@ -929,7 +974,16 @@ export function PlayerProvider({ children }) {
       <audio
         ref={audio} preload="none"
         onTimeUpdate={(e) => { setPos(e.target.currentTime); setDur(e.target.duration || 0); }}
-        onEnded={() => { if (repeat === 'one') { audio.current.currentTime = 0; audio.current.play(); } else step(1); }}
+        onEnded={() => {
+          if (repeat === 'one') { audio.current.currentTime = 0; audio.current.play(); }
+          else if (sleepTrack) {
+            // "End of track" sleep: stop here instead of rolling on.
+            setSleepTrackState(false);
+            try { audio.current.pause(); } catch {}
+            setPlaying(false);
+          }
+          else step(1);
+        }}
         onPause={() => setPlaying(false)} onPlay={() => setPlaying(true)}
         onError={() => {
           /* The CDN signs its links and they can expire while still in our

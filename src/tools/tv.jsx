@@ -98,13 +98,24 @@ function Screen({ ch, onClose, onNext }) {
   const [fav, setFav] = useState(() => TV.isTvFav(ch?.id));
   useEffect(() => { setFav(TV.isTvFav(ch?.id)); }, [ch?.id]);
 
+  const [pipNote, setPipNote] = useState('');
   const togglePiP = async () => {
+    const v = vid.current;
+    if (!v) return;
+    const say = (m) => { setPipNote(m); setTimeout(() => setPipNote(''), 3600); };
     try {
-      const v = vid.current;
-      if (!v) return;
-      if (document.pictureInPictureElement) await document.exitPictureInPicture();
-      else if (v.requestPictureInPicture) await v.requestPictureInPicture();
-    } catch {}
+      if (document.pictureInPictureElement) { await document.exitPictureInPicture(); return; }
+      if (typeof v.requestPictureInPicture === 'function' && !document.pictureInPictureDisabled) {
+        await v.requestPictureInPicture();
+        return;
+      }
+      /* Safari's spelling of the same idea. */
+      if (typeof v.webkitSetPresentationMode === 'function') {
+        v.webkitSetPresentationMode('picture-in-picture');
+        return;
+      }
+      say('Picture-in-Picture is not supported in this browser');
+    } catch { say('Picture-in-Picture was blocked here — try again while the video is playing'); }
   };
 
   return (
@@ -161,6 +172,10 @@ function Screen({ ch, onClose, onNext }) {
         <button className="rowbtn" aria-label="Close" title="Close" onClick={onClose}>
           <Icon n="x" size={17} /></button>
       </div>
+      {pipNote && (
+        <div className="dim sm" role="status"
+          style={{ padding: '6px 12px', background: 'var(--s2)', borderTop: '1px solid var(--line)' }}>
+          {pipNote}</div>)}
     </div>);
 }
 
@@ -200,7 +215,26 @@ export function LiveTV() {
   const [limit, setLimit] = useState(60);
   const [checked, setChecked] = useState(0);      // forces a re-sort as results land
   const [checking, setChecking] = useState(false);
+  const [showExtra, setShowExtra] = useState(false);
+  /* Search across lists: every list loaded this session lands in one
+     index; "index all" walks the rest on demand. */
+  const [scopeAll, setScopeAll] = useState(false);
+  const [allBusy, setAllBusy] = useState(false);
+  const [indexed, setIndexed] = useState(0);
+  const indexRef = useRef(new Map());
+  const loadedRef = useRef(new Set());
   const token = useRef(0);
+
+  /* "Continue" from the home shelf: open the channel it named. */
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('omni:tv:open');
+      if (!raw) return;
+      sessionStorage.removeItem('omni:tv:open');
+      const ch = JSON.parse(raw);
+      if (ch?.url) setPlaying(ch);
+    } catch {}
+  }, []);
 
   const source = useMemo(
     () => [...TV.PLAYLISTS, ...TV.EXTRA].find((p) => p.id === listId) || TV.PLAYLISTS[0],
@@ -210,7 +244,12 @@ export function LiveTV() {
     const my = ++token.current;
     setBusy(true); setErr(''); setGroup(''); setLimit(60);
     TV.loadPlaylist(source.urls || [source.url], { only: source.only || null })
-      .then((r) => { if (token.current === my) setRows(r); })
+      .then((r) => {
+        r.forEach((c) => indexRef.current.set(c.id + c.url, c));
+        loadedRef.current.add(listId);
+        setIndexed(indexRef.current.size);
+        if (token.current === my) setRows(r);
+      })
       .catch((e) => {
         if (token.current !== my) return;
         setRows([]);
@@ -241,7 +280,25 @@ export function LiveTV() {
     return () => { alive = false; clearTimeout(t); };
   }, [rows, q, group, hideFlaky, limit, busy]);
 
-  const base = tab === 'fav' ? TV.favourites() : tab === 'recent' ? TV.recent() : rows;
+  const allSources = useMemo(() => [...TV.PLAYLISTS, ...TV.EXTRA], []);
+  const loadAllLists = async () => {
+    if (allBusy) return;
+    setAllBusy(true);
+    for (const s of allSources) {
+      if (loadedRef.current.has(s.id)) continue;
+      try {
+        const r = await TV.loadPlaylist(s.urls || [s.url], { only: s.only || null });
+        r.forEach((c) => indexRef.current.set(c.id + c.url, c));
+      } catch { /* a dead list simply contributes nothing */ }
+      loadedRef.current.add(s.id);
+      setIndexed(indexRef.current.size);
+    }
+    setAllBusy(false);
+  };
+
+  const base = tab === 'fav' ? TV.favourites()
+    : tab === 'recent' ? TV.recent()
+    : scopeAll ? [...indexRef.current.values()] : rows;
   const shown = useMemo(
     () => TV.sortByLiveness(TV.filterChannels(base, { q, group, hideFlaky })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -265,31 +322,50 @@ export function LiveTV() {
     {playing && <Screen ch={playing} onClose={() => setPlaying(null)} onNext={nextChannel} />}
 
     <div className="cats">
-      {TV.PLAYLISTS.map((p) => (
-        <button key={p.id} className={`cat ${listId === p.id ? 'on' : ''}`}
-          onClick={() => { setListId(p.id); setTab('all'); }}>{p.name}</button>))}
       <button className={`cat ${tab === 'fav' ? 'on' : ''}`} onClick={() => setTab(tab === 'fav' ? 'all' : 'fav')}>
         <Icon n="staron" size={13} /> Saved</button>
       <button className={`cat ${tab === 'recent' ? 'on' : ''}`} onClick={() => setTab(tab === 'recent' ? 'all' : 'recent')}>
         <Icon n="clock" size={13} /> Recent</button>
+      {TV.PLAYLISTS.map((p) => (
+        <button key={p.id} className={`cat ${listId === p.id && tab === 'all' && !scopeAll ? 'on' : ''}`}
+          onClick={() => { setListId(p.id); setTab('all'); setScopeAll(false); }}>{p.name}</button>))}
+      <button className={`cat ${showExtra ? 'on' : ''}`} onClick={() => setShowExtra((v) => !v)}
+        aria-expanded={showExtra}>
+        More lists <Icon n={showExtra ? 'up' : 'down'} size={13} /></button>
     </div>
 
-    <div className="btnrow" style={{ marginTop: 2 }}>
-      {TV.EXTRA.map((p) => (
-        <button key={p.id} className={`cat ${listId === p.id ? 'on' : ''}`}
-          onClick={() => { setListId(p.id); setTab('all'); }}>{p.name}</button>))}
-    </div>
+    {showExtra && (
+      <div className="btnrow" style={{ marginTop: 2 }}>
+        {TV.EXTRA.map((p) => (
+          <button key={p.id} className={`cat ${listId === p.id && tab === 'all' && !scopeAll ? 'on' : ''}`}
+            onClick={() => { setListId(p.id); setTab('all'); setScopeAll(false); }}>{p.name}</button>))}
+      </div>)}
 
     <div className="search" style={{ marginTop: 10 }}>
       <Icon n="search" size={17} />
       <input value={q} onChange={(e) => setQ(e.target.value)}
-        placeholder={`Search ${tab === 'all' ? source.name : tab === 'fav' ? 'saved' : 'recent'} channels…`}
+        placeholder={`Search ${tab === 'all' ? (scopeAll ? 'all lists' : source.name) : tab === 'fav' ? 'saved' : 'recent'} channels…`}
         autoComplete="off" spellCheck="false" />
       <button onClick={() => setShowGroups((v) => !v)} aria-label="Filters"
         style={{ background: 'none', border: 0, cursor: 'pointer',
           color: (group || hideFlaky) ? 'var(--green)' : 'var(--fg3)', display: 'grid', placeItems: 'center' }}>
         <Icon n="filter" size={17} /></button>
     </div>
+
+    {tab === 'all' && (
+      <div className="btnrow" style={{ marginTop: 0, alignItems: 'center' }}>
+        <button className={`cat ${scopeAll ? 'on' : ''}`}
+          onClick={() => setScopeAll((v) => !v)} aria-pressed={scopeAll}>
+          <Icon n="search" size={13} /> Search everywhere</button>
+        {scopeAll && (
+          <span className="dim sm">
+            {fmt(indexed)} channels indexed from {loadedRef.current.size} of {allSources.length} lists
+            {loadedRef.current.size < allSources.length && (
+              <button className="btn ghost sm" style={{ marginLeft: 8 }}
+                disabled={allBusy} onClick={loadAllLists}>
+                {allBusy ? 'Indexing…' : 'Index all lists'}</button>)}
+          </span>)}
+      </div>)}
 
     {showGroups && (<>
       <div className="btnrow" style={{ marginTop: 0 }}>
@@ -316,7 +392,7 @@ export function LiveTV() {
         {shown.length === base.length
           ? `${fmt(base.length)} channels`
           : `${fmt(shown.length)} of ${fmt(base.length)}`}
-        {tab === 'all' ? ` · ${source.name}` : tab === 'fav' ? ' · saved' : ' · recently watched'}
+        {tab === 'all' ? (scopeAll ? ' · all lists' : ` · ${source.name}`) : tab === 'fav' ? ' · saved' : ' · recently watched'}
         {stats.up > 0 && ` · ${stats.up} confirmed live`}
         {checking && ' · checking…'}
       </div>
@@ -336,6 +412,10 @@ export function LiveTV() {
               <button className="btn ghost" style={{ marginTop: 12, width: '100%' }}
                 onClick={() => setLimit((n) => n + 60)}>
                 Show more · {fmt(shown.length - limit)} left</button>)}
+            {limit > 60 && shown.length > 60 && (
+              <button className="btn ghost" style={{ marginTop: 8, width: '100%' }}
+                onClick={() => setLimit(60)}>
+                Show less</button>)}
           </>)}
       <div className="src"><span className="dot" />
         <span>Public channel index · streams are published by their broadcasters</span></div>
