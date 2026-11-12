@@ -25,7 +25,7 @@ import { TrainJourney } from './tools/train-journey';
 import { Medicine as MedicineDeep } from './tools/medicine';
 import { Handwriting } from './tools/handwriting';
 import { Hub } from './tools/travel-hub';
-import { Spin, Section, SkelRows, Toaster, toast } from './ui/kit';
+import { Spin, Section, SkelRows, Empty, Toaster, toast } from './ui/kit';
 import * as W from './tools/world';
 import { News } from './tools/news';
 import { Screen } from './tools/screen';
@@ -235,6 +235,33 @@ export default function App() {
   const [q, setQ] = useState('');
   const [showStatus, setShowStatus] = useState(false);
   const [snd, setSnd] = useState(() => sfxEnabled());
+  const [scrolled, setScrolled] = useState(false);
+  /* Search remembers what worked: the last few searches, one tap to
+     run again. Stored only on this device, cleared in one tap. */
+  const [recentQ, setRecentQ] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('omni:searches') || '[]'); } catch { return []; }
+  });
+  const [qFocus, setQFocus] = useState(false);
+
+  useEffect(() => {
+    const on = () => setScrolled(window.scrollY > 6);
+    addEventListener('scroll', on, { passive: true });
+    on();
+    return () => removeEventListener('scroll', on);
+  }, []);
+  const commitSearch = (s) => {
+    const v = String(s || '').trim();
+    if (v.length < 2) return;
+    setRecentQ((cur) => {
+      const nxt = [v, ...cur.filter((x) => x.toLowerCase() !== v.toLowerCase())].slice(0, 6);
+      try { localStorage.setItem('omni:searches', JSON.stringify(nxt)); } catch {}
+      return nxt;
+    });
+  };
+  const clearRecentQ = () => {
+    setRecentQ([]);
+    try { localStorage.removeItem('omni:searches'); } catch {}
+  };
 
   useEffect(() => sfxAttach(), []);
   useEffect(() => { startPresence(); }, []);
@@ -283,7 +310,7 @@ export default function App() {
           return rows.filter((c) => normQ(`${c.name} ${c.group || ''}`).includes(nq)).slice(0, 10);
         }).catch(() => []),
       ]);
-      if (!dead) setUni({ songs, chans, loading: false });
+      if (!dead) { setUni({ songs, chans, loading: false }); commitSearch(s); }
     }, 450);
     return () => { dead = true; clearTimeout(t); };
   }, [q]);
@@ -310,7 +337,7 @@ export default function App() {
    <LocProvider>
     <PlayerProvider>
     <Shell>
-      <header className="topbar">
+      <header className={`topbar ${scrolled ? 'scrolled' : ''}`}>
         {tool
           ? <button className="iconbtn" onClick={() => go('')} aria-label="Back"><Icon n="back" size={19} /></button>
           : <span className="brand gradtext">OMNI</span>}
@@ -363,11 +390,32 @@ export default function App() {
           <div className="search">
             <Icon n="search" size={18} />
             <input value={q} onChange={(e) => setQ(e.target.value)}
+              onFocus={() => setQFocus(true)} onBlur={() => setQFocus(false)}
               placeholder="Search tools, songs, channels…" enterKeyHint="search" />
             {q && <button onClick={() => setQ('')} aria-label="Clear"
               style={{ background: 'none', border: 0, color: 'var(--fg3)', display: 'grid', placeItems: 'center' }}>
               <Icon n="x" size={17} /></button>}
           </div>
+
+          {!q.trim() && (qFocus || recentQ.length > 0) && (
+            <div className="qchips">
+              {recentQ.length > 0 && (<>
+                <span className="qchips-l">Recent</span>
+                {recentQ.map((r) => (
+                  <button key={r} className="cat"
+                    onMouseDown={(e) => { e.preventDefault(); setQ(r); }}>
+                    <Icon n="clock" size={12} /> {r}</button>))}
+                <button className="qchip-x" aria-label="Clear recent searches" title="Clear recent searches"
+                  onMouseDown={(e) => { e.preventDefault(); clearRecentQ(); }}>
+                  <Icon n="x" size={13} /></button>
+              </>)}
+              {qFocus && (<>
+                <span className="qchips-l">Popular</span>
+                {['Kaka', 'Arijit Singh', 'Train status', 'Currency', 'Aarti'].map((r) => (
+                  <button key={r} className="cat"
+                    onMouseDown={(e) => { e.preventDefault(); setQ(r); }}>{r}</button>))}
+              </>)}
+            </div>)}
 
           {q.trim() ? (<>
             <div className="seclabel">Tools · {shown.length}</div>
@@ -389,7 +437,9 @@ export default function App() {
           </>) : (<>
             {catsRow}
             {shown.length === 0
-              ? <div className="state">No tools match &ldquo;{q}&rdquo;</div>
+              ? <Empty icon={cat === 'Fav' ? 'staron' : 'search'}
+                  t={cat === 'Fav' ? 'No pinned tools yet — tap the star on any tool to pin it here'
+                    : 'No tools in this category yet'} />
               : <div className="grid">{shown.map(tileBtn)}</div>}
           </>)}
 
@@ -401,7 +451,7 @@ export default function App() {
           </p>
         </>)}
 
-        {tool && <div style={{ paddingTop: 14 }}><Suspense fallback={<Spin />}><tool.C /></Suspense></div>}
+        {tool && <div className="view" style={{ paddingTop: 14 }}><Suspense fallback={<Spin />}><tool.C /></Suspense></div>}
       </div>
 
       <nav className="nav">
@@ -503,7 +553,31 @@ function Shelf({ fav, recentTools, go }) {
   const recent = recentTools
     .map((id) => TOOLS.find((t) => t.id === id))
     .filter((t) => t && !fav.includes(t.id));
-  if (!lastSong && !lastChan && !favTools.length && !recent.length) return null;
+  /* First run: the shelf introduces itself instead of vanishing, so a
+     new user learns the home screen keeps their place for them. The
+     moment anything lands here, this face is gone for good. */
+  if (!lastSong && !lastChan && !favTools.length && !recent.length) {
+    return (
+      <div className="shelf">
+        <Section id="shelf-start" title="Start here" icon="sparkle">
+          <div className="shelf-empty">
+            <p className="dim sm">
+              This shelf fills itself. Play a song or open a channel and it will be
+              waiting here to resume. Pin a tool and it stays one tap away.
+            </p>
+            <div className="btnrow">
+              <button className="btn sm" onClick={() => go('music')}>
+                <Icon n="music" size={15} /> Play a song</button>
+              <button className="btn ghost sm" onClick={() => go('tv')}>
+                <Icon n="film" size={15} /> Watch TV</button>
+            </div>
+            <p className="dim sm" style={{ marginTop: 8 }}>
+              Tip: tap the star at the top of any tool to pin it here.
+            </p>
+          </div>
+        </Section>
+      </div>);
+  }
 
   const chip = (t) => (
     <button key={t.id} className="cat shelf-chip" onClick={() => go(t.id)}>

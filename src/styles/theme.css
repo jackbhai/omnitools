@@ -1212,3 +1212,105 @@ input[type="color"] {
   .pres-dot{animation:none}
   .art,.row img,.cont-card img{animation:none}
 }
+
+/* ================================================================
+   ROUND 3 — discovery, rhythm and reading polish. No audio-chain
+   changes: the shelf learns to introduce itself, search remembers,
+   numbers stop dancing, and long lists render offscreen cheaply.
+   Same variables, same easing voice, transform/opacity motion. */
+
+/* Tabular numbers wherever a figure can change under the eye:
+   counts, timers, sizes, prices, badges. */
+.tnum,.stat .v,.times,.volpct,.seclabel,.sec-badge,.cat,.pill{
+  font-variant-numeric:tabular-nums}
+
+/* The top bar only casts its shadow once the page has moved —
+   at the very top it sits flush, as chrome should. */
+.topbar{transition:box-shadow .2s var(--ease)}
+.topbar.scrolled{box-shadow:0 10px 28px rgba(0,0,0,.35)}
+
+/* Bottom nav: the active tab gains a small gradient foot, so the
+   eye lands on state, not just colour. On the desktop rail the
+   same mark turns upright along the left edge. */
+.nav button{position:relative}
+.nav button::after{content:'';position:absolute;left:50%;bottom:4px;
+  width:0;height:3px;border-radius:3px;opacity:0;
+  background:var(--grad);background-color:#00E08A;
+  transform:translateX(-50%);transition:width .2s var(--ease),opacity .2s var(--ease)}
+.nav button.on::after{width:22px;opacity:1}
+@media(min-width:1025px){
+  .nav button::after{left:5px;bottom:auto;top:50%;width:3px;height:0;
+    transform:translateY(-50%);transition:height .2s var(--ease),opacity .2s var(--ease)}
+  .nav button.on::after{width:3px;height:22px}
+}
+
+/* Opening a tool gets the same 240ms rise the home cards use, at
+   view scale. (The .view class outranks the generic child rule.) */
+@keyframes viewin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.main-area>.view{animation:viewin .22s var(--ease) both}
+
+/* Long lists: offscreen rows and tiles cost almost nothing until
+   they near the viewport. The `auto` intrinsic size remembers the
+   real height after first paint, so the scrollbar stays honest. */
+.grid .tile{content-visibility:auto;contain-intrinsic-size:auto 112px}
+.list .row,.list .col{content-visibility:auto;contain-intrinsic-size:auto 52px}
+
+/* Tile anatomy: the subtitle is allowed two lines, then it stops —
+   no card grows taller than its neighbours for a long description. */
+.tile small{display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden}
+.tile b{line-height:1.25}
+
+/* Chip rails glide and settle: snap on the category rows, so a
+   half-scrolled chip never rests half-cut at the edge. */
+.cats{scroll-snap-type:x proximity;scroll-padding-left:2px}
+.cats>.cat{scroll-snap-align:start}
+
+/* Section chevrons join the one easing voice. */
+.sec-h .chev,.sec-h svg.chev{transition:transform .22s var(--ease)}
+
+/* Search memory + suggestions, under the home box. */
+.qchips{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-6px 0 12px}
+.qchips-l{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--fg3);font-weight:600;margin-right:2px}
+.qchip-x{background:none;border:0;color:var(--fg3);display:grid;place-items:center;
+  width:30px;height:30px;border-radius:8px;cursor:pointer}
+.qchip-x:active{transform:scale(.92)}
+
+/* The shelf's first-run face: an invitation, not an absence. */
+.shelf-empty{padding-top:10px}
+.shelf-empty .btnrow{margin-top:10px}
+
+/* Designed empty states share one badge: a quiet icon tile above
+   the line, so "nothing here" reads as a place, not a failure. */
+.state .state-ic{width:46px;height:46px;border-radius:14px;background:var(--s2);
+  border:1px solid var(--line);display:grid;place-items:center;color:var(--fg3)}
+.state .btn{margin-top:2px}
+
+/* Skeleton tiles for grid-shaped loading (TV channels). */
+.skel.tile-skel{height:112px;border-radius:var(--r-sm)}
+
+/* TV logo fallback: when a channel has no usable logo, its initials
+   wear the logo box instead of an empty square. */
+.tv-logo .tv-letter{font-family:var(--font-display);font-size:16px;
+  letter-spacing:.6px;color:var(--green)}
+.tv-bar .tv-letter{font-family:var(--font-display);font-size:13px;
+  letter-spacing:.5px;color:var(--green)}
+.tv-logo img{animation:imgin .35s ease both}
+
+/* Downloader: the result thumbnail joins the fade-in family, and
+   file sizes sit in their own right-aligned, tabular column. */
+.dl-thumb{display:block;width:100%;border-radius:var(--r-sm);
+  animation:imgin .35s ease both}
+.dl-size{font-family:var(--font-mono);font-size:12px;color:var(--fg2);
+  font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 0 auto}
+
+/* Settings folds: one divider under every group head, so groups
+   read as groups whether open or shut. */
+.fold-h{padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:12px}
+
+@media(prefers-reduced-motion:reduce){
+  .main-area>.view{animation:none}
+  .nav button::after{transition:none}
+  .tv-logo img,.dl-thumb{animation:none}
+}

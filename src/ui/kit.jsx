@@ -46,14 +46,20 @@ export const Spin = ({ t = 'Loading' }) => (
   <div className="state"><div className="spin" /><span>{t}…</span></div>
 );
 
-export const Empty = ({ t = 'No results' }) => <div className="state"><span>{t}</span></div>;
+export const Empty = ({ t = 'No results', icon = 'search', action }) => (
+  <div className="state">
+    <span className="state-ic"><Icon n={icon} size={20} /></span>
+    <span>{t}</span>
+    {action}
+  </div>
+);
 
 export function Err({ error, retry }) {
   const a = error?.attempts || [];
   return (
     <div className="err">
       <h4>Couldn't load</h4>
-      <p>All backup sources were unreachable. Your connection may be offline.</p>
+      <p>No source answered. Check your connection, then tap Retry — it often works on the second try.</p>
       {a.length > 0 && (
         <details>
           <summary>Tried {a.length} source{a.length > 1 ? 's' : ''}</summary>

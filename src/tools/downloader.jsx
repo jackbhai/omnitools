@@ -154,11 +154,11 @@ export function Downloader() {
     // 4) Helpful error
     if (!got) {
       if (isInsta) {
-        setErr('Instagram reels are slow (30-45s) — try again. The resolver scrapes Instagram and sometimes times out. Ensure reel is public. If still fails, try YouTube/TikTok which are faster.');
+        setErr('Instagram did not answer in time (it can take 30–45 s). Check the reel is public, then tap Fetch again.');
       } else if (isTikTok) {
-        setErr('TikTok links may need 2-3 tries. Ensure link is public. Try again in 10s.');
+        setErr('TikTok did not answer this time. Check the link is public, wait a few seconds, then tap Fetch again.');
       } else {
-        setErr('Could not fetch this link. It may be private, region-locked, or unsupported. Try YouTube, Instagram public reels, TikTok public, X, Facebook public videos.');
+        setErr('No source could read this link. It may be private, region-locked, or from a site we cannot read — public YouTube, Instagram, TikTok, X and Facebook links work best.');
       }
     }
     setInfo(got); setBusy(false);
@@ -272,7 +272,7 @@ export function Downloader() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div className="spin" style={{ width: 18, height: 18 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <b style={{ fontSize: 12.5, display: 'block' }}>{note || 'Downloading…'}</b>
+            <b className="tnum" style={{ fontSize: 12.5, display: 'block' }}>{note || 'Downloading…'}</b>
             <span className="dim sm" style={{ whiteSpace: 'nowrap', overflow: 'hidden',
               textOverflow: 'ellipsis', display: 'block' }}>{saving}</span>
           </div>
@@ -287,7 +287,7 @@ export function Downloader() {
 
     {info && (<>
       <Card style={{ marginTop: 12 }}>
-        {info.thumb && <img src={info.thumb} alt="" style={{ width: '100%', borderRadius: 12 }} />}
+        {info.thumb && <img src={info.thumb} alt="" className="dl-thumb" />}
         <b style={{ display: 'block', marginTop: 10, fontSize: 15 }}>{info.title}</b>
         <span className="dim sm">{info.author}{info.platform ? ` · ${info.platform}` : ''}
           {info.duration ? ` · ${Math.floor(info.duration / 60)}:${String(info.duration % 60).padStart(2, '0')}` : ''}</span>
@@ -307,7 +307,7 @@ export function Downloader() {
           <button className="btn" style={{ width: '100%' }}
             onClick={() => grab(info.audio, `${sanitize(info.title)}.m4a`)}>
             {saving.endsWith('.m4a') ? (note || 'Downloading…') : <><Icon n="download" size={16} /> Download audio (M4A)</>}</button>
-        ) : <span className="dim sm">No separate audio track available.</span>}
+        ) : <div className="state sm">No separate audio track for this link.</div>}
         {info.audio && (
           <audio controls src={info.audio} style={{ width: '100%', marginTop: 10 }} preload="none" />)}
       </Card>
@@ -325,7 +325,7 @@ export function Downloader() {
         ) : info.thumb ? (
           <button className="btn" style={{ width: '100%' }}
             onClick={() => grab(info.thumb, `${sanitize(info.title)}-thumb.jpg`)}><Icon n="download" size={16} /> Download thumbnail</button>
-        ) : <span className="dim sm">No thumbnail found.</span>}
+        ) : <div className="state sm">No thumbnail found for this link.</div>}
         {info.thumb && <div className="btnrow"><Copy text={info.thumb} label="Copy image URL" /></div>}
       </Card>
 
@@ -334,16 +334,16 @@ export function Downloader() {
         <div className="chead"><Icon n="film" size={18} /> Video</div>
         {info.qualities?.length > 0 ? (<>
           <div className="dim sm" style={{ marginBottom: 8 }}>
-            {info.qualities.length} qualities available
+            {fmt(info.qualities.length)} qualities available
           </div>
           <div className="list" style={{ border: 0 }}>
             {info.qualities.map((v, i) => (
               <div className="row" key={i} style={{ paddingLeft: 0, paddingRight: 0 }}>
                 <div className="main">
                   <b>{v.q}</b>
-                  <span className="dim sm">{(v.mime || '').split(';')[0]}
-                    {v.size ? ` · ${(v.size / 1048576).toFixed(1)} MB` : ''}</span>
+                  <span className="dim sm">{(v.mime || '').split(';')[0]}</span>
                 </div>
+                {v.size ? <span className="dl-size">{(v.size / 1048576).toFixed(1)} MB</span> : null}
                 <button className="btn sm" disabled={!!saving}
                   onClick={() => grab(v.url, `${sanitize(info.title)}-${v.q}.mp4`)}>
                   {saving.includes(v.q) ? (note || '…') : <><Icon n="download" size={16} /> Download</>}</button>
@@ -360,7 +360,7 @@ export function Downloader() {
               currently blocked by YouTube, so a selector would be empty.
               Tip: the audio-only option above is much smaller if you just want sound.</span>
           </div>
-        </>) : <span className="dim sm">No downloadable video stream found.</span>}
+        </>) : <div className="state sm">No downloadable video stream for this link.</div>}
       </Card>
 
       <div className="src">

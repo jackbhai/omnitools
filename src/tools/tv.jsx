@@ -15,7 +15,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as TV from '../core/iptv';
 import { Icon } from '../ui/icons';
-import { Card, Spin, Empty, fmt } from '../ui/kit';
+import { Card, Empty, fmt } from '../ui/kit';
 
 /* ------------------------------------------------------------------ player */
 function Screen({ ch, onClose, onNext }) {
@@ -96,7 +96,10 @@ function Screen({ ch, onClose, onNext }) {
   }, [ch?.id, ch?.url, retries]);   // eslint-disable-line
 
   const [fav, setFav] = useState(() => TV.isTvFav(ch?.id));
-  useEffect(() => { setFav(TV.isTvFav(ch?.id)); }, [ch?.id]);
+  const [logoBad, setLogoBad] = useState(false);
+  useEffect(() => { setFav(TV.isTvFav(ch?.id)); setLogoBad(false); }, [ch?.id]);
+  const initials = (ch?.name || '').trim().split(/\s+/).slice(0, 2)
+    .map((w) => w[0]).join('').toUpperCase();
 
   const [pipNote, setPipNote] = useState('');
   const togglePiP = async () => {
@@ -143,12 +146,13 @@ function Screen({ ch, onClose, onNext }) {
       </div>
 
       <div className="tv-bar">
-        {ch.logo
+        {ch.logo && !logoBad
           ? <img src={ch.logo} alt="" referrerPolicy="no-referrer"
-              onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
+              onError={() => setLogoBad(true)}
               style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'contain', background: 'var(--s2)' }} />
           : <span style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--s2)',
-              display: 'grid', placeItems: 'center' }}><Icon n="film" size={15} /></span>}
+              display: 'grid', placeItems: 'center' }}>
+              {initials ? <span className="tv-letter">{initials}</span> : <Icon n="film" size={15} />}</span>}
         <div className="main" style={{ minWidth: 0 }}>
           <b style={{ fontSize: 13 }}>{ch.name}</b>
           <span className="dim sm">
@@ -182,14 +186,19 @@ function Screen({ ch, onClose, onNext }) {
 /* -------------------------------------------------------------- channel tile */
 const Tile = ({ c, onOpen }) => {
   const score = TV.channelScore(c.url);
+  const [imgBad, setImgBad] = useState(false);
+  const initials = (c.name || '').trim().split(/\s+/).slice(0, 2)
+    .map((w) => w[0]).join('').toUpperCase();
   return (
   <button className="tile tv-tile" onClick={() => onOpen(c)}>
     {score > 0 && <span className="live" title="Responded recently" />}
     <div className="tv-logo">
-      {c.logo
+      {c.logo && !imgBad
         ? <img src={c.logo} alt="" loading="lazy" referrerPolicy="no-referrer"
-            onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-        : <Icon n="film" size={20} />}
+            onError={() => setImgBad(true)} />
+        : initials
+          ? <span className="tv-letter">{initials}</span>
+          : <Icon n="film" size={20} />}
     </div>
     <b>{c.name}</b>
     <small>
@@ -212,6 +221,7 @@ export function LiveTV() {
   const [showGroups, setShowGroups] = useState(false);
   const [playing, setPlaying] = useState(null);
   const [tab, setTab] = useState('all');            // all | fav | recent
+  const [reload, setReload] = useState(0);          // bump = really refetch
   const [limit, setLimit] = useState(60);
   const [checked, setChecked] = useState(0);      // forces a re-sort as results land
   const [checking, setChecking] = useState(false);
@@ -258,7 +268,7 @@ export function LiveTV() {
           : `Could not load this list: ${e.message}`);
       })
       .finally(() => { if (token.current === my) setBusy(false); });
-  }, [listId]);   // eslint-disable-line
+  }, [listId, reload]);   // eslint-disable-line
 
   const groups = useMemo(() => TV.groupsOf(rows), [rows]);
 
@@ -380,11 +390,16 @@ export function LiveTV() {
       </label>
     </>)}
 
-    {busy && <Spin t={`Loading ${source.name}`} />}
+    {busy && (<>
+      <div className="dim sm" style={{ margin: '10px 0 8px' }}>Loading {source.name}…</div>
+      <div className="grid tv-grid" aria-hidden="true">
+        {Array.from({ length: 12 }, (_, i) => <div className="skel tile-skel" key={i} />)}
+      </div>
+    </>)}
     {!busy && err && (
       <div className="err" style={{ marginTop: 12 }}>
-        <h4>Could not load</h4><p>{err}</p>
-        <button className="btn sm" style={{ marginTop: 10 }} onClick={() => setListId((v) => v)}>Retry</button>
+        <h4>Could not load this list</h4><p>{err} Check your connection, then tap Retry.</p>
+        <button className="btn sm" style={{ marginTop: 10 }} onClick={() => setReload((n) => n + 1)}>Retry</button>
       </div>)}
 
     {!busy && !err && (<>
@@ -402,8 +417,13 @@ export function LiveTV() {
           These are public streams; some are off air rather than broken.
         </div>)}
       {shown.length === 0
-        ? <Empty t={tab === 'fav' ? 'No saved channels yet — tap the star while watching'
-            : tab === 'recent' ? 'Nothing watched yet' : 'No channel matches that'} />
+        ? <Empty icon={tab === 'fav' ? 'staron' : tab === 'recent' ? 'clock' : 'search'}
+            t={tab === 'fav' ? 'No saved channels yet — tap the star while watching'
+              : tab === 'recent' ? 'Nothing watched yet'
+                : scopeAll ? 'No channel matches that in any list' : `No channel matches that in ${source.name}`}
+            action={tab === 'all' && !scopeAll ? (
+              <button className="btn sm" onClick={() => setScopeAll(true)}>
+                <Icon n="search" size={14} /> Search everywhere</button>) : undefined} />
         : (<>
             <div className="grid tv-grid">
               {shown.slice(0, limit).map((c) => <Tile key={c.id + c.url} c={c} onOpen={setPlaying} />)}
