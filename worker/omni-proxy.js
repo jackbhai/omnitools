@@ -38,7 +38,7 @@
    in a public repository. This is cosmetic, not a security boundary: the
    request is still visible in a network trace. The point is that the project
    does not advertise where it sources from. */
-const VENDOR_HOST = atob('YWhtN3htYWtraS5jb20=');
+const VENDOR_HOST = atob('ZnJlZWFwaS5wcm8=');
 
 const ALLOWED = [
   // audio resolution + the utility API family
