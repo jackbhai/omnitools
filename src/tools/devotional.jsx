@@ -15,6 +15,8 @@ import * as P from '../core/providers';
 import { useData, Spin, Err, Src, Card, Stat } from '../ui/kit';
 import { Icon } from '../ui/icons';
 import { jget } from '../core/engine';
+import { useListen } from '../core/useListen';
+import { idbGet, idbSet } from '../core/idbcache';
 import { allDeviceVoices, deviceVoices, runChant, stanzas, stopAudio, pickStudioVoice, studioChunk } from '../core/tts';
 
 /* ---------------------------------------------------------------- GITA */
@@ -495,279 +497,326 @@ function safeText(v) {
   return String(v);
 }
 
-export function Gurbani() {
-  const [ang, setAng] = useState(1);
-  const [shabadId, setShabadId] = useState(1);
-  const [tab, setTab] = useState('ang');
-  const [langTab, setLangTab] = useState('all');
-  const [searchQ, setSearchQ] = useState('');
-  const [extraTrans, setExtraTrans] = useState({}); // for MyMemory fallback
-  const angData = useData('gurbaniAng', P.gurbaniAng, { ang }, { ttl: 3600000, deps: [ang], auto: tab === 'ang' });
-  const shabadData = useData('gurbaniShabads', P.gurbaniShabads, { shabadId }, { ttl: 3600000, deps: [shabadId], auto: tab === 'shabad' });
-  const banisData = useData('gurbaniBanis', P.gurbaniBanis, {}, { ttl: 86400000, auto: tab === 'banis' });
-  const searchData = useData('gurbaniSearch', P.gurbaniSearch, { q: searchQ || 'satnam' }, { ttl: 3600000, deps: [], auto: false });
-  const hukam = useData('gurbaniHukamnama', P.gurbaniHukamnama, {}, { ttl: 3600000, auto: tab === 'hukamnama' });
+/* ------------------------------------------------------------- GURBANI COMPLETE
+ * Paths: Nitnem (7) + Ardas + Sukhmani + Asa di Var + Dukh Bhanjani + Salok
+ * Mahala 9 are BUNDLED in the app (12 banis, 5,520 lines, from BaniDB) —
+ * full text offline. All 104 banis open online via the BaniDB chain.
+ * Granth Sahib: all 1,430 Ang, chain GurbaniNow -> BaniDB, every opened Ang
+ * cached in IndexedDB (offline forever after first read).
+ * Per line: Gurmukhi + Roman + Hindi-script transliteration + English
+ * (+ Punjabi meaning where the source carries it). No machine translation.
+ * Listen = read-aloud (shared hook): the sources carry NO kirtan audio URLs
+ * (verified in BaniDB + GurbaniNow payloads), so no recording button is
+ * faked — read-aloud uses a device Punjabi voice when present, else the
+ * Hindi studio voice on the Devanagari transliteration. */
+function ListenBar({ listen, onPlayAll, label = 'Listen · Read aloud' }) {
+  return (
+    <div className="btnrow" style={{ marginTop: 10 }}>
+      {listen.playing
+        ? <button className="btn sm" onClick={listen.stop}><Icon n="volume" size={12} /> Stop</button>
+        : <button className="btn sm" onClick={onPlayAll}><Icon n="volume" size={12} /> {label}</button>}
+      <span className="dim sm" style={{ alignSelf: 'center' }}>{listen.playing ? 'Playing — tap any line to jump there' : 'or tap Listen on any line to hear from there'}</span>
+      {listen.msg && <span className="dim sm" style={{ alignSelf: 'center' }}>{listen.msg}</span>}
+    </div>
+  );
+}
 
-  const doSearch = () => {
-    if (!searchQ.trim()) return;
-    searchData.run({ q: searchQ.trim() });
-  };
+const GB_PATHS = [
+  { id: 2, token: 'japji', en: 'Japji Sahib', n: 385, nitnem: 1 },
+  { id: 4, token: 'jaap', en: 'Jaap Sahib', n: 808, nitnem: 1 },
+  { id: 6, token: 'svaiye', en: 'Tav-Prasad Savaiye', n: 43, nitnem: 1 },
+  { id: 9, token: 'chaupai', en: 'Chaupai Sahib (Benatee)', n: 173, nitnem: 1 },
+  { id: 10, token: 'anand', en: 'Anand Sahib', n: 211, nitnem: 1 },
+  { id: 21, token: 'rehras', en: 'Rehras Sahib', n: 530, nitnem: 1 },
+  { id: 23, token: 'sohila', en: 'Kirtan Sohila', n: 146, nitnem: 1 },
+  { id: 24, token: 'ardas', en: 'Ardas', n: 29 },
+  { id: 31, token: 'sukhmani', en: 'Sukhmani Sahib', n: 2019 },
+  { id: 90, token: 'asadivar', en: 'Asa di Var', n: 758 },
+  { id: 36, token: 'dukhbhanjani', en: 'Dukh Bhanjani Sahib', n: 301 },
+  { id: 30, token: 'salokm9', en: 'Salok Mahala 9', n: 117 },
+];
+const GB_LOADERS = {
+  japji: () => import('../data/gurbani/bani-japji.json'), jaap: () => import('../data/gurbani/bani-jaap.json'),
+  svaiye: () => import('../data/gurbani/bani-svaiye.json'), chaupai: () => import('../data/gurbani/bani-chaupai.json'),
+  anand: () => import('../data/gurbani/bani-anand.json'), rehras: () => import('../data/gurbani/bani-rehras.json'),
+  sohila: () => import('../data/gurbani/bani-sohila.json'), ardas: () => import('../data/gurbani/bani-ardas.json'),
+  sukhmani: () => import('../data/gurbani/bani-sukhmani.json'), asadivar: () => import('../data/gurbani/bani-asadivar.json'),
+  dukhbhanjani: () => import('../data/gurbani/bani-dukhbhanjani.json'), salokm9: () => import('../data/gurbani/bani-salokm9.json'),
+};
+const GB_FAMOUS = [
+  { id: 'FNM', name: 'Tu Thakur Tum Peh Ardas', ang: 268, n: 10 },
+  { id: '43Z', name: 'Mera Baid Guru Govinda', ang: 618, n: 7 },
+  { id: '02L', name: 'Dhan Dhan Ram Das Guru', ang: 968, n: 9 },
+  { id: '63Z', name: 'Deh Shiva Bar Mohe', ang: null, n: 9 },
+];
+const GB_SHABAD_LOADERS = {
+  FNM: () => import('../data/gurbani/shabad-FNM.json'), '43Z': () => import('../data/gurbani/shabad-43Z.json'),
+  '02L': () => import('../data/gurbani/shabad-02L.json'), '63Z': () => import('../data/gurbani/shabad-63Z.json'),
+};
 
-  // When Ang data loaded, if Hindi missing, translate EN to HI via MyMemory for first 2 lines - use safeText
+function GBLines({ lines, lang, listen, items }) {
+  const [page, setPage] = useState(0);
+  const PER = 100;
+  const pages = Math.max(1, Math.ceil(lines.length / PER));
+  useEffect(() => { setPage(0); }, [lines]);
   useEffect(() => {
-    if (!angData.data?.lines?.length) return;
-    const firstEn = safeText(angData.data.lines[0]?.translation_en);
-    if (!firstEn || firstEn.length < 5 || firstEn.startsWith('{')) return;
-    if (extraTrans[`ang-${ang}-hi`]) return;
-    const txt = firstEn.slice(0, 200);
-    jget(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(txt)}&langpair=en|hi`).then((d)=>{
-      if (d.responseData?.translatedText && !d.responseData.translatedText.includes('OBJECT')) {
-        setExtraTrans((s)=> ({...s, [`ang-${ang}-hi`]: d.responseData.translatedText}));
-      }
-    }).catch(()=>{});
-  }, [angData.data, ang]);
-
-  useEffect(() => {
-    if (!shabadData.data?.lines?.length) return;
-    const firstEn = safeText(shabadData.data.lines[0]?.translation_en);
-    if (!firstEn || firstEn.length < 5 || firstEn.startsWith('{')) return;
-    if (extraTrans[`shabad-${shabadId}-hi`]) return;
-    const txt = firstEn.slice(0, 200);
-    jget(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(txt)}&langpair=en|hi`).then((d)=>{
-      if (d.responseData?.translatedText && !d.responseData.translatedText.includes('OBJECT')) {
-        setExtraTrans((s)=> ({...s, [`shabad-${shabadId}-hi`]: d.responseData.translatedText}));
-      }
-    }).catch(()=>{});
-  }, [shabadData.data, shabadId]);
-
+    if (listen.active < 0) return;
+    const p = Math.floor(listen.active / PER);
+    if (p !== page) setPage(p);
+    const t = setTimeout(() => document.getElementById(`gb-l-${listen.active}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 90);
+    return () => clearTimeout(t);
+  }, [listen.active]);
+  const show = (k) => lang === 'all' || lang === k;
+  const slice = lines.slice(page * PER, (page + 1) * PER);
+  const pager = pages > 1 && (
+    <div className="btnrow" style={{ margin: '10px 0' }}>
+      <button className="btn sm" disabled={page === 0} onClick={() => setPage(page - 1)}>Prev 100</button>
+      <span className="dim sm" style={{ alignSelf: 'center' }}>Lines {page * PER + 1}–{Math.min(lines.length, (page + 1) * PER)} of {lines.length}</span>
+      <button className="btn sm" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Next 100</button>
+    </div>
+  );
   return (<>
-    <div className="cats">
-      {[
-        ['ang', 'Ang 1430', 'book'],
-        ['shabad', 'Shabad', 'books'],
-        ['banis', 'Banis Nitnem', 'star'],
-        ['search', 'Search', 'search'],
-        ['hukamnama', 'Hukamnama', 'pin'],
-      ].map(([v, n, i]) => (
-        <button key={v} className={`cat ${tab === v ? 'on' : ''}`} onClick={() => setTab(v)}><Icon n={i} size={12} /> {n}</button>
-      ))}
-    </div>
-
-    <div className="cats" style={{ marginTop: 8 }}>
-      {[
-        ['all', 'All 6 Lang', 'books'],
-        ['gurmukhi', 'Gurmukhi OG', 'book'],
-        ['translit', 'Hinglish', 'quote'],
-        ['en', 'English', 'globe'],
-        ['pu', 'Punjabi', 'type'],
-        ['hi', 'Hindi', 'type'],
-        ['es', 'Spanish', 'earth'],
-      ].map(([v, n, i]) => (
-        <button key={v} className={`cat ${langTab === v ? 'on' : ''}`} onClick={() => setLangTab(v)}><Icon n={i} size={10} /> {n}</button>
-      ))}
-    </div>
-
-    {tab === 'banis' && (
-      <Card style={{ marginTop: 12 }}>
-        <div className="chead"><Icon n="star" size={16} /> Banis & Nitnem · 6 Languages · Guru Granth Sahib Ji · FULL</div>
-        <div className="dim sm">Japji Sahib, Jaap Sahib, Tav Prasad Savaiye, Chaupai Sahib, Anand Sahib, Rehras, Kirtan Sohila, Sukhmani Sahib etc · Real BaniDB · 43,000+ corrections verified</div>
-        {banisData.loading && <Spin t="Loading Banis - Gurmukhi + English + Hindi + Punjabi" />}
-        {banisData.error && <Err error={banisData.error} retry={() => banisData.run()} />}
-        {banisData.data && (
-          <>
-            <div className="dim sm" style={{ marginTop: 8 }}>{banisData.data.length} banis found · 6 languages · full text available via Shabad</div>
-            <div className="list" style={{ marginTop: 8 }}>
-              {banisData.data.slice(0, 30).map((b, i) => (
-                <button key={i} className="row" style={{ textAlign: 'left' }} onClick={() => { setShabadId(b.id || i + 1); setTab('shabad'); }}>
-                  <div className="main">
-                    <b style={{ fontSize: 14 }}>{safeText(b.unicode || b.gurmukhi)} · {safeText(b.english)}</b>
-                    <span className="dim sm">{b.hindi ? `Hindi: ${safeText(b.hindi).slice(0, 80)}` : `ID ${safeText(b.id)} · ${safeText(b.english).slice(0, 60)}`}</span>
-                    <span className="dim sm" style={{ fontSize: 10 }}>Gurmukhi OG + English + Hindi + Punjabi + Translit + Spanish · Click for full Shabad</span>
-                  </div>
-                  <Icon n="back" size={12} style={{ transform: 'rotate(180deg)', opacity: .5 }} />
-                </button>
-              ))}
-            </div>
-            <Src meta={banisData.meta} />
-          </>
-        )}
-      </Card>
-    )}
-
-    {tab === 'search' && (
-      <Card style={{ marginTop: 12 }}>
-        <div className="chead"><Icon n="search" size={16} /> Gurbani Search Deep · 6 Languages · Full Text · BaniDB + GurbaniNow</div>
-        <form className="search" onSubmit={(e) => { e.preventDefault(); doSearch(); }}>
-          <Icon n="search" size={18} />
-          <input value={searchQ} onChange={(e) => setSearchQ(e.target.value)} placeholder="Search... satnam, waheguru, nanak, ek onkar" />
-          <button type="submit" className="btn sm" style={{ marginLeft: 6 }}>Search</button>
-        </form>
-        {searchData.loading && <Spin t="Searching Guru Granth Sahib - 6 languages, 3 sources..." />}
-        {searchData.error && <Err error={searchData.error} retry={() => doSearch()} />}
-        {searchData.data && (
-          <>
-            <div className="dim sm" style={{ marginTop: 10 }}>{searchData.data.length} shabads found for "{searchQ}" · Gurmukhi + EN + PU + HI + ES + Hinglish · 3 independent sources</div>
-            <div className="list" style={{ marginTop: 8 }}>
-              {searchData.data.slice(0, 20).map((r, i) => (
-                <div key={i} className="row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 4, padding: 10 }}>
-                  {(langTab === 'all' || langTab === 'gurmukhi') && <b style={{ fontSize: 15, lineHeight: 1.5 }}>{safeText(r.unicode || r.gurmukhi) || 'Gurmukhi not available, showing transliteration'}</b>}
-                  {(langTab === 'all' || langTab === 'translit') && <span className="dim sm" style={{ fontStyle: 'italic' }}>{safeText(r.transliteration || r.unicode) || ''}</span>}
-                  {(langTab === 'all' || langTab === 'en') && r.translation_en && <span className="dim sm">{safeText(r.translation_en).slice(0, 300)}</span>}
-                  {(!r.unicode && !r.gurmukhi) && <span className="dim sm" style={{ color: '#ff6600' }}>No Gurmukhi for this result — try different query or open Ang</span>}
-                </div>
-              ))}
-            </div>
-            <Src meta={searchData.meta} />
-          </>
-        )}
-      </Card>
-    )}
-
-    {tab === 'shabad' && (
-      <Card style={{ marginTop: 12 }}>
-        <div className="chead"><Icon n="books" size={16} /> Shabad {shabadId} · Guru Granth Sahib Ji · 6 Languages Deep · FULL</div>
-        <div className="btnrow" style={{ marginTop: 8 }}>
-          <button className="btn sm" onClick={() => setShabadId((id) => Math.max(1, id - 1))}>Prev Shabad</button>
-          <input type="number" min={1} value={shabadId} onChange={(e) => setShabadId(Math.max(1, parseInt(e.target.value) || 1))} style={{ width: 80, textAlign: 'center', background: 'var(--s2)', border: '1px solid var(--s3)', borderRadius: 8, color: 'var(--fg)', padding: 6 }} />
-          <button className="btn sm" onClick={() => setShabadId((id) => id + 1)}>Next Shabad</button>
-          <button className="btn sm ghost" onClick={() => shabadData.run()}>Refresh</button>
+    {pager}
+    {slice.map((l, i) => {
+      const idx = page * PER + i;
+      const isOn = listen.active === idx;
+      return (
+        <div key={idx} id={`gb-l-${idx}`} style={{ marginTop: 8, padding: 12, background: isOn ? 'var(--s3)' : 'var(--s2)', borderRadius: 12, borderLeft: isOn ? '3px solid #ff9933' : '3px solid transparent' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="dim sm">{idx + 1}{isOn ? ' · playing' : ''}</span>
+            <button className="cat" title="Listen from this line" onClick={() => (listen.playing && isOn) ? listen.stop() : listen.playFrom(items, idx, { lang: 'pa' })}><Icon n="volume" size={12} /> {listen.playing && isOn ? 'Stop' : 'Listen'}</button>
+          </div>
+          {show('g') && <div style={{ fontSize: 18, lineHeight: 1.75, fontWeight: 600, marginTop: 4 }}>{l.g}</div>}
+          {show('r') && l.r && <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--fg2)', fontStyle: 'italic', marginTop: 4 }}>{l.r}</div>}
+          {show('ht') && l.ht && <div style={{ fontSize: 14.5, lineHeight: 1.65, marginTop: 4 }}><span className="dim sm">हिंदी लिपि · </span>{l.ht}</div>}
+          {show('e') && l.e && <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 4 }}><span className="dim sm">English · </span>{l.e}</div>}
+          {lang === 'all' && l.pu && <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 4 }}><span className="dim sm">ਪੰਜਾਬੀ ਅਰਥ · </span>{l.pu}</div>}
         </div>
-        {shabadData.loading && <Spin t="Loading Shabad - Gurmukhi + EN + PU + HI + ES + Hinglish - 3 sources" />}
-        {shabadData.error && <Err error={shabadData.error} retry={() => shabadData.run()} />}
-        {shabadData.data && (
-          <>
-            <div className="dim sm" style={{ margin: '10px 0' }}>Ang {shabadData.data.ang} · Raag {shabadData.data.raag} · Author {shabadData.data.author} · {shabadData.data.count} lines · 6 languages · {shabadData.meta?.id || ''}</div>
-            <div className="list">
-              {shabadData.data.lines.map((ln, i) => (
-                <div key={i} className="row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 6, padding: 12 }}>
-                  {(langTab === 'all' || langTab === 'gurmukhi') && (
-                    <div style={{ width: '100%', padding: 10, background: 'var(--s2)', borderRadius: 10, borderLeft: '3px solid #ff9933' }}>
-                      <div className="dim sm">Gurmukhi - ਗੁਰਮੁਖੀ - Original 1430 Angs (BaniDB 43k corrections)</div>
-                      <div style={{ fontSize: 19, lineHeight: 1.7, fontWeight: 700, marginTop: 4 }}>{safeText(ln.unicode || ln.gurmukhi) || 'Gurmukhi loading...'}</div>
-                    </div>
-                  )}
-                  {(langTab === 'all' || langTab === 'translit') && (
-                    <div style={{ width: '100%', padding: 8, background: 'var(--s1)', borderRadius: 8 }}>
-                      <div className="dim sm">Hinglish - Transliteration - Roman</div>
-                      <div style={{ fontSize: 13.5, fontStyle: 'italic', color: 'var(--fg2)', marginTop: 2 }}>{safeText(ln.transliteration || ln.unicode) || 'Transliteration not available'}</div>
-                    </div>
-                  )}
-                  {(langTab === 'all' || langTab === 'en') && (
-                    <div style={{ width: '100%', padding: 8, background: 'var(--s2)', borderRadius: 8, borderLeft: '2px solid var(--cyan)' }}>
-                      <div className="dim sm">English - Translation</div>
-                      <div style={{ fontSize: 14, color: 'var(--fg)', marginTop: 2 }}>{safeText(ln.translation_en) ? safeText(ln.translation_en).slice(0, 600) : 'English translation loading... try refresh'}</div>
-                    </div>
-                  )}
-                  {(langTab === 'all' || langTab === 'pu') && (
-                    <div style={{ width: '100%', padding: 8, background: 'var(--s2)', borderRadius: 8, borderLeft: '2px solid var(--green)' }}>
-                      <div className="dim sm">Punjabi - ਪੰਜਾਬੀ ਅਨੁਵਾਦ (BaniDB)</div>
-                      <div style={{ fontSize: 14, color: 'var(--fg2)', marginTop: 2 }}>{safeText(ln.translation_pu) ? safeText(ln.translation_pu).slice(0, 600) : (safeText(ln.translation_en) ? `Punjabi via EN: ${safeText(ln.translation_en).slice(0, 100)}` : 'Punjabi not available')}</div>
-                    </div>
-                  )}
-                  {(langTab === 'all' || langTab === 'hi') && (
-                    <div style={{ width: '100%', padding: 8, background: 'var(--s1)', borderRadius: 8, borderLeft: '2px solid #ff6600' }}>
-                      <div className="dim sm">Hindi - हिंदी भावार्थ (MyMemory en→hi verified)</div>
-                      <div style={{ fontSize: 14, color: 'var(--fg)', marginTop: 2 }}>{safeText(extraTrans[`shabad-${shabadId}-hi`] || ln.translation_en) ? (safeText(extraTrans[`shabad-${shabadId}-hi`]) || `Hindi: ${safeText(ln.translation_en || '').slice(0, 150)}...`) : 'Hindi translating...'}</div>
-                    </div>
-                  )}
-                  {(langTab === 'all' || langTab === 'es') && ln.translation_es && (
-                    <div style={{ width: '100%', padding: 8, background: 'var(--s1)', borderRadius: 8, borderLeft: '2px solid #ab47bc' }}>
-                      <div className="dim sm">Spanish - Traducción Española</div>
-                      <div style={{ fontSize: 12.5, color: 'var(--fg3)', marginTop: 2 }}>{safeText(ln.translation_es).slice(0, 400)}</div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            <Src meta={shabadData.meta} />
-          </>
-        )}
-      </Card>
-    )}
-
-    {tab === 'ang' && (
-      <Card style={{ marginTop: 12 }}>
-        <div className="chead"><Icon n="book" size={16} /> Sri Guru Granth Sahib Ji · Ang {ang} · 6 Languages Deep · FULL 1430</div>
-        <div className="btnrow" style={{ marginTop: 10 }}>
-          <button className="btn sm" onClick={() => setAng((a) => Math.max(1, a - 1))}>Prev Ang</button>
-          <input type="number" min={1} max={1430} value={ang} onChange={(e) => setAng(Math.max(1, Math.min(1430, parseInt(e.target.value) || 1)))} style={{ width: 70, textAlign: 'center', background: 'var(--s2)', border: '1px solid var(--s3)', borderRadius: 8, color: 'var(--fg)', padding: 6 }} />
-          <button className="btn sm" onClick={() => setAng((a) => Math.min(1430, a + 1))}>Next Ang</button>
-          <button className="btn sm ghost" onClick={() => angData.run()}>Refresh</button>
-        </div>
-        {angData.loading && <Spin t="Loading Ang - Gurmukhi + English + Punjabi + Hindi + Spanish + Hinglish 6-lang - 3 sources" />}
-        {angData.error && <Err error={angData.error} retry={() => angData.run()} />}
-        {angData.data && (
-          <>
-            <div className="dim sm" style={{ margin: '10px 0' }}>{angData.data.source} · {angData.data.count} lines · Ang {angData.data.ang} · {angData.meta?.id || ''} · MyMemory HI fallback {extraTrans[`ang-${ang}-hi`] ? 'verified' : 'loading'}</div>
-            <div className="list">
-              {angData.data.lines.map((ln, i) => (
-                <div key={i} className="row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 6, padding: 12 }}>
-                  {(langTab === 'all' || langTab === 'gurmukhi') && (
-                    <div style={{ width: '100%', padding: 10, background: 'var(--s2)', borderRadius: 10, borderLeft: '3px solid #ff9933' }}>
-                      <div className="dim sm">Gurmukhi - ਗੁਰਮੁਖੀ - Original 1430 Angs (43k corrections BaniDB)</div>
-                      <div style={{ fontSize: 19, lineHeight: 1.7, fontWeight: 700, marginTop: 4 }}>{safeText(ln.unicode || ln.gurmukhi) || 'Loading Gurmukhi...'}</div>
-                    </div>
-                  )}
-                  {(langTab === 'all' || langTab === 'translit') && (
-                    <div style={{ width: '100%', padding: 8, background: 'var(--s1)', borderRadius: 8 }}>
-                      <div className="dim sm">Hinglish - Transliteration</div>
-                      <div style={{ fontSize: 13, fontStyle: 'italic', color: 'var(--fg2)', marginTop: 2 }}>{safeText(ln.transliteration) || 'Transliteration loading...'}</div>
-                    </div>
-                  )}
-                  {(langTab === 'all' || langTab === 'en') && (
-                    <div style={{ width: '100%', padding: 8, background: 'var(--s2)', borderRadius: 8, borderLeft: '2px solid var(--cyan)' }}>
-                      <div className="dim sm">English Translation - BaniDB + GurbaniNow</div>
-                      <div style={{ fontSize: 13.5, color: 'var(--fg2)', marginTop: 2 }}>{safeText(ln.translation_en) ? safeText(ln.translation_en).slice(0, 500) : 'English loading...'}</div>
-                    </div>
-                  )}
-                  {(langTab === 'all' || langTab === 'pu') && (
-                    <div style={{ width: '100%', padding: 8, background: 'var(--s2)', borderRadius: 8, borderLeft: '2px solid var(--green)' }}>
-                      <div className="dim sm">Punjabi - ਪੰਜਾਬੀ ਅਨੁਵਾਦ</div>
-                      <div style={{ fontSize: 13.5, color: 'var(--fg2)', marginTop: 2 }}>{safeText(ln.translation_pu) ? safeText(ln.translation_pu).slice(0, 500) : (safeText(ln.translation_en) ? `PU via EN: ${safeText(ln.translation_en).slice(0, 120)}` : 'Punjabi loading...')}</div>
-                    </div>
-                  )}
-                  {(langTab === 'all' || langTab === 'hi') && (
-                    <div style={{ width: '100%', padding: 8, background: 'var(--s1)', borderRadius: 8, borderLeft: '2px solid #ff6600' }}>
-                      <div className="dim sm">Hindi - हिंदी भावार्थ (MyMemory en→hi)</div>
-                      <div style={{ fontSize: 13.5, color: 'var(--fg)', marginTop: 2 }}>{safeText(extraTrans[`ang-${ang}-hi`]) ? `${safeText(extraTrans[`ang-${ang}-hi`]).slice(0, 300)}...` : (safeText(ln.translation_en) ? `HI: ${safeText(ln.translation_en).slice(0, 150)}...` : 'Hindi translating...')}</div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            <Src meta={angData.meta} />
-          </>
-        )}
-      </Card>
-    )}
-
-    {tab === 'hukamnama' && (
-      <Card style={{ marginTop: 12 }}>
-        <div className="chead"><Icon n="star" size={16} /> Hukamnama Today · Darbar Sahib Amritsar · 6 Languages · LIVE</div>
-        {hukam.loading && <Spin t="Loading Hukamnama 6-lang - Golden Temple live" />}
-        {hukam.error && <Err error={hukam.error} retry={() => hukam.run()} />}
-        {hukam.data && (
-          <>
-            <div className="dim sm" style={{ marginTop: 8 }}>Date: {JSON.stringify(hukam.data.date).slice(0, 300)} · Ang: {hukam.data.ang} · 6 languages live · {hukam.meta?.id || ''}</div>
-            <div style={{ marginTop: 10, padding: 10, background: 'var(--s2)', borderRadius: 10 }}>
-              <div className="dim sm">Hukamnama - 6 Languages - Gurmukhi + EN + PU + HI + ES + Hinglish - Golden Temple Amritsar</div>
-              <div style={{ fontSize: 12, marginTop: 4 }}>Ang {hukam.data.ang} · Shabad IDs: {JSON.stringify(hukam.data.shabadIds).slice(0, 200)} · Real live from Darbar Sahib · 3 sources verified</div>
-            </div>
-            <div className="btnrow" style={{ marginTop: 10 }}>
-              <button className="btn sm" onClick={() => hukam.run()}>Refresh Live</button>
-              <button className="btn sm ghost" onClick={() => { setAng(hukam.data.ang || 1); setTab('ang'); }}>Open Ang {hukam.data.ang}</button>
-              <button className="btn sm ghost" onClick={() => { if (hukam.data.shabadIds?.[0]) { setShabadId(hukam.data.shabadIds[0]); setTab('shabad'); } }}>Open Shabad</button>
-            </div>
-            <Src meta={hukam.meta} />
-          </>
-        )}
-      </Card>
-    )}
-    <div className="src"><span className="dot" /><span>Guru Granth Sahib Ji Deep 6 languages verified · Gurmukhi OG (43k corrections) + English + Punjabi + Hindi + Hinglish + Spanish · 3 independent sources · 1430 Angs + Banis + Shabad + Search + Hukamnama real · MyMemory fallback for Hindi</span></div>
+      );
+    })}
+    {pager}
   </>);
 }
 
-/* ---------------------------------------------------------------- RECIPES DEEP */
+async function fetchAngChain(a) {
+  const cached = await idbGet('ang:' + a);
+  if (cached && cached.lines?.length) return { ...cached, fromCache: true };
+  const legs = [
+    async () => {
+      const d = await jget(`https://api.gurbaninow.com/v2/ang/${a}`, { ms: 15000 });
+      if (!d.page?.length) throw new Error('empty');
+      return { ang: a, lines: d.page.map((p) => { const ln = p.line || p; return {
+        g: ln.gurmukhi?.unicode || ln.gurmukhi?.akhar || '',
+        r: safeText(p.transliteration?.english) || safeText(ln.transliteration?.english),
+        ht: safeText(p.transliteration?.devanagari) || safeText(ln.transliteration?.devanagari),
+        e: safeText(p.translation?.english) || safeText(ln.translation?.english),
+        pu: safeText(p.translation?.punjabi) || safeText(ln.translation?.punjabi) }; }) };
+    },
+    async () => {
+      const d = await jget(`https://api.banidb.com/v2/angs/${a}`, { ms: 15000 });
+      if (!d.page?.length) throw new Error('empty');
+      return { ang: a, lines: d.page.map((p) => { const v = p.verse || {}; const tr = p.transliteration || {}; const tl = p.translation || {}; return {
+        g: v.unicode || v.gurmukhi || '',
+        r: typeof tr.english === 'string' ? tr.english : safeText(tr.english),
+        ht: typeof tr.hindi === 'string' ? tr.hindi : safeText(tr.hindi),
+        e: (tl.en && (tl.en.bdb || tl.en.ssk || tl.en.ms)) || '',
+        pu: (tl.pu && tl.pu.ss && tl.pu.ss.unicode) || '' }; }) };
+    },
+  ];
+  for (const leg of legs) {
+    try { const r = await leg(); if (r.lines.length) { idbSet('ang:' + a, r); return r; } } catch { /* next source */ }
+  }
+  throw new Error('This Ang could not be loaded from any source. Check your connection and retry — Angs you have opened before are saved on this device.');
+}
+
+async function fetchLiveBani(id) {
+  const d = await jget(`https://api.banidb.com/v2/banis/${id}`, { ms: 25000, proxy: true });
+  const lines = (d.verses || []).map((row) => {
+    const v = row.verse || {}; const tr = v.transliteration || {}; const tl = v.translation || {}; const en = tl.en || {};
+    return { g: v.verse?.unicode || '', r: tr.english || '', ht: tr.hindi || '', e: en.bdb || en.ssk || en.ms || '', pu: '' };
+  }).filter((l) => l.g);
+  if (!lines.length) throw new Error('empty bani');
+  return { name: d.baniInfo?.unicode || '', en: d.baniInfo?.english || '', lines };
+}
+
+export function Gurbani() {
+  const [tab, setTab] = useState('paths');
+  const [lang, setLang] = useState('all');
+  const [open, setOpen] = useState(null); // {title, sub, lines, bundled}
+  const [openErr, setOpenErr] = useState('');
+  const [ang, setAng] = useState(1);
+  const [angData, setAngData] = useState(null);
+  const [angErr, setAngErr] = useState('');
+  const [angLoading, setAngLoading] = useState(false);
+  const [sq, setSq] = useState('');
+  const [sres, setSres] = useState(null);
+  const [serr, setSerr] = useState('');
+  const [shabadId, setShabadId] = useState(null);
+  const listen = useListen();
+  const banisList = useData('gurbaniBanis', P.gurbaniBanis, {}, { ttl: 86400000, auto: tab === 'paths' });
+  const hukam = useData('gurbaniHukamnama', P.gurbaniHukamnama, {}, { ttl: 3600000, auto: tab === 'hukam' });
+  const shabadData = useData('gurbaniShabads', P.gurbaniShabads, { shabadId: shabadId || '' }, { ttl: 3600000, deps: [shabadId], auto: !!shabadId && tab === 'shabad' });
+
+  useEffect(() => { listen.stop(); setOpen(null); setOpenErr(''); }, [tab]);
+  useEffect(() => { if (hukam.data?.shabadIds?.length && tab === 'hukam') setShabadId(hukam.data.shabadIds[0]); }, [hukam.data, tab]);
+
+  const openBundledPath = async (p) => {
+    listen.stop(); setOpenErr('');
+    try { const m = await GB_LOADERS[p.token](); const d = m.default; setOpen({ title: `${d.name} · ${p.en}`, sub: `${d.lines.length} lines · bundled in the app — works offline`, lines: d.lines, bundled: 1 }); }
+    catch { setOpenErr('This path could not be loaded from the app bundle. Reopen the app and try again.'); }
+  };
+  const openFamous = async (f) => {
+    listen.stop(); setOpenErr('');
+    try { const m = await GB_SHABAD_LOADERS[f.id](); const d = m.default; setOpen({ title: f.name, sub: `${d.lines.length} lines${d.ang ? ` · Ang ${d.ang}` : ''}${d.raag ? ` · ${d.raag}` : ''} · bundled — works offline`, lines: d.lines, bundled: 1 }); }
+    catch { setOpenErr('This shabad could not be loaded from the app bundle.'); }
+  };
+  const openLiveBani = async (b) => {
+    const bundled = GB_PATHS.find((p) => p.id === b.id);
+    if (bundled) { openBundledPath(bundled); return; }
+    listen.stop(); setOpenErr(''); setOpen({ title: b.unicode || b.english || 'Bani', sub: 'Loading full text…', lines: null });
+    try { const d = await fetchLiveBani(b.id); setOpen({ title: `${d.name} · ${d.en}`, sub: `${d.lines.length} lines · online source`, lines: d.lines }); }
+    catch { setOpen(null); setOpenErr('This bani could not be loaded. Check your connection and retry — the 12 bundled paths above always work offline.'); }
+  };
+  const loadAng = async (a) => {
+    listen.stop(); setAngLoading(true); setAngErr(''); setAngData(null);
+    try { setAngData(await fetchAngChain(a)); } catch (e) { setAngErr(e.message); }
+    setAngLoading(false);
+  };
+  useEffect(() => { if (tab === 'ang') loadAng(ang); }, [tab]);
+  const doSearch = async () => {
+    const q = sq.trim(); if (!q) return;
+    setSerr(''); setSres(null);
+    try {
+      const d = await jget(`https://api.gurbaninow.com/v2/search/${encodeURIComponent(q)}`, { ms: 15000 });
+      const rows = (d.shabads || []).map((s) => { const sh = s.shabad || {}; return { id: sh.shabadid, line: sh.gurmukhi?.unicode || '', translit: safeText(sh.transliteration?.english), raag: sh.raag?.english || '', writer: sh.writer?.english || '', ang: sh.pageno || '' }; }).filter((r) => r.id);
+      if (!rows.length) setSerr('No shabad matched. Search works on the first letters of a line — try Gurmukhi first letters (e.g. ਤਠਤਪਅ) or the line\u2019s opening words.');
+      setSres(rows);
+    } catch { setSerr('Search could not reach the source. Check your connection and retry.'); }
+  };
+
+  const normProviderLines = (lines) => (lines || []).map((l) => ({
+    g: safeText(l.unicode) || safeText(l.gurmukhi), r: safeText(l.transliteration), ht: safeText(l.translation_hi),
+    e: safeText(l.translation_en), pu: safeText(l.translation_pu),
+  })).filter((l) => l.g);
+  const listenItems = (lines) => (lines || []).map((l) => ({ s: l.ht || l.r || '', d: l.g || '' }));
+
+  return (<>
+    <div className="cats">
+      {[['paths', 'Paths · Nitnem', 'star'], ['ang', 'Granth Sahib · Ang', 'book'], ['hukam', 'Hukamnama', 'pin'], ['search', 'Shabad Search', 'search']].map(([v, n, i]) => (
+        <button key={v} className={`cat ${tab === v ? 'on' : ''}`} onClick={() => setTab(v)}><Icon n={i} size={12} /> {n}</button>
+      ))}
+      {shabadId && tab === 'shabad' && <button className="cat on"><Icon n="books" size={12} /> Shabad</button>}
+    </div>
+    <div className="cats" style={{ marginTop: 8 }}>
+      {[['all', 'All'], ['g', 'Gurmukhi'], ['r', 'Roman'], ['ht', 'Hindi script'], ['e', 'English']].map(([v, n]) => (
+        <button key={v} className={`cat ${lang === v ? 'on' : ''}`} onClick={() => setLang(v)}>{n}</button>
+      ))}
+    </div>
+
+    {tab === 'paths' && !open && (<>
+      <div className="chead" style={{ marginTop: 14 }}>Nitnem + Major Paths — bundled, full text, offline</div>
+      <div className="list" style={{ marginTop: 8 }}>
+        {GB_PATHS.map((p) => (
+          <button key={p.token} className="row" style={{ textAlign: 'left' }} onClick={() => openBundledPath(p)}>
+            <div className="main"><b>{p.en}</b><span className="dim sm">{p.n} lines · full text in the app{p.nitnem ? ' · Nitnem' : ''}</span></div>
+            <Icon n="back" size={14} style={{ transform: 'rotate(180deg)', opacity: .5 }} />
+          </button>
+        ))}
+      </div>
+      <div className="chead" style={{ marginTop: 16 }}>Famous Shabads — bundled</div>
+      <div className="list" style={{ marginTop: 8 }}>
+        {GB_FAMOUS.map((f) => (
+          <button key={f.id} className="row" style={{ textAlign: 'left' }} onClick={() => openFamous(f)}>
+            <div className="main"><b>{f.name}</b><span className="dim sm">{f.n} lines{f.ang ? ` · Ang ${f.ang}` : ' · Dasam Granth'}</span></div>
+            <Icon n="back" size={14} style={{ transform: 'rotate(180deg)', opacity: .5 }} />
+          </button>
+        ))}
+      </div>
+      <div className="chead" style={{ marginTop: 16 }}>All Banis — online (104)</div>
+      {banisList.loading && <Spin t="Loading bani list" />}
+      {banisList.data && (
+        <div className="list" style={{ marginTop: 8 }}>
+          {banisList.data.map((b) => (
+            <button key={b.id} className="row" style={{ textAlign: 'left' }} onClick={() => openLiveBani(b)}>
+              <div className="main"><b>{b.unicode || b.english}</b><span className="dim sm">{b.english}{GB_PATHS.some((p) => p.id === b.id) ? ' · bundled (offline)' : ''}</span></div>
+              <Icon n="back" size={14} style={{ transform: 'rotate(180deg)', opacity: .5 }} />
+            </button>
+          ))}
+        </div>
+      )}
+      {openErr && <div style={{ marginTop: 10 }}><Err error={openErr} retry={() => setOpenErr('')} /></div>}
+    </>)}
+
+    {tab === 'paths' && open && (<>
+      <button className="btn ghost sm" style={{ marginTop: 12 }} onClick={() => { listen.stop(); setOpen(null); }}><Icon n="back" size={12} /> All paths</button>
+      <Card style={{ marginTop: 10 }}>
+        <div className="chead">{open.title}</div>
+        <div className="dim sm">{open.sub}</div>
+        {open.lines
+          ? <><ListenBar listen={listen} onPlayAll={() => listen.playFrom(listenItems(open.lines), 0, { lang: 'pa' })} /><GBLines lines={open.lines} lang={lang} listen={listen} items={listenItems(open.lines)} /></>
+          : <Spin t="Loading full bani text" />}
+      </Card>
+    </>)}
+
+    {tab === 'ang' && (
+      <Card style={{ marginTop: 12 }}>
+        <div className="chead"><Icon n="book" size={16} /> Sri Guru Granth Sahib Ji · Ang {ang} of 1430</div>
+        <div className="btnrow" style={{ marginTop: 10 }}>
+          <button className="btn sm" disabled={ang === 1} onClick={() => { const a = ang - 1; setAng(a); loadAng(a); }}>Prev</button>
+          <input type="number" min={1} max={1430} value={ang} onChange={(e) => setAng(Math.max(1, Math.min(1430, parseInt(e.target.value) || 1)))} onBlur={() => loadAng(ang)} style={{ width: 80, textAlign: 'center', background: 'var(--s2)', border: '1px solid var(--s3)', borderRadius: 8, color: 'var(--fg)', padding: 6 }} />
+          <button className="btn sm" disabled={ang === 1430} onClick={() => { const a = ang + 1; setAng(a); loadAng(a); }}>Next</button>
+          {angData?.fromCache && <span className="pill">Saved on device</span>}
+        </div>
+        {angLoading && <Spin t="Loading Ang — two sources, first good wins" />}
+        {angErr && <Err error={angErr} retry={() => loadAng(ang)} />}
+        {angData && <><ListenBar listen={listen} onPlayAll={() => listen.playFrom(listenItems(angData.lines), 0, { lang: 'pa' })} /><GBLines lines={angData.lines} lang={lang} listen={listen} items={listenItems(angData.lines)} /></>}
+        <div className="dim sm" style={{ marginTop: 10 }}>Every Ang you open is saved on this device and opens offline afterwards.</div>
+      </Card>
+    )}
+
+    {tab === 'hukam' && (
+      <Card style={{ marginTop: 12 }}>
+        <div className="chead"><Icon n="pin" size={16} /> Hukamnama of the Day{hukam.data?.ang ? ` · Ang ${hukam.data.ang}` : ''}</div>
+        {hukam.loading && <Spin t="Loading today's Hukamnama" />}
+        {hukam.error && <Err error={hukam.error} retry={() => hukam.run()} />}
+        {shabadData.loading && <Spin t="Loading the Hukamnama shabad" />}
+        {shabadData.data && (() => { const lines = normProviderLines(shabadData.data.lines); return <><div className="dim sm" style={{ marginTop: 6 }}>{shabadData.data.raag}{shabadData.data.author ? ` · ${shabadData.data.author}` : ''}</div><ListenBar listen={listen} onPlayAll={() => listen.playFrom(listenItems(lines), 0, { lang: 'pa' })} /><GBLines lines={lines} lang={lang} listen={listen} items={listenItems(lines)} /></>; })()}
+      </Card>
+    )}
+
+    {tab === 'search' && (<>
+      <form className="search" style={{ marginTop: 12 }} onSubmit={(e) => { e.preventDefault(); doSearch(); }}>
+        <Icon n="search" size={16} />
+        <input value={sq} onChange={(e) => setSq(e.target.value)} placeholder="First letters of a line — e.g. ਤਠਤਪਅ or satnam" />
+        <button type="submit" className="btn sm" style={{ marginLeft: 6 }}>Search</button>
+      </form>
+      <div className="dim sm" style={{ marginTop: 6 }}>Shabad index over the full Granth — search by a line's first letters, its opening words, raag or writer in the results. Tap a result to read the whole shabad.</div>
+      {serr && <div className="dim sm" style={{ marginTop: 10 }}>{serr}</div>}
+      {sres && (
+        <div className="list" style={{ marginTop: 10 }}>
+          {sres.map((r) => (
+            <button key={r.id} className="row" style={{ textAlign: 'left' }} onClick={() => { setShabadId(r.id); setTab('shabad'); }}>
+              <div className="main"><b style={{ fontSize: 15 }}>{r.line}</b><span className="dim sm">{[r.raag, r.writer, r.ang ? `Ang ${r.ang}` : ''].filter(Boolean).join(' · ')}</span>{r.translit && <span className="dim sm" style={{ fontStyle: 'italic' }}>{r.translit}</span>}</div>
+              <Icon n="back" size={14} style={{ transform: 'rotate(180deg)', opacity: .5 }} />
+            </button>
+          ))}
+        </div>
+      )}
+    </>)}
+
+    {tab === 'shabad' && (
+      <Card style={{ marginTop: 12 }}>
+        <button className="btn ghost sm" onClick={() => setTab('search')}><Icon n="back" size={12} /> Search</button>
+        {shabadData.loading && <Spin t="Loading shabad" />}
+        {shabadData.error && <Err error={shabadData.error} retry={() => shabadData.run()} />}
+        {shabadData.data && (() => { const lines = normProviderLines(shabadData.data.lines); return <><div className="chead" style={{ marginTop: 8 }}>Shabad{shabadData.data.ang ? ` · Ang ${shabadData.data.ang}` : ''}</div><div className="dim sm">{[shabadData.data.raag, shabadData.data.author].filter(Boolean).join(' · ')}</div><ListenBar listen={listen} onPlayAll={() => listen.playFrom(listenItems(lines), 0, { lang: 'pa' })} /><GBLines lines={lines} lang={lang} listen={listen} items={listenItems(lines)} /></>; })()}
+      </Card>
+    )}
+
+    <div className="src"><span className="dot" /><span>Gurbani complete · Nitnem + major paths bundled offline (12 banis · 5,520 lines) · 4 famous shabads bundled · all 1,430 Ang with per-line Gurmukhi + Roman + Hindi script + English · opened Angs cached on device · Hukamnama daily · Listen is read-aloud (no kirtan recordings exist in the sources — none faked)</span></div>
+  </>);
+}
+
 export function RecipesDeep() {
   const [q, setQ] = useState('biryani');
   const [term, setTerm] = useState('biryani');
