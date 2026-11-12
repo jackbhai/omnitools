@@ -51,19 +51,21 @@ import { proxyBase } from './settings';
  * — the direct cause of tracks that never played. A source that lies about
  * success is worse than one that is simply down.
  */
+/* Re-measured 2026-11-12: of the six relays that used to be here, four are
+   gone — codetabs answered 522 (origin down) on every target all day,
+   isomorphic returns a 403 Cloudflare page, cors.lol is rate-limited (429),
+   and whateverorigin now returns its own homepage HTML instead of the
+   payload. allorigins is the one survivor: flaky (5.7 s success, then a
+   522 on retest) but real. cors.sh cannot be reached from the audit
+   sandbox at all, but it was this pool's leader from real browsers and a
+   dead entry now costs milliseconds, not a stage — every attempt is
+   hard-capped by the deadline in viaProxy below, and 401/403/429 still
+   benches a relay that starts refusing. */
 const PROXIES = [
   { id: 'cors.sh', delay: 0,
     url: (u) => `https://proxy.cors.sh/${u}` },
-  { id: 'allorigins', delay: 700,
+  { id: 'allorigins', delay: 400,
     url: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
-  { id: 'codetabs', delay: 1200,
-    url: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}` },
-  { id: 'isomorphic', delay: 1700,
-    url: (u) => `https://cors.isomorphic-git.org/${u}` },
-  { id: 'corslol', delay: 2100,
-    url: (u) => `https://api.cors.lol/?url=${encodeURIComponent(u)}` },
-  { id: 'whateverorigin', delay: 2500,
-    url: (u) => `https://www.whateverorigin.org/get?url=${encodeURIComponent(u)}` },
 ];
 
 /**
@@ -79,6 +81,8 @@ const COOLDOWN = new Map();          // id -> timestamp when it may be used agai
 const BENCH_MS = 3 * 60 * 1000;
 const usable = (p) => (COOLDOWN.get(p.id) || 0) < Date.now();
 const bench = (id, ms = BENCH_MS) => COOLDOWN.set(id, Date.now() + ms);
+/** The pool as it stands right now: benched relays skipped, unless all are. */
+const publicPool = () => (PROXIES.filter(usable).length ? PROXIES.filter(usable) : PROXIES);
 
 /** Strip tracking params so the upstream URL stays simple and cacheable. */
 export function cleanMediaUrl(raw) {
@@ -181,105 +185,139 @@ function parsePayload(txt) {
 }
 
 /**
- * Race every proxy, staggered. First valid JSON wins; everything else is
- * aborted so we stop paying for slow failures.
+ * The relay's own first-party resolver.
+ *
+ * GET {relay}/yt?v=<id> answers with the SAME mediaInfo shape the external
+ * resolver returns, from infrastructure this app controls, CORS included.
+ * Measured 2026-11-12: 0.9 s and a direct googlevideo audio URL for one
+ * video, a fast 502 ("no client returned a playable stream") for three
+ * others. Intermittent, but it fails in about a second — so it is always
+ * tried FIRST and never trusted alone.
  */
-function viaProxy(target, { ms = 26000, onProgress, retry = true } = {}) {
-  const ctrl = new AbortController();
-  let done = false;
+async function ytViaRelay(id, capMs = 7000) {
+  const b = proxyBase();
+  if (!b || !id) throw new Error('no relay');
+  const c = new AbortController();
+  const timer = setTimeout(() => c.abort(), capMs);
+  try {
+    const r = await fetch(`${b}/yt?v=${encodeURIComponent(id)}`, { signal: c.signal });
+    if (!r.ok) throw new Error('relay resolver HTTP ' + r.status);
+    return parsePayload(await r.text());
+  } finally { clearTimeout(timer); }
+}
 
-  const attempt = async (p) => {
-    if (p.delay) await sleep(p.delay);
-    if (done) throw new Error('superseded');
+/**
+ * Resolve one URL through every route there is, inside ONE hard deadline.
+ *
+ * WHAT WAS WRONG (the "stuck on Reading the link\u2026" hang, measured
+ * 2026-11-12): every stage used to get the FULL timer for itself — the
+ * relay twice at 26-30 s, then the public pool at 26 s, then a whole retry
+ * round. Worst case past 100 s, so the downloader's spinner never came
+ * back. The pool had also rotted (four of six relays dead or lying), and
+ * the relay currently refuses the resolver's host outright (403, its
+ * allow-list predates the host switch) — fast, but useless until the
+ * Worker is updated.
+ *
+ * THE DISCIPLINE NOW
+ *   stage 0  direct fetch of the target (6 s cap). The day the resolver
+ *            sends a CORS header this is the fastest route of all; today
+ *            the browser refuses it in well under a second.
+ *   stage 1  the app's own relay, once (8 s cap).
+ *   stage 2  the verified public pool, raced with small staggers.
+ *   stage 3  one retry (bench cleared), only if \u22655 s of budget remain.
+ * Every attempt is capped at the time actually left, and the total budget
+ * is min(ms, 20 s): the caller ALWAYS gets data or an error inside it.
+ */
+function viaProxy(target, { ms = 20000, onProgress, retry = true } = {}) {
+  const BUDGET = Math.max(4000, Math.min(ms || 20000, 20000));
+  const deadline = Date.now() + BUDGET;
+  const left = () => deadline - Date.now();
+
+  const attemptUrl = async (url, capMs, stageCtrl, proxyId) => {
+    const t = Math.min(capMs, left());
+    if (t < 800) throw new Error('out of budget');
     const own = new AbortController();
     const onAbort = () => own.abort();
-    ctrl.signal.addEventListener('abort', onAbort);
-    const timer = setTimeout(() => own.abort(), ms);
+    stageCtrl.signal.addEventListener('abort', onAbort);
+    const timer = setTimeout(() => own.abort(), t);
     try {
-      const r = await fetch(p.url(target), { signal: own.signal });
+      const r = await fetch(url, { signal: own.signal });
       if (!r.ok) {
         // 401/403/429 = rate limited. Bench it so it stops winning the race
         // with an instant failure on every subsequent track.
-        if (r.status === 401 || r.status === 403 || r.status === 429) bench(p.id);
-        throw new Error(p.id + ' HTTP ' + r.status);
+        if (proxyId && (r.status === 401 || r.status === 403 || r.status === 429)) bench(proxyId);
+        throw new Error((proxyId || 'route') + ' HTTP ' + r.status);
       }
       const j = parsePayload(await r.text());
-      done = true;
       // Never name the proxy in the UI — the user should not be shown the
       // plumbing. The id stays in the console for debugging only.
       onProgress?.('Stream ready');
       return j;
     } finally {
       clearTimeout(timer);
-      ctrl.signal.removeEventListener('abort', onAbort);
+      stageCtrl.signal.removeEventListener('abort', onAbort);
     }
   };
 
-  const race = (pool) =>
-    Promise.any(pool.map(attempt)).then((j) => { ctrl.abort(); return j; });
-
-  /* The relay goes first with no stagger. It has no rate limit, but it is NOT
-     always fast: measured 0.07 s warm and 6-13 s cold, because the upstream it
-     calls is itself slow.
-
-     That timing is why tracks failed at random. The public proxies fail in well
-     under a second (403 / 429), and `Promise.any` rejects as soon as EVERY
-     promise has rejected — so a run where the quick failures all landed before
-     the relay came back killed the whole attempt, even though the relay was
-     about to succeed. Giving the relay its own stage fixes it: the fallbacks
-     are only raced if the relay genuinely fails. */
-  /* Stage 1: the relay alone. Stage 2: the public pool. Stage 3: one more go
-     at both after a pause.
-
-     Why staged rather than one big race — the relay has no rate limit but is
-     NOT always quick: measured 0.07 s warm and 6-13 s cold, because the
-     upstream it calls is itself slow. The public proxies fail in well under a
-     second (403 / 429), and `Promise.any` rejects only once EVERY promise has
-     rejected... which happened long before the relay came back. Runs where the
-     quick failures all landed first killed a request that was about to
-     succeed, which is exactly why some tracks played and others did not, with
-     no pattern. */
-  const own = proxyBase();
-  const relay = own
-    ? { id: 'own', delay: 0, url: (u) => `${own}/?url=${encodeURIComponent(u)}` }
-    : null;
-
-  const stage = async (list) => {
-    if (!list.length) throw new Error('no proxies');
-    done = false;                     // each stage races on its own terms
-    return Promise.any(list.map(attempt));
+  /* One stage: race its jobs, abort the losers when it settles. Each stage
+     gets its own controller so an aborted stage never poisons the next. */
+  const stage = async (jobs) => {
+    const c = new AbortController();
+    const runs = jobs.map(async (j) => {
+      if (j.delay) await sleep(Math.min(j.delay, Math.max(0, left() - 1200)));
+      if (c.signal.aborted) throw new Error('superseded');
+      return attemptUrl(j.url, j.cap, c, j.proxyId);
+    });
+    try { return await Promise.any(runs); }
+    finally { c.abort(); }
   };
 
-  const publicPool = () => (PROXIES.filter(usable).length ? PROXIES.filter(usable) : PROXIES);
+  const relayJob = (own, cap) => ({ url: `${own}/?url=${encodeURIComponent(target)}`, cap });
+  const publicJobs = () => publicPool().map((p) => ({
+    url: p.url(target), cap: left(), proxyId: p.id, delay: p.delay }));
 
   return (async () => {
-    /* The relay gets TWO chances before we fall back.
-       Its upstream is occasionally slow or briefly 504s — measured: the host
-       went down entirely for several minutes, then recovered and answered
-       every request in 6-7 s. A single miss is not evidence that it is down,
-       and the public pool is far worse, so a short second attempt costs less
-       than giving up does. */
-    if (relay) {
-      try { return await stage([relay]); } catch { /* fall through */ }
-      await sleep(600);
-      try { return await stage([relay]); } catch { /* fall through */ }
+    /* Stage 0: direct. Costs ~nothing when CORS refuses, wins outright
+       the day the upstream starts sending the header. */
+    if (left() > 1200) {
+      try { return await stage([{ url: target, cap: 6000 }]); } catch { /* fall through */ }
     }
-    try { return await stage(publicPool()); } catch { /* fall through */ }
-
-    if (!retry) throw new Error('Could not reach the audio source');
-    /* Everything failed. Usually a burst of rate limits rather than a real
-       outage, so pause, clear the bench and try once more before saying so. */
-    onProgress?.('Retrying…');
-    await sleep(1200);
-    COOLDOWN.clear();
-    try { return await stage(relay ? [relay, ...PROXIES] : PROXIES); }
-    catch { throw new Error('Could not reach the audio source — tap retry'); }
-  })().finally(() => ctrl.abort());
+    /* Stage 1: the relay alone, once. It has no rate limit but is NOT
+       always fast (0.07 s warm, 6-13 s cold) — inside a 20 s budget it
+       gets one honest chance, not two. */
+    const own = proxyBase();
+    if (own && left() > 1500) {
+      try { return await stage([relayJob(own, 8000)]); } catch { /* fall through */ }
+    }
+    /* Stage 2: the public pool. */
+    if (left() > 1500) {
+      try { return await stage(publicJobs()); } catch { /* fall through */ }
+    }
+    /* Stage 3: one bounded retry. Usually the failures above were a burst
+       of rate limits rather than a real outage, so clear the bench and
+       race everything once more — inside whatever budget is left. */
+    if (retry && left() > 5000) {
+      onProgress?.('Retrying\u2026');
+      COOLDOWN.clear();
+      const jobs = publicJobs();
+      if (own) jobs.unshift(relayJob(own, left()));
+      try { return await stage(jobs); } catch { /* give up */ }
+    }
+    throw new Error('Could not reach the audio source — tap retry');
+  })();
 }
 
 /** Fetch any the resolver result through the proxy chain (no CORS on the resolver). */
 export async function resolveJson(pageUrl, opts = {}) {
-  return viaProxy(`${RESOLVE_API}${encodeURIComponent(cleanMediaUrl(pageUrl))}`, { ms: 30000, ...opts });
+  const clean = cleanMediaUrl(pageUrl);
+  /* YouTube links go to the relay's own resolver first (~1 s when it
+     works, ~1 s to fail when it doesn't). Everything else — and YouTube
+     when the relay misses — takes the budgeted resolver chain. */
+  const yt = clean.match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([A-Za-z0-9_-]{11})/);
+  if (yt) {
+    try { return await ytViaRelay(yt[1], 7000); } catch { /* fall through */ }
+  }
+  return viaProxy(`${RESOLVE_API}${encodeURIComponent(clean)}`, { ms: 20000, ...opts });
 }
 
 /**
@@ -320,7 +358,9 @@ export function resolveAudio(id, { onProgress, fresh = false } = {}) {
 
     let rec = null;
     try {
-      const d = await viaProxy(url, { onProgress });
+      let d = null;
+      try { d = await ytViaRelay(id, 7000); } catch { /* relay resolver missed — use the chain */ }
+      if (!d) d = await viaProxy(url, { onProgress });
       const m = d?.mediaInfo || {};
       const audio = m.audioUrl || m.videoUrl;
       if (!audio) throw new Error('No audio stream returned');

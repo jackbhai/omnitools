@@ -32,13 +32,13 @@ import { proxyBase } from './settings';
 
 /* Ordered by measured health. Only the first currently answers with CORS, but
    mirrors recover and the pool costs nothing when they do not. */
+/* Re-measured 2026-11-12: eleven public instances tested, three answer.
+   The five removed here returned 526, a parked-domain redirect, silence,
+   an explicit "Piped has shutdown" notice and a 502 respectively. */
 export const MIRRORS = [
   'https://api.piped.private.coffee',
-  'https://pipedapi.kavin.rocks',
-  'https://pipedapi.adminforge.de',
-  'https://pipedapi.drgns.space',
-  'https://api.piped.projectsegfau.lt',
-  'https://pipedapi.orangenet.cc',
+  'https://pipedapi.wireway.ch',
+  'https://pipedapi.ducks.party',
 ];
 
 const ITUNES = 'https://itunes.apple.com';

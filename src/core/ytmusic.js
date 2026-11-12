@@ -13,13 +13,20 @@
  *   c.ymcdn.org (the audio CDN)      → 206 Partial Content, audio/mp4, CORS: *
  * 206 + CORS means the <audio> element can stream AND seek it.
  */
-import { RESOLVE_API } from './endpoints';
 import { jget } from './engine';
+import { resolveJson } from './audio-resolve';
 
-/* Multiple Piped mirrors — if one dies the pool moves on. */
+/* Multiple Piped mirrors — if one dies the pool moves on.
+ * Re-measured 2026-11-12: of eleven public instances tested, three answer.
+ * wireway.ch is the only one whose /streams returns audio streams at all
+ * (private.coffee and ducks.party return video-only lists now), so it is
+ * load-bearing for the stream fallback below. kavin.rocks (526),
+ * adminforge (parked), drgns.space, projectsegfau.lt ("Piped has
+ * shutdown"), orangenet, leptons, libre and five more were removed. */
 const PIPED = [
-  'https://api.piped.private.coffee',   // verified: CORS *, returns results
-  'https://pipedapi.kavin.rocks',       // backup (intermittent)
+  'https://api.piped.private.coffee',   // search + suggestions
+  'https://pipedapi.wireway.ch',        // search + suggestions + audio streams
+  'https://pipedapi.ducks.party',       // search only
 ];
 
 const secs = (t) => (typeof t === 'number' && t > 0 ? t : null);
@@ -58,9 +65,12 @@ export const ytSearch = PIPED.map((base, i) => ({
 export async function resolveStream(id) {
   const url = `https://www.youtube.com/watch?v=${id}`;
 
-  // 1) the resolver — verified to return a CORS-enabled, range-capable audio URL.
+  // 1) the resolver chain (relay /yt fast path, then the budgeted proxy
+  //    race) — returns a CORS-enabled, range-capable audio URL. This used
+  //    to be a bare direct fetch, which a browser always refuses (the
+  //    resolver sends no CORS header), so step 1 could never succeed.
   try {
-    const d = await jget(`${RESOLVE_API}${encodeURIComponent(url)}`, { ms: 25000 });
+    const d = await resolveJson(url);
     const m = d.mediaInfo || {};
     if (m.audioUrl || m.videoUrl) {
       return {

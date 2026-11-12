@@ -69,7 +69,7 @@ const RAW = 'https://raw.githubusercontent.com';
  */
 export const PLAYLISTS = [
   { id: 'in',     name: 'India',
-    sub: '2,420 channels · nine indexes, best-tested first',
+    sub: 'Eight indexes, best-tested first',
     urls: [
       `${RAW}/satyadevchauhan/DugguTV/main/streams/channels.m3u`,          // 92% live
       `${FREETV}/playlists/playlist_india.m3u8`,                            // 90% live
@@ -79,7 +79,12 @@ export const PLAYLISTS = [
       `${RAW}/Yaarokayaar1110/India-iptv.m3u/main/@yaarokayaar1110.m3u`,    // 60% live
       `${CDN}/countries/in.m3u`,                                            // 67% live
       `${RAW}/deep2772/Hindi_Punjabi-iptv-playlist/main/Hindi_Punjabi_Merged.m3u`,
-      `${RAW}/Zaman-Topu/Ip-tv-Collection/main/FINAL_IPTV_COMPLETE.m3u`,    // 44%, but huge
+      /* FINAL_IPTV_COMPLETE used to be ninth here. Re-measured 2026-11-12:
+         it is now 19 MB / 23,139 rows and took 8.4 s on its own — and
+         because the merge awaits every source, the whole India tab waited
+         on it on every cold load. Its Indian subset largely duplicates
+         the ACTIVE cut above. It moved to EXTRA as "India Complete",
+         loaded only when someone actually asks for it. */
     ],
     /* Two of those sources are worldwide collections that happen to contain a
        lot of Indian television. Merged unfiltered they turned this tab into
@@ -126,6 +131,30 @@ export const EXTRA = [
   { id: 'ent',    name: 'Entertainment', urls: [`${CDN}/categories/entertainment.m3u`] },
   { id: 'rel',    name: 'Devotional',    urls: [`${CDN}/categories/religious.m3u`] },
   { id: 'doc',    name: 'Documentary',   urls: [`${CDN}/categories/documentary.m3u`] },
+  /* World + more categories, added 2026-11-12 — every one fetched and
+     counted before it was listed (channels in brackets): the library
+     grows by roughly 3,900 channels without touching the default tabs'
+     load time, because EXTRA lists only load when opened. */
+  { id: 'us',     name: 'USA',      urls: [`${CDN}/countries/us.m3u`] },        // [1494]
+  { id: 'uk',     name: 'UK',       urls: [`${CDN}/countries/uk.m3u`] },        // [309]
+  { id: 'ca',     name: 'Canada',   urls: [`${CDN}/countries/ca.m3u`] },        // [264]
+  { id: 'au',     name: 'Australia', urls: [`${CDN}/countries/au.m3u`] },       // [79]
+  { id: 'pk',     name: 'Pakistan', urls: [`${CDN}/countries/pk.m3u`] },        // [105]
+  { id: 'bd',     name: 'Bangladesh', urls: [`${CDN}/countries/bd.m3u`] },      // [44]
+  { id: 'ae',     name: 'UAE',      urls: [`${CDN}/countries/ae.m3u`] },        // [22]
+  { id: 'series', name: 'Series',   urls: [`${CDN}/categories/series.m3u`] },   // [523]
+  { id: 'comedy', name: 'Comedy',   urls: [`${CDN}/categories/comedy.m3u`] },   // [219]
+  { id: 'anim',   name: 'Animation', urls: [`${CDN}/categories/animation.m3u`] }, // [185]
+  { id: 'classic', name: 'Classics', urls: [`${CDN}/categories/classic.m3u`] }, // [106]
+  { id: 'biz',    name: 'Business', urls: [`${CDN}/categories/business.m3u`] }, // [78]
+  { id: 'travel', name: 'Travel',   urls: [`${CDN}/categories/travel.m3u`] },   // [66]
+  { id: 'cook',   name: 'Cooking',  urls: [`${CDN}/categories/cooking.m3u`] },  // [59]
+  { id: 'sci',    name: 'Science',  urls: [`${CDN}/categories/science.m3u`] },  // [22]
+  /* The 19 MB archive cut of the big Indian collection — on demand only,
+     for the reasons given in the India tab above. Same Indian filter. */
+  { id: 'infull', name: 'India Complete',
+    urls: [`${RAW}/Zaman-Topu/Ip-tv-Collection/main/FINAL_IPTV_COMPLETE.m3u`],
+    only: /\b(india|indian|hindi|tamil|telugu|punjab|bengali|marathi|kannada|malayalam|gujarati|bhojpuri|odia|assam|urdu|desi|bollywood|jio|zee|sony|colors|star|sun\s|aaj\s?tak|ndtv|abp|republic|dd\s|doordarshan|tata|gemini|asianet|maa\s|udaya|etv|news18|india\s?today|tv9|sahara|b4u|mahua|shemaroo|sansad|aastha|bhakti|gurbani|ptc|chardikala)\b/i },
 ];
 
 const cache = new Map();

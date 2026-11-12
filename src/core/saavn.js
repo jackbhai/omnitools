@@ -215,33 +215,45 @@ export function decryptUrl(b64) {
  * Verified 2026-08-28.
  */
 const MIRRORS = [
-  /* Ordered by measured median latency. All 13 scored 10/10 on the hard-song
-     set, so speed is the only thing left to sort on. */
-  { id: 'm08', base: 'https://jiosaavn-api-tmkh.onrender.com',            path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm09', base: 'https://jiosaavn-api.anmolmaan5468.workers.dev',    path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm05', base: 'https://jiosaavn-api-lovat.vercel.app',             path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm10', base: 'https://jiosaavn-api.sharmaofficial.workers.dev',   path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm07', base: 'https://jiosaavn-api-seven-xi.vercel.app',          path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm01', base: 'https://jio-saavn-api-iota.vercel.app',             path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm04', base: 'https://jiosaavn-api-instance-mu.vercel.app',       path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm11', base: 'https://saavn-api-mocha.vercel.app',                path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm06', base: 'https://jiosaavn-api-seven-sigma.vercel.app',       path: '/api/search/songs?query=', linkKey: 'url' },
-  /* The three that were already here and still pass. */
-  { id: 'm1',  base: 'https://jiosaavn-api-codyandersan.vercel.app',      path: '/search/songs?query=', linkKey: 'link' },
-  { id: 'm3',  base: 'https://saavn-api-eight.vercel.app',                path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm4',  base: 'https://saavn-api-sable.vercel.app',                path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm12', base: 'https://saavnapi-chi.vercel.app',                   path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm13', base: 'https://shnwazdev-jiosaavn-apii.vercel.app',        path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm03', base: 'https://jiosaavn-api-by-aneesh.vercel.app',         path: '/api/search/songs?query=', linkKey: 'url' },
-  { id: 'm02', base: 'https://jio-saavn-api-nu.vercel.app',               path: '/search/songs?query=',     linkKey: 'link' },
+  /* Re-measured end to end on 2026-11-12 (search AND a Range fetch of the
+     audio each one hands back), ordered by measured latency. Removed:
+     m06 and m03 — both now answer 402 DEPLOYMENT_DISABLED, which is a
+     billing corpse, not a bad day. Added: m14-m17, found by harvesting
+     the relay's own 34-source health list and verifying each candidate
+     from here; five more candidates from that list 404 at every known
+     path shape and were rejected. m1 answers the relay but 403s this
+     sandbox (Vercel checkpoint vs datacenter IP) — kept, last, because
+     residential IPs are a different case and the cooldown benches it
+     fast when it refuses. */
+  { id: 'm13', base: 'https://shnwazdev-jiosaavn-apii.vercel.app',       path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm01', base: 'https://jio-saavn-api-iota.vercel.app',            path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm04', base: 'https://jiosaavn-api-instance-mu.vercel.app',      path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm05', base: 'https://jiosaavn-api-lovat.vercel.app',            path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm07', base: 'https://jiosaavn-api-seven-xi.vercel.app',         path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm14', base: 'https://music45-api.vercel.app',                   path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm10', base: 'https://jiosaavn-api.sharmaofficial.workers.dev',  path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm17', base: 'https://jiosaavnsearch.vercel.app',                path: '/search/songs?query=',     linkKey: 'link' },
+  { id: 'm3',  base: 'https://saavn-api-eight.vercel.app',               path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm08', base: 'https://jiosaavn-api-tmkh.onrender.com',           path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm12', base: 'https://saavnapi-chi.vercel.app',                  path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm11', base: 'https://saavn-api-mocha.vercel.app',               path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm16', base: 'https://jio-saavn-api-sigma.vercel.app',           path: '/search/songs?query=',     linkKey: 'link' },
+  { id: 'm09', base: 'https://jiosaavn-api.anmolmaan5468.workers.dev',   path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm15', base: 'https://saavnapi-psi.vercel.app',                  path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm4',  base: 'https://saavn-api-sable.vercel.app',               path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm02', base: 'https://jio-saavn-api-nu.vercel.app',              path: '/search/songs?query=',     linkKey: 'link' },
+  { id: 'm1',  base: 'https://jiosaavn-api-codyandersan.vercel.app',     path: '/search/songs?query=',     linkKey: 'link' },
 ];
 
 /* Public CORS relays, used only when this app's own is unreachable. A rotation
    rather than a single choice, because every one of these has a bad day. */
 const PUBLIC_RELAYS = [
   (u) => `https://api.allorigins.win/raw?url=${enc(u)}`,
-  (u) => `https://api.codetabs.com/v1/proxy?quest=${enc(u)}`,
   (u) => `https://corsproxy.io/?url=${enc(u)}`,
+  /* codetabs last: it answered 522 (origin down) on every target all day
+     on 2026-11-12. Kept because it recovers, and the cooldown benches it
+     after one failure either way. */
+  (u) => `https://api.codetabs.com/v1/proxy?quest=${enc(u)}`,
 ];
 
 /* A route that fails is skipped for a while, so a dead one never costs the

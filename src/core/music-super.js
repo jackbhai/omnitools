@@ -434,7 +434,9 @@ export async function genrenatorRandom({ count = 1 } = {}) {
 export async function gaanaEnhancedSearch(q, { limit = 10 } = {}) {
   const query = String(q || '').trim();
   if (!query) return [];
-  const mirrors = ['https://gaana-api-fawn.vercel.app', 'https://gaana-api.vercel.app'];
+  /* gaana-api.vercel.app removed: 404, verified dead 2026-08-30 and again
+     2026-11-12. The fawn deployment is the surviving mirror. */
+  const mirrors = ['https://gaana-api-fawn.vercel.app'];
   for (const base of mirrors) {
     if (!usable('gaana-enh:' + base)) continue;
     try {
@@ -469,28 +471,12 @@ export async function superSearch(q, { limit = 10 } = {}) {
   const query = String(q || '').trim();
   if (!query) return [];
   
-  // Tier K: Multi-engine (5 sources in one) - try first, most valuable
-  try {
-    const rows = await multiEngineSearchAll(query, { limit });
-    if (rows.length) {
-      // For rows needing fetch, try to fetch one
-      const withStream = [];
-      for (const r of rows.slice(0, 3)) {
-        if (r.needsFetch && r.streamId) {
-          const fetched = await multiEngineFetch(r.streamId, r.engine);
-          if (fetched?.stream) {
-            withStream.push({ ...r, ...fetched, needsFetch: false });
-          }
-        } else if (r.stream) {
-          withStream.push(r);
-        }
-      }
-      if (withStream.length) return withStream;
-      // Return even without stream as metadata, caller can fetch later
-      return rows;
-    }
-  } catch {}
-  
+  /* Tier K (multi-engine worker) RETIRED 2026-11-12: the worker answers
+     404 / Cloudflare error 1042 on every engine — it is gone, and it used
+     to sit FIRST in this chain, so every super search paid a dead call
+     before reaching a live tier. The functions remain exported for any
+     other caller, but nothing in the search path invokes them. */
+
   // Tier L: Spotify
   try {
     const rows = await spotifySearch(query, { limit });
@@ -551,8 +537,7 @@ export async function superSearch(q, { limit = 10 } = {}) {
 /* ------------------------------------------------------------- HEALTH */
 export async function superHealth() {
   const tests = [
-    { id: 'multi-gaana', fn: () => multiEngineSearch('test', { limit: 1, engine: 'gaana' }).then(r => r.length > 0) },
-    { id: 'multi-saavn', fn: () => multiEngineSearch('test', { limit: 1, engine: 'saavn' }).then(r => r.length > 0) },
+    { id: 'gaana', fn: () => gaanaEnhancedSearch('test', { limit: 1 }).then(r => r.length > 0) },
     { id: 'deezer', fn: () => deezerSearch('test', { limit: 1 }).then(r => r.length > 0) },
     { id: 'itunes', fn: () => itunesPreviewSearch('test', { limit: 1 }).then(r => r.length > 0) },
     { id: 'jamendo-enhanced', fn: () => jamendoEnhancedSearch('test', { limit: 1 }).then(r => r.length > 0) },

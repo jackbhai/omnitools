@@ -8,7 +8,7 @@
  *   - hashed assets (immutable) -> cache first (safe: filename changes per build)
  *   - everything cross-origin   -> never touched
  */
-const V = 'omni-v6';
+const V = 'omni-v7';
 const MED = 'omni-med-v1';        // medicine shards, cached only once used
 
 /* The medicine index is 253,802 brands across 752 shards (24 MB). Precaching
@@ -30,11 +30,28 @@ async function cacheMedShard(req, res) {
 
 self.addEventListener('install', () => self.skipWaiting());
 
-self.addEventListener('activate', (e) => e.waitUntil(
-  caches.keys()
-    .then((keys) => Promise.all(keys.filter((k) => k !== V && k !== MED).map((k) => caches.delete(k))))
-    .then(() => self.clients.claim())
-));
+self.addEventListener('activate', (e) => e.waitUntil((async () => {
+  const keys = await caches.keys();
+  const stale = keys.filter((k) => k !== V && k !== MED);
+  await Promise.all(stale.map((k) => caches.delete(k)));
+  await self.clients.claim();
+  /* SELF-HEAL for a device stuck on a poisoned shell.
+     A phone that cached an index.html whose hashed bundles no longer exist
+     on the server renders a blank dark page — and because the page never
+     runs, no in-app recovery code ever gets a chance to run either. The
+     worker is the only thing that still executes on that device. So when
+     this version takes over and finds old shell caches, it reloads every
+     open window itself: the navigation below is network-first, so the
+     device lands on the fresh shell and the current bundles. Only done
+     when a stale shell cache actually existed (a genuine upgrade), so a
+     first install never reloads anything. */
+  if (stale.length) {
+    try {
+      const wins = await self.clients.matchAll({ type: 'window' });
+      for (const c of wins) { try { await c.navigate(c.url); } catch {} }
+    } catch {}
+  }
+})()));
 
 self.addEventListener('message', (e) => { if (e.data === 'skip-waiting') self.skipWaiting(); });
 
@@ -57,21 +74,33 @@ self.addEventListener('fetch', (e) => {
   const isMed = /\/med\/[^/]+\.json$/.test(url.pathname);
 
   if (isShell) {
-    e.respondWith(
-      fetch(req).then((res) => {
+    e.respondWith((async () => {
+      try {
+        /* no-store is explicit: a navigation answered from the HTTP cache
+           is just a slower kind of stale. Only a successful response is
+           cached — the old code cached ANY response, so a 404 served
+           during a deploy window became the permanent offline shell, and
+           a 404 must also fall back to the last good copy rather than be
+           shown to the user. */
+        const res = await fetch(new Request(req.url, { cache: 'no-store' }));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const copy = res.clone();
         caches.open(V).then((c) => c.put(req, copy)).catch(() => {});
         return res;
-      }).catch(() => caches.match(req).then((h) => h || caches.match('./index.html')))
-    );
+      } catch {
+        return caches.match(req).then((h) => h || caches.match('./index.html'));
+      }
+    })());
     return;
   }
 
   if (isHashed) {
     e.respondWith(
       caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(V).then((c) => c.put(req, copy)).catch(() => {});
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(V).then((c) => c.put(req, copy)).catch(() => {});
+        }
         return res;
       }))
     );
