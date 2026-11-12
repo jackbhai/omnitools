@@ -369,24 +369,56 @@ export const dictionary = [
 ];
 
 /* ------------------------------------------------------------- SPACE */
-/* The ISS pool lost its second provider to mixed content, not to an outage.
- * api.open-notify.org serves plain http only — no https at all, verified —
- * and a page served over https will refuse the request before it leaves the
- * browser. It failed silently, which is worse than failing loudly.
+/* ISS position, three genuinely independent legs:
  *
- * The primary is https and answers directly. The backup is the same http
- * source reached through the relay, which upgrades the transport, and a third
- * is derived from the launch library that the Launches tool already uses.
+ * 1. WhereTheISS.at — the only public HTTPS-native ISS position API.
+ * 2. Open Notify, reached through this app's own HTTPS relay (below).
+ *    Open Notify itself is http-only — it has no https listener at all —
+ *    so a direct call from this https app is blocked by the browser as
+ *    mixed content before a byte is sent. forceProxy skips that doomed
+ *    direct attempt; the browser only ever speaks https to the relay,
+ *    and the relay's fetch of the origin was probe-verified returning
+ *    live coordinates.
+ * 3. CelesTrak TLE + on-device SGP4 propagation. CelesTrak is https and
+ *    sends CORS *, and the position is computed locally from the current
+ *    orbital elements, so this leg shares no failure mode with either
+ *    API above. satellite.js is imported lazily — its chunk is only
+ *    downloaded if this leg actually runs.
  */
+let _tleCache = null;   // { l1, l2, t } — orbital elements stay good for hours
+async function issFromTle() {
+  if (!_tleCache || Date.now() - _tleCache.t > 6 * 3600_000) {
+    const txt = await jget('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE',
+      { text: true, ms: 15000 });
+    const lines = String(txt).split(/\r?\n/).map((s) => s.trim());
+    const l1 = lines.find((s) => s.startsWith('1 25544'));
+    const l2 = lines.find((s) => s.startsWith('2 25544'));
+    if (!l1 || !l2) throw new Error('no ISS elements in TLE');
+    _tleCache = { l1, l2, t: Date.now() };
+  }
+  const sat = await import('satellite.js');
+  const rec = sat.twoline2satrec(_tleCache.l1, _tleCache.l2);
+  const now = new Date();
+  const pv = sat.propagate(rec, now);
+  if (!pv?.position) throw new Error('propagation failed');
+  const geo = sat.eciToGeodetic(pv.position, sat.gstime(now));
+  const v = pv.velocity;
+  return {
+    lat: sat.degreesLat(geo.latitude), lon: sat.degreesLong(geo.longitude),
+    alt: geo.height, vel: Math.hypot(v.x, v.y, v.z) * 3600, vis: null,
+  };
+}
+
 export const iss = [
   { id: 'wheretheiss', label: 'WhereTheISS.at', async run() {
       const d = await jget('https://api.wheretheiss.at/v1/satellites/25544');
       return { lat: d.latitude, lon: d.longitude, alt: d.altitude, vel: d.velocity, vis: d.visibility }; } },
-  { id: 'open-notify', label: 'Open Notify', async run() {
+  { id: 'open-notify', label: 'Open Notify (via relay)', async run() {
       /* forceProxy: the origin is http-only, so this must never be attempted
          directly from an https page. */
       const d = await jget('http://api.open-notify.org/iss-now.json', { proxy: true, forceProxy: true });
       return { lat: +d.iss_position.latitude, lon: +d.iss_position.longitude, alt: null, vel: null }; } },
+  { id: 'celestrak-tle', label: 'CelesTrak TLE', async run() { return issFromTle(); } },
 ];
 
 /* People in space had ONE provider and it was http-only, so on the deployed
@@ -574,13 +606,23 @@ export const github = [
         stars: r.stars_count ?? 0, forks: r.forks_count ?? 0, lang: r.language || '', url: r.html_url })); } },
 ];
 
+/* The original first source (official-joke-api) is gone — it answers 503
+ * and every request wasted a round-trip on it before falling through.
+ * The chain is now three live, keyless sources, all probe-verified:
+ * JokeAPI (two-part), ICanHazDadJoke and Chuck Norris (one-liners, which
+ * the UI renders as setup-only). */
 export const jokes = [
-  { id: 'oja', label: 'Official Joke API', async run() {
-      const d = await jget('https://official-joke-api.appspot.com/random_joke');
-      return { setup: d.setup, punch: d.punchline }; } },
   { id: 'jokeapi', label: 'JokeAPI', async run() {
       const d = await jget('https://v2.jokeapi.dev/joke/Any?safe-mode&type=twopart');
       return { setup: d.setup, punch: d.delivery }; } },
+  { id: 'dadjoke', label: 'Dad Jokes', async run() {
+      const d = await jget('https://icanhazdadjoke.com/', { headers: { Accept: 'application/json' } });
+      if (!d.joke) throw new Error('no joke');
+      return { setup: d.joke, punch: '' }; } },
+  { id: 'chucknorris', label: 'Chuck Norris Jokes', async run() {
+      const d = await jget('https://api.chucknorris.io/jokes/random');
+      if (!d.value) throw new Error('no joke');
+      return { setup: d.value, punch: '' }; } },
 ];
 
 export const quotes = [
@@ -806,10 +848,13 @@ export const cats = [
 ];
 
 /* ------------------------------------------------------------- UNIVERSITIES
- * Three independent university sources:
+ * Keyless sources only — the College Scorecard leg that used the shared
+ * public DEMO_KEY was dropped: that key is throttled for everyone on the
+ * internet, so the leg failed more often than it answered.
  * - hipolabs http-only (needs forceProxy via relay)
- * - GitHub raw mirror of same dataset (different CDN, CORS*)
- * - US Dept of Education CollegeScorecard (CORS* DEMO_KEY, different dataset)
+ * - GitHub raw mirror of the same dataset (different CDN, CORS*)
+ * - ROR, the Research Organization Registry — an independent dataset,
+ *   keyless and CORS-open; education-type organisations only.
  */
 export const universities = [
   { id: 'hipolabs', label: 'Hipolabs University API', async run({ country }) {
@@ -833,28 +878,27 @@ export const universities = [
         domains: u.domains || [], web_pages: u.web_pages || [], state: u['state-province'] || '',
       }));
     } },
-  { id: 'collegescorecard', label: 'College Scorecard', async run({ country }) {
-      // CollegeScorecard is US-only; for non-US queries we still return US results as fallback, but search by name if country is India etc? We'll search with country filter via name.
-      const q = country && country.toLowerCase() !== 'united states' && country.toLowerCase() !== 'usa' ? country : '';
-      const url = q
-        ? `https://api.data.gov/ed/collegescorecard/v1/schools?api_key=DEMO_KEY&school.name=${encodeURIComponent(q)}&per_page=30`
-        : `https://api.data.gov/ed/collegescorecard/v1/schools?api_key=DEMO_KEY&per_page=30`;
-      const d = await jget(url);
-      const rows = d.results || [];
-      if (!rows.length) throw new Error('no colleges');
-      return rows.slice(0, 30).map((r) => {
-        const s = r.latest?.school || {};
-        const loc = `${s.city || ''}${s.state ? ', ' + s.state : ''}`;
+  { id: 'ror', label: 'ROR Registry', async run({ country }) {
+      /* ROR serves its v2 schema now: display name lives in names[],
+         country in locations[0].geonames_details, links are typed
+         objects. types:education is filtered server-side. */
+      const q = encodeURIComponent(country || 'India');
+      const d = await jget(`https://api.ror.org/organizations?query=${q}&filter=types:education`);
+      const rows = (d.items || []).slice(0, 50).map((u) => {
+        const names = u.names || [];
+        const disp = names.find((n) => (n.types || []).includes('ror_display')) || names[0];
+        const loc = u.locations?.[0]?.geonames_details || {};
         return {
-          name: s.name || r.school?.name || 'College',
-          country: 'United States',
-          alpha_two_code: 'US',
-          domains: s.school_url ? [s.school_url] : [],
-          web_pages: s.school_url ? [`https://${s.school_url}`] : [],
-          state: loc,
+          name: disp?.value || 'University',
+          country: loc.country_name || country || '',
+          alpha_two_code: loc.country_code || '',
+          domains: u.domains || [],
+          web_pages: (u.links || []).filter((l) => l.type === 'website').map((l) => l.value),
+          state: loc.country_subdivision_name || '',
         };
       });
-    } },
+      if (!rows.length) throw new Error('no universities');
+      return rows; } },
 ];
 
 /* ------------------------------------------------------------- FOOD

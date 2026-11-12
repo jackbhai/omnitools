@@ -452,7 +452,7 @@ export function Jokes() {
   return (<Card>
     {j.loading && <Spin />}
     {j.error && <Err error={j.error} retry={()=>j.run()} />}
-    {j.data && (<><div style={{fontSize:16,lineHeight:1.5}}>{j.data.setup}</div><div className="gradtext" style={{fontSize:18,fontWeight:700,marginTop:12}}>{j.data.punch}</div><button className="btn" style={{marginTop:14,width:'100%'}} onClick={()=>j.run()}> Another</button><Src meta={j.meta} /></>)}
+    {j.data && (<><div style={{fontSize:16,lineHeight:1.5}}>{j.data.setup}</div>{j.data.punch && <div className="gradtext" style={{fontSize:18,fontWeight:700,marginTop:12}}>{j.data.punch}</div>}<button className="btn" style={{marginTop:14,width:'100%'}} onClick={()=>j.run()}> Another</button><Src meta={j.meta} /></>)}
   </Card>);
 }
 
