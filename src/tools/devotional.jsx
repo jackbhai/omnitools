@@ -15,7 +15,7 @@ import * as P from '../core/providers';
 import { useData, Spin, Err, Src, Card, Stat } from '../ui/kit';
 import { Icon } from '../ui/icons';
 import { jget } from '../core/engine';
-import { allDeviceVoices, deviceVoices, runChant, stanzas, stopAudio } from '../core/tts';
+import { allDeviceVoices, deviceVoices, runChant, stanzas, stopAudio, pickStudioVoice, studioChunk } from '../core/tts';
 
 /* ---------------------------------------------------------------- GITA */
 const GITA_CH = [
@@ -141,6 +141,32 @@ async function quranSurahEd(n, ed) {
   return ayahs;
 }
 
+/* Listen: Arabic = real per-ayah recitation (Alafasy edition, cdn.islamic
+ * .network MP3s — curl-verified). Urdu/Hindi = the app's shared studio TTS
+ * (freeapi voices, same module as the devotional reader — Urdu voice "Gul",
+ * Hindi "Swara", curl-verified audio/mpeg). English = device voice. */
+const quranAudioCache = new Map();
+async function quranAudioUrls(n) {
+  if (quranAudioCache.has(n)) return quranAudioCache.get(n);
+  const d = await jget(`https://api.alquran.cloud/v1/surah/${n}/ar.alafasy`, { ms: 25000 });
+  const urls = (d.data?.ayahs || []).map((a) => a.audio || (a.audioSecondary || [])[0] || '');
+  if (!urls.length) throw new Error('no recitation');
+  quranAudioCache.set(n, urls);
+  return urls;
+}
+function ttsChunks(text, max = 420) {
+  const parts = String(text || '').split(/(?<=[।.!?؟؛])\s+/).filter(Boolean);
+  const out = [];
+  let cur = '';
+  for (const p of parts) {
+    if ((cur + ' ' + p).length > max && cur) { out.push(cur); cur = p; }
+    else cur = cur ? cur + ' ' + p : p;
+    while (cur.length > max) { out.push(cur.slice(0, max)); cur = cur.slice(max); }
+  }
+  if (cur) out.push(cur);
+  return out.length ? out : [String(text || '')];
+}
+
 export function Quran() {
   const [surah, setSurah] = useState(1);
   const [lang, setLang] = useState('all');
@@ -154,6 +180,95 @@ export function Quran() {
   const PER = 10;
   const total = data?.ar?.length || data?.en?.length || 0;
   const pages = Math.max(1, Math.ceil(total / PER));
+
+  /* ---- listen (tap any ayah to hear from that ayah) ---- */
+  const [listenLang, setListenLang] = useState(() => { try { return localStorage.getItem('omni:quran:listen') || 'ar'; } catch { return 'ar'; } });
+  const [playing, setPlaying] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const [listenMsg, setListenMsg] = useState('');
+  const audioEl = useRef(null);
+  const seqTok = useRef({ alive: false });
+  useEffect(() => { try { localStorage.setItem('omni:quran:listen', listenLang); } catch { /* ignore */ } }, [listenLang]);
+  useEffect(() => { if (activeIdx >= 0) { setPage(Math.floor(activeIdx / PER)); const t = setTimeout(() => document.getElementById(`q-ayah-${activeIdx}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 80); return () => clearTimeout(t); } }, [activeIdx]);
+  const stopListen = () => {
+    seqTok.current.alive = false;
+    try { audioEl.current?.pause(); } catch { /* ignore */ }
+    try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
+    setPlaying(false); setActiveIdx(-1);
+  };
+  useEffect(() => () => { seqTok.current.alive = false; try { audioEl.current?.pause(); } catch { /* ignore */ } try { window.speechSynthesis?.cancel(); } catch { /* ignore */ } }, []);
+  useEffect(() => { stopListen(); setListenMsg(''); }, [surah]);
+  const playFrom = async (startIdx) => {
+    if (!data || !total) return;
+    stopListen();
+    const tok = { alive: true }; seqTok.current = tok;
+    const dead = () => !tok.alive;
+    setPlaying(true); setListenMsg('');
+    const el = audioEl.current || (audioEl.current = new Audio());
+    const deviceSpeak = (idx) => {
+      if (dead()) return;
+      if (idx >= total) { stopListen(); return; }
+      const texts = data[listenLang] || data.en || [];
+      const text = texts[idx];
+      if (!text) { deviceSpeak(idx + 1); return; }
+      setActiveIdx(idx);
+      const chunks = ttsChunks(text);
+      let ci = 0;
+      const nextChunk = () => {
+        if (dead()) return;
+        if (ci >= chunks.length) { deviceSpeak(idx + 1); return; }
+        const u = new SpeechSynthesisUtterance(chunks[ci++]);
+        u.lang = listenLang === 'ur' ? 'ur-PK' : listenLang === 'hi' ? 'hi-IN' : 'en-IN';
+        u.onend = nextChunk;
+        u.onerror = nextChunk;
+        window.speechSynthesis.speak(u);
+      };
+      nextChunk();
+    };
+    try {
+      if (listenLang === 'ar') {
+        const urls = await quranAudioUrls(surah);
+        if (dead()) return;
+        let fails = 0;
+        const step = (idx) => {
+          if (dead()) return;
+          if (idx >= total) { stopListen(); return; }
+          if (!urls[idx]) { step(idx + 1); return; }
+          setActiveIdx(idx);
+          el.src = urls[idx];
+          el.onended = () => step(idx + 1);
+          el.onerror = () => { fails++; if (fails >= 2) { setListenMsg('Recitation audio could not be loaded for this surah. Check your connection, or pick a voice language.'); stopListen(); } else step(idx + 1); };
+          el.play().catch(() => { setListenMsg('Tap again to allow audio playback.'); stopListen(); });
+        };
+        step(startIdx);
+      } else if (listenLang === 'ur' || listenLang === 'hi') {
+        let voice = null;
+        try { voice = await pickStudioVoice(listenLang); } catch { voice = null; }
+        if (dead()) return;
+        if (!voice) { setListenMsg('Studio voice unavailable — using device voice.'); deviceSpeak(startIdx); return; }
+        const texts = data[listenLang] || [];
+        const stepStudio = async (idx) => {
+          if (dead()) return;
+          if (idx >= total) { stopListen(); return; }
+          const text = texts[idx];
+          if (!text) { stepStudio(idx + 1); return; }
+          setActiveIdx(idx);
+          try {
+            for (const chunk of ttsChunks(text)) {
+              if (dead()) return;
+              const url = await studioChunk(chunk, voice.index, 1);
+              if (dead()) return;
+              await new Promise((res) => { el.src = url; el.onended = res; el.onerror = res; el.play().catch(res); });
+            }
+          } catch { if (!dead()) { setListenMsg('Studio voice interrupted — switching to device voice.'); deviceSpeak(idx); } return; }
+          stepStudio(idx + 1);
+        };
+        stepStudio(startIdx);
+      } else {
+        deviceSpeak(startIdx);
+      }
+    } catch { if (!dead()) { setListenMsg('Listening could not start. Check your connection and try again.'); stopListen(); } }
+  };
 
   useEffect(() => {
     let on = 1;
@@ -193,6 +308,21 @@ export function Quran() {
           <button key={v} className={`cat ${lang === v ? 'on' : ''}`} onClick={() => setLang(v)}>{n}</button>
         ))}
       </div>
+      <div style={{ marginTop: 12, padding: 12, background: 'var(--s2)', borderRadius: 12 }}>
+        <div className="chead" style={{ fontSize: 13 }}><Icon n="volume" size={14} /> Listen · {listenLang === 'ar' ? 'Arabic recitation (Alafasy)' : listenLang === 'en' ? 'English (device voice)' : `${listenLang === 'ur' ? 'Urdu' : 'Hindi'} studio voice`}</div>
+        <div className="cats" style={{ marginTop: 8 }}>
+          {[['ar', 'Arabic · Recitation'], ['ur', 'Urdu · Voice'], ['hi', 'Hindi · Voice'], ['en', 'English · Voice']].map(([v, n]) => (
+            <button key={v} className={`cat ${listenLang === v ? 'on' : ''}`} onClick={() => { stopListen(); setListenLang(v); }}>{n}</button>
+          ))}
+        </div>
+        <div className="btnrow" style={{ marginTop: 10 }}>
+          {playing
+            ? <button className="btn sm" onClick={stopListen}>Stop</button>
+            : <button className="btn sm" disabled={!data || !total} onClick={() => playFrom(page * PER)}>Listen from ayah {page * PER + 1}</button>}
+          <span className="dim sm" style={{ alignSelf: 'center' }}>{playing && activeIdx >= 0 ? `Playing ${surah}:${activeIdx + 1} — tap any ayah to jump` : 'or tap the speaker on any ayah to hear from there'}</span>
+        </div>
+        {listenMsg && <div className="dim sm" style={{ marginTop: 6 }}>{listenMsg}</div>}
+      </div>
       {loading && <Spin t="Loading full surah — Arabic, English, Hindi, Urdu" />}
       {err && <div style={{ marginTop: 12 }}><Err error={err} retry={() => setSurah((s) => s)} /></div>}
       {data && total > 0 && (
@@ -203,8 +333,11 @@ export function Quran() {
             <button className="btn sm" disabled={page >= pages - 1} onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}>Next 10</button>
           </div>
           {Array.from({ length: Math.min(PER, total - page * PER) }, (_, i) => page * PER + i).map((idx) => (
-            <div key={idx} style={{ marginTop: 12, padding: 14, background: 'var(--s2)', borderRadius: 12 }}>
-              <div className="dim sm">{surah}:{idx + 1}</div>
+            <div key={idx} id={`q-ayah-${idx}`} style={{ marginTop: 12, padding: 14, background: activeIdx === idx ? 'var(--s3)' : 'var(--s2)', borderRadius: 12, borderLeft: activeIdx === idx ? '3px solid #00c853' : '3px solid transparent' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="dim sm">{surah}:{idx + 1}{activeIdx === idx ? ' · playing' : ''}</div>
+                <button className="cat" title="Listen from this ayah" onClick={() => (playing && activeIdx === idx) ? stopListen() : playFrom(idx)}><Icon n="volume" size={12} /> {playing && activeIdx === idx ? 'Stop' : 'Listen'}</button>
+              </div>
               {show('ar') && data.ar?.[idx] && <div style={{ fontSize: 21, lineHeight: 1.9, textAlign: 'right', fontWeight: 600, marginTop: 6, fontFamily: 'serif' }}>{data.ar[idx]}</div>}
               {show('en') && data.en?.[idx] && <div style={{ fontSize: 14.5, lineHeight: 1.7, marginTop: 8 }}><span className="dim sm">English (Asad) · </span>{data.en[idx]}</div>}
               {show('hi') && data.hi?.[idx] && <div style={{ fontSize: 14.5, lineHeight: 1.7, marginTop: 8 }}><span className="dim sm">हिंदी · </span>{data.hi[idx]}</div>}
@@ -219,7 +352,7 @@ export function Quran() {
         </>
       )}
     </Card>
-    <div className="src"><span className="dot" /><span>Quran full reader · all 114 surahs · Arabic original + English (Asad) + Hindi + Urdu (Jalandhry) — four editions verified live · opened surahs cached on this device for offline reading</span></div>
+    <div className="src"><span className="dot" /><span>Quran full reader · all 114 surahs · Arabic original + English (Asad) + Hindi + Urdu (Jalandhry) — four editions verified live · opened surahs cached on this device for offline reading · Listen: Arabic is real recitation (Alafasy, per ayah — tap any ayah to start there), Urdu/Hindi studio voices, English device voice</span></div>
   </>);
 }
 
