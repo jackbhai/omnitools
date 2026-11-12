@@ -66,8 +66,10 @@ export function Gita() {
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [jump, setJump] = useState('');
+  const listen = useListen();
   useEffect(() => {
     let on = 1;
+    listen.stop();
     setData(null); setErr('');
     GITA_FILES[ch]().then((m) => { if (on) setData(m.default); }).catch(() => { if (on) setErr('Chapter data could not be loaded from the app bundle. Reopen the app and try again.'); });
     return () => { on = 0; };
@@ -80,6 +82,16 @@ export function Gita() {
     else document.getElementById(`gita-v-${v}`)?.scrollIntoView({ block: 'start' });
   };
   const show = (k) => lang === 'all' || lang === k;
+  /* Listen speaks the reader's active script: Sanskrit via the Hindi studio
+   * voice, Roman via English, Hindi meaning via Hindi, English via English. */
+  const speakMode = lang === 'tr' ? 'tr' : lang === 'hi' ? 'hi' : lang === 'en' ? 'en' : 'sa';
+  const speakLang = speakMode === 'tr' || speakMode === 'en' ? 'en' : speakMode === 'hi' ? 'hi' : 'sa';
+  const speakItems = data ? data.verses.map((v) => v[speakMode] || v.sa || '') : [];
+  useEffect(() => {
+    if (listen.active < 0 || !data) return;
+    const v = data.verses[listen.active];
+    if (v) { const t = setTimeout(() => document.getElementById(`gita-v-${v.v}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60); return () => clearTimeout(t); }
+  }, [listen.active, data]);
   return (<>
     <div className="cats">
       {GITA_CH.map(([n, hi]) => (
@@ -101,9 +113,13 @@ export function Gita() {
       {data && (lang === 'all' || lang === 'hi') && data.summary_hi && <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--fg2)', marginBottom: 8, padding: 8, background: 'var(--s2)', borderRadius: 8 }}><b>अध्याय सार (हिंदी):</b> {data.summary_hi.slice(0, 500)}</div>}
       {!data && !err && <Spin t="Loading chapter from the app — bundled, works offline" />}
       {err && <Err error={err} retry={() => setCh((c) => c)} />}
-      {data && data.verses.map((v) => (
-        <div key={v.v} id={`gita-v-${v.v}`} style={{ marginTop: 10, padding: 12, background: 'var(--s2)', borderRadius: 12 }}>
-          <div className="dim sm">{ch}.{v.v}</div>
+      {data && <ListenBar listen={listen} onPlayAll={() => listen.playFrom(speakItems, 0, { lang: speakLang })} label={`Listen · ${speakMode === 'sa' ? 'Sanskrit' : speakMode === 'tr' ? 'Roman' : speakMode === 'hi' ? 'Hindi' : 'English'}`} />}
+      {data && data.verses.map((v, vi) => (
+        <div key={v.v} id={`gita-v-${v.v}`} style={{ marginTop: 10, padding: 12, background: listen.active === vi ? 'var(--s3)' : 'var(--s2)', borderRadius: 12, borderLeft: listen.active === vi ? '3px solid #c9a227' : '3px solid transparent' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="dim sm">{ch}.{v.v}{listen.active === vi ? ' · playing' : ''}</span>
+            <button className="cat" title="Listen from this verse" onClick={() => (listen.playing && listen.active === vi) ? listen.stop() : listen.playFrom(speakItems, vi, { lang: speakLang })}><Icon n="volume" size={12} /> {listen.playing && listen.active === vi ? 'Stop' : 'Listen'}</button>
+          </div>
           {show('sa') && <div style={{ fontSize: 17, lineHeight: 1.7, fontWeight: 700, whiteSpace: 'pre-wrap', marginTop: 4 }}>{v.sa}</div>}
           {show('tr') && v.tr && <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--fg2)', fontStyle: 'italic', marginTop: 6 }}>{v.tr}</div>}
           {show('hi') && v.hi && <div style={{ fontSize: 14, lineHeight: 1.65, marginTop: 6 }}><span className="dim sm">हिंदी अर्थ · </span>{v.hi}</div>}
@@ -358,143 +374,148 @@ export function Quran() {
   </>);
 }
 
+/* ------------------------------------------------------------------ BIBLE
+ * Full chapter reader, all 66 books. Versions shipped (stated plainly):
+ * English KJV + English ASV + Hindi IRV — chapter files from the public
+ * wldeh/bible-api dataset (jsDelivr primary, raw GitHub mirror fallback),
+ * plus the bolls.life KJV API as a third leg for English. Hindi folder
+ * names are the dataset's own Devanagari book folders (verified per book).
+ * Per-verse read-aloud via the shared listen hook (English / Hindi). */
+function ListenBar({ listen, onPlayAll, label = 'Listen · Read aloud' }) {
+  return (
+    <div className="btnrow" style={{ marginTop: 10 }}>
+      {listen.playing
+        ? <button className="btn sm" onClick={listen.stop}><Icon n="volume" size={12} /> Stop</button>
+        : <button className="btn sm" onClick={onPlayAll}><Icon n="volume" size={12} /> {label}</button>}
+      <span className="dim sm" style={{ alignSelf: 'center' }}>{listen.playing ? 'Playing — tap any line to jump there' : 'or tap Listen on any line to hear from there'}</span>
+      {listen.msg && <span className="dim sm" style={{ alignSelf: 'center' }}>{listen.msg}</span>}
+    </div>
+  );
+}
+
+const BIBLE_BOOKS = [
+  // [display, enFolder, hiFolder, chapters]
+  ['Genesis', 'genesis', 'उत्पत्ति', 50], ['Exodus', 'exodus', 'निर्गमन', 40], ['Leviticus', 'leviticus', 'लैव्यव्यवस्था', 27],
+  ['Numbers', 'numbers', 'गिनती', 36], ['Deuteronomy', 'deuteronomy', 'व्यवस्थाविवरण', 34], ['Joshua', 'joshua', 'यहोशू', 24],
+  ['Judges', 'judges', 'न्यायियों', 21], ['Ruth', 'ruth', 'रूत', 4], ['1 Samuel', '1samuel', '1शमूएल', 31],
+  ['2 Samuel', '2samuel', '2शमूएल', 24], ['1 Kings', '1kings', '1राजाओं', 22], ['2 Kings', '2kings', '2राजाओं', 25],
+  ['1 Chronicles', '1chronicles', '1इतिहास', 29], ['2 Chronicles', '2chronicles', '2इतिहास', 36], ['Ezra', 'ezra', 'एज्रा', 10],
+  ['Nehemiah', 'nehemiah', 'नहेम्याह', 13], ['Esther', 'esther', 'एस्तेर', 10], ['Job', 'job', 'अय्यूब', 42],
+  ['Psalms', 'psalms', 'भजनसंहिता', 150], ['Proverbs', 'proverbs', 'नीतिवचन', 31], ['Ecclesiastes', 'ecclesiastes', 'सभोपदेशक', 12],
+  ['Song of Solomon', 'songofsolomon', 'श्रेष्ठगीत', 8], ['Isaiah', 'isaiah', 'यशायाह', 66], ['Jeremiah', 'jeremiah', 'यिर्मयाह', 52],
+  ['Lamentations', 'lamentations', 'विलापगीत', 5], ['Ezekiel', 'ezekiel', 'यहेजकेल', 48], ['Daniel', 'daniel', 'दानिय्येल', 12],
+  ['Hosea', 'hosea', 'होशे', 14], ['Joel', 'joel', 'योएल', 3], ['Amos', 'amos', 'आमोस', 9],
+  ['Obadiah', 'obadiah', 'ओबद्याह', 1], ['Jonah', 'jonah', 'योना', 4], ['Micah', 'micah', 'मीका', 7],
+  ['Nahum', 'nahum', 'नहूम', 3], ['Habakkuk', 'habakkuk', 'हबक्कूक', 3], ['Zephaniah', 'zephaniah', 'सपन्याह', 3],
+  ['Haggai', 'haggai', 'हाग्गै', 2], ['Zechariah', 'zechariah', 'जकर्याह', 14], ['Malachi', 'malachi', 'मलाकी', 4],
+  ['Matthew', 'matthew', 'मत्ती', 28], ['Mark', 'mark', 'मरकुस', 16], ['Luke', 'luke', 'लूका', 24],
+  ['John', 'john', 'यूहन्ना', 21], ['Acts', 'acts', 'प्रेरितोंकेकाम', 28], ['Romans', 'romans', 'रोमियों', 16],
+  ['1 Corinthians', '1corinthians', '1कुरिन्थियों', 16], ['2 Corinthians', '2corinthians', '2कुरिन्थियों', 13], ['Galatians', 'galatians', 'गलातियों', 6],
+  ['Ephesians', 'ephesians', 'इफिसियों', 6], ['Philippians', 'philippians', 'फिलिप्पियों', 4], ['Colossians', 'colossians', 'कुलुस्सियों', 4],
+  ['1 Thessalonians', '1thessalonians', '1थिस्सलुनीकियों', 5], ['2 Thessalonians', '2thessalonians', '2थिस्सलुनीकियों', 3],
+  ['1 Timothy', '1timothy', '1तीमुथियुस', 6], ['2 Timothy', '2timothy', '2तीमुथियुस', 4], ['Titus', 'titus', 'तीतुस', 3],
+  ['Philemon', 'philemon', 'फिलेमोन', 1], ['Hebrews', 'hebrews', 'इब्रानियों', 13], ['James', 'james', 'याकूब', 5],
+  ['1 Peter', '1peter', '1पतरस', 5], ['2 Peter', '2peter', '2पतरस', 3], ['1 John', '1john', '1यूहन्ना', 5],
+  ['2 John', '2john', '2यूहन्ना', 1], ['3 John', '3john', '3यूहन्ना', 1], ['Jude', 'jude', 'यहूदा', 1],
+  ['Revelation', 'revelation', 'प्रकाशितवाक्य', 22],
+];
+
+async function fetchBibleChapter(bookIdx, chapter, version) {
+  const [, enF, hiF] = BIBLE_BOOKS[bookIdx];
+  const code = version === 'hi' ? 'hi-IN-irvhin' : version === 'asv' ? 'en-asv' : 'en-kjv';
+  const path = `bibles/${code}/books/${encodeURIComponent(version === 'hi' ? hiF : enF)}/chapters/${chapter}.json`;
+  for (const base of ['https://cdn.jsdelivr.net/gh/wldeh/bible-api@main/', 'https://raw.githubusercontent.com/wldeh/bible-api/main/']) {
+    try {
+      const d = await jget(base + path, { ms: 15000 });
+      const rows = d.data || d.verses;
+      if (rows?.length) return rows.map((v) => String(v.text || ''));
+    } catch { /* next mirror */ }
+  }
+  if (version !== 'hi') {
+    const d = await jget(`https://bolls.life/get-text/KJV/${bookIdx + 1}/${chapter}/`, { ms: 15000 });
+    if (Array.isArray(d) && d.length) return d.map((v) => String(v.text || '').replace(/<[^>]+>/g, ''));
+  }
+  throw new Error('This chapter could not be loaded from any source. Check your connection and retry.');
+}
+
 export function Bible() {
-  const [book, setBook] = useState('john');
+  const [bookIdx, setBookIdx] = useState(42); // John
   const [chapter, setChapter] = useState(3);
-  const [verse, setVerse] = useState(16);
-  const [langTab, setLangTab] = useState('all');
-  const [multi, setMulti] = useState(null);
-  const [loadingMulti, setLoadingMulti] = useState(false);
-  const books = useData('bibleBooks', P.bibleBooks, {}, { ttl: 86400000 });
-  const v = useData('bibleVerses', P.bibleVerses, { book, chapter, verse }, { ttl: 3600000, deps: [book, chapter, verse] });
-  const fetchMultiBible = async () => {
-    setLoadingMulti(true);
-    try {
-      const translations = [
-        { id: 'en-kjv', name: 'English KJV', url: `https://cdn.jsdelivr.net/gh/wldeh/bible-api/bibles/en-kjv/books/${book.toLowerCase()}/chapters/${chapter}/verses/${verse}.json` },
-        { id: 'hi-IN-irvhin', name: 'Hindi IRV', url: `https://cdn.jsdelivr.net/gh/wldeh/bible-api/bibles/hi-IN-irvhin/books/${book.toLowerCase()}/chapters/${chapter}/verses/${verse}.json` },
-        { id: 'en-asv', name: 'English ASV', url: `https://cdn.jsdelivr.net/gh/wldeh/bible-api/bibles/en-asv/books/${book.toLowerCase()}/chapters/${chapter}/verses/${verse}.json` },
-      ];
-      const results = await Promise.all(translations.map(async (t) => {
-        try {
-          const d = await jget(t.url);
-          return { id: t.id, name: t.name, text: d.text || '', ref: `${book} ${chapter}:${verse}` };
-        } catch { return { id: t.id, name: t.name, text: '', ref: '' }; }
-      }));
-      const filtered = results.filter((r) => r.text);
-      if (filtered.length) setMulti(filtered);
-      else setMulti(null);
-    } catch { setMulti(null); }
-    setLoadingMulti(false);
-  };
-  useEffect(() => { fetchMultiBible(); }, [book, chapter, verse]);
+  const [version, setVersion] = useState('kjv'); // kjv | asv | hi | both
+  const [verses, setVerses] = useState(null); // { en: [], hi: [] }
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+  const [nonce, setNonce] = useState(0);
+  const listen = useListen();
+  const book = BIBLE_BOOKS[bookIdx];
+
+  useEffect(() => {
+    let dead = false;
+    listen.stop();
+    setLoading(true); setErr(''); setVerses(null);
+    (async () => {
+      try {
+        if (version === 'both') {
+          const [en, hi] = await Promise.all([fetchBibleChapter(bookIdx, chapter, 'kjv'), fetchBibleChapter(bookIdx, chapter, 'hi')]);
+          if (!dead) setVerses({ en, hi });
+        } else {
+          const rows = await fetchBibleChapter(bookIdx, chapter, version);
+          if (!dead) setVerses(version === 'hi' ? { en: [], hi: rows } : { en: rows, hi: [] });
+        }
+      } catch (e) { if (!dead) setErr(e.message); }
+      if (!dead) setLoading(false);
+    })();
+    return () => { dead = true; };
+  }, [bookIdx, chapter, version, nonce]);
+
+  useEffect(() => {
+    if (listen.active < 0) return;
+    const t = setTimeout(() => document.getElementById(`bb-v-${listen.active}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
+    return () => clearTimeout(t);
+  }, [listen.active]);
+
+  const speakRows = verses ? (version === 'hi' ? verses.hi : verses.en) : [];
+  const speakLang = version === 'hi' ? 'hi' : 'en';
+  const rowCount = verses ? Math.max(verses.en.length, verses.hi.length) : 0;
+
   return (<>
-    <Card>
-      <div className="chead"><Icon n="books" size={16} /> Holy Bible Deep · {book} {chapter}:{verse} · 3 languages</div>
-      <div className="g2" style={{ marginTop: 12 }}>
-        <div className="fld"><label>Book</label><input value={book} onChange={(e) => setBook(e.target.value.toLowerCase())} placeholder="john" /></div>
-        <div className="fld"><label>Chapter</label><input type="number" min={1} value={chapter} onChange={(e) => setChapter(Math.max(1, parseInt(e.target.value) || 1))} /></div>
-      </div>
-      <div className="fld" style={{ marginTop: 8 }}><label>Verse</label><input type="number" min={1} value={verse} onChange={(e) => setVerse(Math.max(1, parseInt(e.target.value) || 1))} /></div>
-      <div className="cats" style={{ marginTop: 10 }}>
-        {[
-          ['all', 'All 3 Lang', 'books'],
-          ['en-kjv', 'English KJV', 'book'],
-          ['hi', 'Hindi IRV', 'type'],
-          ['en-asv', 'English ASV', 'globe'],
-        ].map(([v, n, i]) => (
-          <button key={v} className={`cat ${langTab === v ? 'on' : ''}`} onClick={() => setLangTab(v)}><Icon n={i} size={11} /> {n}</button>
-        ))}
-      </div>
-      <div className="btnrow" style={{ marginTop: 10 }}>
-        <button className="btn sm" onClick={() => setVerse((x) => Math.max(1, x - 1))}>Prev</button>
-        <button className="btn sm" onClick={() => setVerse((x) => x + 1)}>Next</button>
-        <button className="btn sm ghost" onClick={() => { v.run(); fetchMultiBible(); }}>Refresh 3 Lang</button>
-      </div>
-      {v.loading && <Spin t="Loading verse English" />}
-      {v.error && <Err error={v.error} retry={() => { v.run(); fetchMultiBible(); }} />}
-      {loadingMulti && <Spin t="Loading 3 translations parallel" />}
-      {multi && (
-        <>
-          {(langTab === 'all' || langTab === 'en-kjv') && multi.find((m) => m.id === 'en-kjv') && (
-            <div style={{ marginTop: 14, padding: 14, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid var(--cyan)' }}>
-              <div className="dim sm">English - KJV Original 1611</div>
-              <div style={{ fontSize: 16, lineHeight: 1.7, fontWeight: 500, marginTop: 6 }}>{multi.find((m) => m.id === 'en-kjv')?.text}</div>
-            </div>
-          )}
-          {(langTab === 'all' || langTab === 'hi') && multi.find((m) => m.id.includes('hi')) && (
-            <div style={{ marginTop: 10, padding: 14, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid #ff9933' }}>
-              <div className="dim sm">Hindi - हिंदी IRV 2019</div>
-              <div style={{ fontSize: 17, lineHeight: 1.7, fontWeight: 500, marginTop: 6 }}>{multi.find((m) => m.id.includes('hi'))?.text}</div>
-            </div>
-          )}
-          {(langTab === 'all' || langTab === 'en-asv') && multi.find((m) => m.id === 'en-asv') && (
-            <div style={{ marginTop: 10, padding: 14, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid var(--green)' }}>
-              <div className="dim sm">English - ASV</div>
-              <div style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--fg2)', marginTop: 6 }}>{multi.find((m) => m.id === 'en-asv')?.text}</div>
-            </div>
-          )}
-        </>
-      )}
-      <Src meta={v.meta} />
-    </Card>
-    <div className="src"><span className="dot" /><span>Bible 3 languages verified · English KJV + Hindi IRV + English ASV · 3 independent sources · 31102 verses real</span></div>
+    <div className="frow">
+      <select value={bookIdx} onChange={(e) => { setBookIdx(parseInt(e.target.value)); setChapter(1); }} style={{ flex: 1 }}>
+        {BIBLE_BOOKS.map((b, i) => <option key={b[1]} value={i}>{i < 39 ? 'OT · ' : 'NT · '}{b[0]}</option>)}
+      </select>
+      <select value={version} onChange={(e) => setVersion(e.target.value)} style={{ flex: 1 }}>
+        <option value="kjv">English · KJV</option>
+        <option value="asv">English · ASV</option>
+        <option value="hi">Hindi · IRV</option>
+        <option value="both">English + Hindi</option>
+      </select>
+    </div>
+    <div className="cats" style={{ marginTop: 10 }}>
+      {Array.from({ length: book[3] }, (_, i) => i + 1).map((c) => (
+        <button key={c} className={`cat ${chapter === c ? 'on' : ''}`} onClick={() => setChapter(c)}>{c}</button>
+      ))}
+    </div>
+    <div className="chead" style={{ marginTop: 12 }}>{book[0]} · Chapter {chapter}</div>
+    <div className="dim sm">{version === 'kjv' ? 'King James Version' : version === 'asv' ? 'American Standard Version' : version === 'hi' ? 'Hindi · Indian Revised Version' : 'KJV + Hindi IRV side by side'} · {rowCount || ''} {rowCount ? 'verses' : ''}</div>
+    {verses && <ListenBar listen={listen} onPlayAll={() => listen.playFrom(speakRows, 0, { lang: speakLang })} />}
+    {loading && <Spin t="Loading chapter — source chain, first good wins" />}
+    {err && <Err error={err} retry={() => setNonce((n) => n + 1)} />}
+    {verses && Array.from({ length: rowCount }, (_, i) => {
+      const isOn = listen.active === i;
+      const text = speakRows[i];
+      return (
+        <div key={i} id={`bb-v-${i}`} style={{ marginTop: 8, padding: 12, background: isOn ? 'var(--s3)' : 'var(--s2)', borderRadius: 12, borderLeft: isOn ? '3px solid #c9a227' : '3px solid transparent' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="dim sm">{book[0]} {chapter}:{i + 1}{isOn ? ' · playing' : ''}</span>
+            {text && <button className="cat" title="Listen from this verse" onClick={() => (listen.playing && isOn) ? listen.stop() : listen.playFrom(speakRows, i, { lang: speakLang })}><Icon n="volume" size={12} /> {listen.playing && isOn ? 'Stop' : 'Listen'}</button>}
+          </div>
+          {verses.en[i] && <div style={{ fontSize: 15, lineHeight: 1.65, marginTop: 4 }}>{verses.en[i]}</div>}
+          {verses.hi[i] && <div style={{ fontSize: 15, lineHeight: 1.7, marginTop: verses.en[i] ? 6 : 4 }}>{verses.hi[i]}</div>}
+        </div>
+      );
+    })}
+    <div className="src"><span className="dot" /><span>Bible full reader · all 66 books (OT + NT) · English KJV + ASV and Hindi IRV — three versions verified live, two mirror hosts + a second API as fallback · 31,102 verses addressable · tap any verse to hear from there (English studio voice / Hindi voice)</span></div>
   </>);
-}
-
-/* ---------------------------------------------------------------- GURBANI ULTRA - 6 LANG + FALLBACK TRANSLATION */
-
-function hindiToHinglishSimple(hindi) {
-  if (!hindi) return '';
-  const map = {
-    'अ':'a','आ':'aa','इ':'i','ई':'ee','उ':'u','ऊ':'oo','ए':'e','ऐ':'ai','ओ':'o','औ':'au',
-    'क':'k','ख':'kh','ग':'g','घ':'gh','ङ':'ng',
-    'च':'ch','छ':'chh','ज':'j','झ':'jh','ञ':'ny',
-    'ट':'t','ठ':'th','ड':'d','ढ':'dh','ण':'n',
-    'त':'t','थ':'th','द':'d','ध':'dh','न':'n',
-    'प':'p','फ':'ph','ब':'b','भ':'bh','म':'m',
-    'य':'y','र':'r','ल':'l','व':'v','श':'sh','ष':'sh','स':'s','ह':'h',
-    'ा':'aa','ि':'i','ी':'ee','ु':'u','ू':'oo','े':'e','ै':'ai','ो':'o','ौ':'au','ं':'n','ः':'h','ँ':'n',
-    '्':'','़':'','।':'|','॥':'||',
-    '०':'0','१':'1','२':'2','३':'3','४':'4','५':'5','६':'6','७':'7','८':'8','९':'9',
-  };
-  let out='';
-  for (let ch of hindi) {
-    out+= map[ch] !== undefined ? map[ch] : ch;
-  }
-  return out.replace(/\s+/g,' ').trim().slice(0,500);
-}
-
-function safeText(v) {
-  if (!v) return '';
-  if (typeof v === 'string') return v;
-  if (typeof v === 'number') return String(v);
-  if (typeof v === 'object') {
-    if (v.text && typeof v.text === 'string') return v.text;
-    if (v.unicode && typeof v.unicode === 'string') return v.unicode;
-    if (v.akhar && typeof v.akhar === 'string') return v.akhar;
-    if (v.default && typeof v.default === 'string') return v.default;
-    if (v.english && typeof v.english === 'string') return v.english;
-    if (v.en && typeof v.en === 'string') return v.en;
-    if (v.bdb && typeof v.bdb === 'string') return v.bdb;
-    if (v.ms && typeof v.ms === 'string') return v.ms;
-    if (v.ssk && typeof v.ssk === 'string') return v.ssk;
-    // try first string value in object
-    for (const k of Object.keys(v)) {
-      const val = v[k];
-      if (typeof val === 'string' && val.trim()) return val;
-      if (typeof val === 'object') {
-        const inner = safeText(val);
-        if (inner && inner.length > 2 && !inner.startsWith('{')) return inner;
-      }
-    }
-    try {
-      const s = JSON.stringify(v);
-      if (s.length < 300) return s;
-      return '';
-    } catch { return ''; }
-  }
-  return String(v);
 }
 
 /* ------------------------------------------------------------- GURBANI COMPLETE
@@ -509,18 +530,6 @@ function safeText(v) {
  * (verified in BaniDB + GurbaniNow payloads), so no recording button is
  * faked — read-aloud uses a device Punjabi voice when present, else the
  * Hindi studio voice on the Devanagari transliteration. */
-function ListenBar({ listen, onPlayAll, label = 'Listen · Read aloud' }) {
-  return (
-    <div className="btnrow" style={{ marginTop: 10 }}>
-      {listen.playing
-        ? <button className="btn sm" onClick={listen.stop}><Icon n="volume" size={12} /> Stop</button>
-        : <button className="btn sm" onClick={onPlayAll}><Icon n="volume" size={12} /> {label}</button>}
-      <span className="dim sm" style={{ alignSelf: 'center' }}>{listen.playing ? 'Playing — tap any line to jump there' : 'or tap Listen on any line to hear from there'}</span>
-      {listen.msg && <span className="dim sm" style={{ alignSelf: 'center' }}>{listen.msg}</span>}
-    </div>
-  );
-}
-
 const GB_PATHS = [
   { id: 2, token: 'japji', en: 'Japji Sahib', n: 385, nitnem: 1 },
   { id: 4, token: 'jaap', en: 'Jaap Sahib', n: 808, nitnem: 1 },
