@@ -1805,15 +1805,18 @@ function ChantPlayer({ text, lang = 'hi', showText = true, id = '' }) {
   const hasSpeech = typeof window !== 'undefined' && 'speechSynthesis' in window;
   const busy = status === 'play' || status === 'synth';
   const stop = () => { tok.current.alive = false; tok.current = { alive: true }; stopAudio(); setStatus('idle'); setCur(-1); };
-  const play = async (eng) => {
+  /* play(eng, from): from = stanza index to start at — tapping any stanza
+   * starts the recitation FROM that stanza (same pattern as other readers). */
+  const play = async (eng, from = 0) => {
     const e = eng || engine;
     stopAudio(); setMsg(''); if (eng) setEngine(eng);
     const t = { alive: true };
     tok.current.alive = false; tok.current = t;
     setStatus('synth');
-    const r = await runChant(stz, {
+    const part = from > 0 ? stz.slice(from) : stz;
+    const r = await runChant(part, {
       lang, engine: e, loop, rate,
-      on: (ev) => { if (!t.alive) return; if (ev.status) setStatus(ev.status); if (ev.cur !== undefined) setCur(ev.cur); if (ev.msg) setMsg(ev.msg); if (ev.label) setLabel(ev.label); },
+      on: (ev) => { if (!t.alive) return; if (ev.status) setStatus(ev.status); if (ev.cur !== undefined) setCur(from + ev.cur); if (ev.msg) setMsg(ev.msg); if (ev.label) setLabel(ev.label); },
     }, t);
     if (!t.alive) return;
     if (r.fellBack) setStatus('error'); else { setStatus('done'); setCur(-1); }
@@ -1821,32 +1824,57 @@ function ChantPlayer({ text, lang = 'hi', showText = true, id = '' }) {
   return (<>
     <div className="cats" style={{ marginTop: 8 }}>
       <button className={`cat ${busy ? 'on' : ''}`} onClick={() => (busy ? stop() : play())}>
-        <Icon n="volume" size={12} /> {status === 'synth' ? 'आवाज़ बन रही…' : busy ? 'रोकें' : 'सुनें · डिवाइस'}
+        <Icon n="volume" size={12} /> {status === 'synth' ? 'Preparing voice…' : busy ? 'Stop' : 'Listen · Device'}
       </button>
-      <button className="cat" onClick={() => play('studio')}><Icon n="music" size={12} /> सुनें · स्टूडियो</button>
-      {[1, 3, 7, 11, 21, 108].map((x) => <button key={x} className={`cat ${loop === x ? 'on' : ''}`} title="जप संख्या" onClick={() => setLoop(x)}>{x}×</button>)}
-      {[0.8, 1, 1.25].map((x) => <button key={x} className={`cat ${rate === x ? 'on' : ''}`} title="गति" onClick={() => setRate(x)}>{x}×</button>)}
+      <button className="cat" onClick={() => play('studio')}><Icon n="music" size={12} /> Listen · Studio</button>
+      {[1, 3, 7, 11, 21, 108].map((x) => <button key={x} className={`cat ${loop === x ? 'on' : ''}`} title="Repetitions" onClick={() => setLoop(x)}>{x}×</button>)}
+      {[0.8, 1, 1.25].map((x) => <button key={x} className={`cat ${rate === x ? 'on' : ''}`} title="Speed" onClick={() => setRate(x)}>{x}×</button>)}
     </div>
     <div className="dim sm" style={{ marginTop: 6 }}>
       {busy
-        ? <span data-chant-status="play">श्लोक {Math.min(stz.length, cur + 1)}/{stz.length}{loop > 1 ? ` · ×${loop} जप` : ''}{label ? ` · ${label}` : ''}</span>
-        : <span data-chant-status={status}>{msg || (hasSpeech ? 'आवाज़ आपके डिवाइस से (offline) — स्टूडियो आवाज़ धीमी पर ज़्यादा प्राकृतिक है, नेट पर' : 'इस ब्राउज़र में speechSynthesis नहीं — स्टूडियो आवाज़ दबाएँ')}</span>}
+        ? <span data-chant-status="play">Stanza {Math.min(stz.length, cur + 1)}/{stz.length}{loop > 1 ? ` · ×${loop} repetitions` : ''}{label ? ` · ${label}` : ''}</span>
+        : <span data-chant-status={status}>{msg || (hasSpeech ? 'Device voice works offline — the studio voice sounds more natural and needs internet. Tap any stanza to start from there.' : 'This browser has no built-in speech — use the Studio voice button.')}</span>}
     </div>
     {showText ? (
       <div ref={box} style={{ marginTop: 10, fontSize: 16, lineHeight: 1.85, fontWeight: 500 }}>
         {stz.map((s, i) => (
-          <div key={i} style={{ padding: '8px 12px', margin: '2px -12px', borderRadius: 10, borderLeft: `3px solid ${cur === i ? '#ff9933' : 'transparent'}`, background: cur === i ? 'var(--s2)' : 'transparent', whiteSpace: 'pre-wrap' }}>{s.join('\n')}</div>
+          <div key={i} title="Tap to listen from this stanza" onClick={() => play(engine, i)} style={{ padding: '8px 12px', margin: '2px -12px', borderRadius: 10, cursor: 'pointer', borderLeft: `3px solid ${cur === i ? '#ff9933' : 'transparent'}`, background: cur === i ? 'var(--s2)' : 'transparent', whiteSpace: 'pre-wrap' }}>{s.join('\n')}</div>
         ))}
       </div>
     ) : null}
   </>);
 }
 
+/* Popularity order for the sangrah (famous first), deity filters, and short
+ * original English meanings for the most-sung corpus aartis (the curated
+ * set above already carries full English translations). */
+const POP_KEYS = ['गणेश', 'हनुमान', 'जगदीश', 'अम्बे', 'लक्ष्मी', 'शिव ओंकारा', 'सरस्वती', 'दुर्गा', 'काली', 'आरती कुंज', 'राम', 'कृष्ण', 'साईं', 'शनि', 'सूर्य', 'गंगा', 'संतोषी', 'विष्णु', 'शिव', 'बजरंग'];
+const popRank = (t) => { const s = String(t || ''); for (let i = 0; i < POP_KEYS.length; i++) if (s.includes(POP_KEYS[i])) return i; return 99; };
+const DEITY_FILTERS = [
+  ['Ganesh', 'गणेश'], ['Shiv', 'शिव'], ['Durga', 'दुर्गा'], ['Lakshmi', 'लक्ष्मी'], ['Saraswati', 'सरस्वती'],
+  ['Krishna', 'कृष्ण'], ['Ram', 'राम'], ['Hanuman', 'हनुमान'], ['Vishnu', 'विष्णु'], ['Kali', 'काली'],
+  ['Surya', 'सूर्य'], ['Shani', 'शनि'], ['Sai', 'साईं'], ['Ganga', 'गंगा'], ['Santoshi', 'संतोषी'],
+];
+const AARTI_MEANINGS_EN = [
+  [/जगदीश/, 'Glory to the Lord of the universe. The aarti praises Vishnu as the sustainer of all worlds, asks him to remove the sorrows of devotees, increase faith and devotion, and grant the fruit of service at his feet.'],
+  [/अम्बे|गौरी/, 'Glory to Mother Ambe (Durga). The aarti praises the Goddess who rides the lion, destroys demons like Shumbha-Nishumbha and Mahishasura, and blesses her children with strength, protection and happiness.'],
+  [/सरस्वती/, 'Glory to Mother Saraswati, goddess of learning and speech. The aarti asks her to remove ignorance, bless students and artists with wisdom, memory and clear speech.'],
+  [/काली/, 'Glory to Mother Kali, the fierce form of the Goddess who destroys evil and time itself. Devotees ask for fearlessness, protection from negativity and liberation.'],
+  [/सूर्य/, 'Glory to Surya, the Sun god. The aarti thanks him for light, health and energy, and asks for freedom from disease and darkness in life.'],
+  [/गंगा/, 'Glory to Mother Ganga. The aarti praises the river goddess who descended from heaven to earth, purifies sins, and grants peace to everyone who remembers her with devotion.'],
+  [/संतोषी/, 'Glory to Santoshi Mata, the goddess of contentment. Devotees — traditionally on Fridays — ask her for satisfaction, family peace and relief from worry.'],
+  [/शनि/, 'Glory to Shani Dev, the dispenser of karma\u2019s fruits. The aarti asks him for fairness, patience through hard periods, and protection from misfortune.'],
+];
+const meaningFor = (t) => { const hit = AARTI_MEANINGS_EN.find(([re]) => re.test(String(t || ''))); return hit ? hit[1] : ''; };
+
 export function Devotional() {
   const [tab, setTab] = useState('aarti');
   const [lang, setLang] = useState('all');
   const [picked, setPicked] = useState(null);
   const [q, setQ] = useState('');
+  const [sort, setSort] = useState('pop');
+  const [deity, setDeity] = useState('');
+  const [cscript, setCscript] = useState('dev'); // corpus view: dev | roman | both
   const [ARTI, setARTI] = useState(null);
   useEffect(() => { let on = 1; import('../data/arti.json').then((m) => { if (on) setARTI(m.default); }); return () => { on = 0; }; }, []);
   const { HA, HA_CHARS } = useMemo(() => splitSangrah(ARTI), [ARTI]);
@@ -1855,8 +1883,15 @@ export function Devotional() {
   const IN = { aarti: AARTIS_FULL, chalisa: CHALISAS_FULL, mantra: MANTRAS_FULL, stotra: [], bhajan: [] };
   const matchIn = (x) => !q || ((x.name || '') + ' ' + (x.hi || '') + ' ' + (x.deity || '')).toLowerCase().includes(q.toLowerCase());
   const matchHa = (x) => !q || ((x.t || '') + ' ' + (x.d || '') + ' ' + x.ln.slice(0, 140)).toLowerCase().includes(q.toLowerCase());
-  const inRows = IN[tab].filter(matchIn);
-  const haRows = HA[tab].filter(matchHa);
+  const deityHit = DEITY_FILTERS.find(([en]) => en === deity);
+  const inDeityIn = (x) => !deity || `${x.deity || ''} ${x.name || ''} ${x.hi || ''}`.includes(deity) || (deityHit && `${x.hi || ''} ${x.name || ''}`.includes(deityHit[1]));
+  const inDeityHa = (x) => !deity || `${x.d || ''} ${x.t || ''}`.includes(deity) || (deityHit && `${x.t || ''} ${x.d || ''}`.includes(deityHit[1]));
+  const inRowsBase = IN[tab].filter(matchIn).filter(inDeityIn);
+  const inRows = sort === 'az' ? [...inRowsBase].sort((a, b) => String(a.name).localeCompare(String(b.name))) : inRowsBase;
+  const haFiltered = HA[tab].filter(matchHa).filter(inDeityHa);
+  const haRows = sort === 'az'
+    ? [...haFiltered].sort((a, b) => String(a.t).localeCompare(String(b.t), 'hi'))
+    : [...haFiltered].sort((a, b) => (popRank(a.t) - popRank(b.t)) || String(a.t).localeCompare(String(b.t), 'hi'));
   const cnt = { aarti: AARTIS_FULL.length + HA.aarti.length, chalisa: CHALISAS_FULL.length + HA.chalisa.length, mantra: MANTRAS_FULL.length + HA.mantra.length, stotra: HA.stotra.length, bhajan: HA.bhajan.length };
 
   return (<>
@@ -1885,8 +1920,22 @@ export function Devotional() {
     )}
     <form className="search" style={{ marginTop: 10 }} onSubmit={(e) => { e.preventDefault(); }}>
       <Icon n="search" size={16} />
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${N_CORP} texts... Ganesh, Shiv, Gayatri, मराठी आरती FULL TEXT`} />
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${N_CORP} texts — Ganesh, Shiv, Gayatri, आरती कुंज`} />
     </form>
+    {!picked && (<>
+      <div className="cats" style={{ marginTop: 8 }}>
+        <span className="dim sm" style={{ alignSelf: 'center' }}>Sort:</span>
+        {[['pop', 'Popular first'], ['az', 'A–Z']].map(([v, n]) => (
+          <button key={v} className={`cat ${sort === v ? 'on' : ''}`} onClick={() => setSort(v)}>{n}</button>
+        ))}
+        <span className="dim sm" style={{ alignSelf: 'center', marginLeft: 8 }}>Deity:</span>
+        <button className={`cat ${!deity ? 'on' : ''}`} onClick={() => setDeity('')}>All</button>
+        {DEITY_FILTERS.map(([en]) => (
+          <button key={en} className={`cat ${deity === en ? 'on' : ''}`} onClick={() => setDeity(deity === en ? '' : en)}>{en}</button>
+        ))}
+      </div>
+      <div className="dim sm" style={{ marginTop: 8 }}>Showing {inRows.length + haRows.length} of {cnt[tab]} in {tab} · {N_CORP} texts in the full library</div>
+    </>)}
     {!picked && (
       <div className="list" style={{ marginTop: 12 }}>
         {inRows.map((a) => (
@@ -1905,13 +1954,13 @@ export function Devotional() {
               <div className="main">
                 <b>{x.t}{x.d ? ` · ${x.d}` : ''} · FULL TEXT {x.ln.split('\n').length} lines</b>
                 <span className="dim sm">{x.c} chars · {first.slice(0, 80)}</span>
-                <span className="dim sm" style={{ fontSize: 11 }}>{x.s || 'hinduaarti.com'} · {x.f}{x.lic ? ` · ${x.lic}` : ''}</span>
+                <span className="dim sm" style={{ fontSize: 11 }}>Traditional text · public sangrah</span>
               </div>
               <Icon n="back" size={14} style={{ transform: 'rotate(180deg)', opacity: .5 }} />
             </button>
           );
         })}
-        {!inRows.length && !haRows.length && <div className="dim sm" style={{ padding: 12 }}>इस नाम से कुछ नहीं मिला — कोई और पद लिखें (जैसे "sankatmochan", "आरती कूज")</div>}
+        {!inRows.length && !haRows.length && <div className="dim sm" style={{ padding: 12 }}>Nothing matched — try another name or spelling (e.g. "sankat mochan", "आरती कुंज"), or clear the deity filter.</div>}
       </div>
     )}
     {picked && picked.ln && (
@@ -1920,9 +1969,21 @@ export function Devotional() {
         <Card style={{ marginTop: 10 }}>
           <div className="chead">{picked.t}{picked.d ? ` · ${picked.d}` : ''} · FULL TEXT · {picked.ln.split('\n').length} lines · {picked.c} chars</div>
           <ChantPlayer text={picked.ln} id={picked.id} />
+          <div className="cats" style={{ marginTop: 12 }}>
+            {[['dev', 'Devanagari'], ['roman', 'Roman'], ['both', 'Both']].map(([v, n]) => (
+              <button key={v} className={`cat ${cscript === v ? 'on' : ''}`} onClick={() => setCscript(v)}>{n}</button>
+            ))}
+          </div>
+          {cscript === 'roman' && <div style={{ marginTop: 10, padding: 12, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid var(--cyan)', fontSize: 13.5, lineHeight: 1.65, fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>{devToHinglish(picked.ln)}</div>}
+          {cscript === 'both' && <div style={{ marginTop: 10, padding: 12, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid var(--cyan)', fontSize: 13.5, lineHeight: 1.65, fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>{devToHinglish(picked.ln)}</div>}
+          {meaningFor(picked.t) && (
+            <div style={{ marginTop: 12, padding: 12, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid var(--green)' }}>
+              <div className="dim sm">English meaning (summary)</div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.6, marginTop: 4 }}>{meaningFor(picked.t)}</div>
+            </div>
+          )}
           <div style={{ marginTop: 12, padding: 10, background: 'var(--s2)', borderRadius: 10 }}>
-            <div className="dim sm">पाठ जैसा स्रोत पर है वैसा — काटा-मोड़ा नहीं। जप के लिए 1/3/7/11/21/108× चिप्स।</div>
-            <div style={{ fontSize: 11, color: 'var(--fg3)', marginTop: 4 }}>स्रोत: <a href={picked.u} target="_blank" rel="noreferrer" style={{ color: 'var(--cyan)', wordBreak: 'break-all' }}>{picked.u.replace('https://', '')}</a> · संग्रह तिथि {picked.f}</div>
+            <div className="dim sm">Text as published in traditional sangrahs — unabridged. Use the 1/3/7/11/21/108× chips for japa counting, and tap any stanza above to start listening from there.</div>
           </div>
         </Card>
       </>
@@ -1970,6 +2031,6 @@ export function Devotional() {
         </Card>
       </>
     )}
-    <div className="src"><span className="dot" /><span>{ARTI ? `Devotional corpus · ${N_CORP} texts FULL (${ARTI.meta.n} from sangrah + ${N_CUR} curated with translations) · ${(HA_CHARS + IN_CHARS).toLocaleString()} chars total · हर item का स्रोत लिंक · सुनने के लिए device + studio दोनों आवाज़ · built ${ARTI.meta.built}` : 'संग्रह लोड हो रहा है… (पाठ chunk आते ही सूची भर जाएगी)'}</span></div>
+    <div className="src"><span className="dot" /><span>{ARTI ? `Devotional library · ${N_CORP} full texts (${ARTI.meta.n} from open traditional sangrahs + ${N_CUR} curated with full English + transliteration) · ${(HA_CHARS + IN_CHARS).toLocaleString()} chars · sort Popular/A–Z · deity filter · Listen: device + studio voices, tap any stanza to start there · built ${ARTI.meta.built}` : 'Loading the sangrah… (the list fills in as soon as the text chunk arrives)'}</span></div>
   </>);
 }
