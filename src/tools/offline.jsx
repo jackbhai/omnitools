@@ -3,8 +3,9 @@
  * These can NEVER go down. This is the backbone of "koi feature band na ho".
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Field, Copy, Card, Stat, Chips, fmt } from '../ui/kit';
+import { Field, Copy, Card, Stat, Chips, Empty, fmt } from '../ui/kit';
 import { Icon } from '../ui/icons';
+import { qrDataUrl } from '../core/qr';
 
 const Out = ({ v }) => v ? <><div className="out">{v}</div><div className="btnrow"><Copy text={v} /></div></> : null;
 
@@ -159,9 +160,15 @@ export function LoremGen() {
 export function QrGen() {
   const [t, setT] = useState('https://github.com');
   const [size, setSize] = useState(300);
-  const url = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(t)}&bgcolor=000000&color=00FF9C`;
+  /* Generated locally on-device (core/qr.js) — no QR web service is
+     involved, so this genuinely works offline and the text never leaves
+     the phone. */
+  let url = '';
+  try { url = t ? qrDataUrl(t, { size }) : ''; } catch { url = ''; }
   return (<><Field label="Text or URL" as="textarea" value={t} onChange={(e)=>setT(e.target.value)} /><Field label={`Size: ${size}px`} type="range" min="150" max="600" step="50" value={size} onChange={(e)=>setSize(+e.target.value)} />
-    {t && <div className="card center"><img src={url} alt="QR" style={{ width: '100%', maxWidth: 280, borderRadius: 12, background: '#000' }} /><div className="btnrow" style={{ justifyContent: 'center' }}><a className="btn sm" href={url} download="qr.png" target="_blank" rel="noreferrer"><Icon n="download" size={16} /> Download</a></div></div>}
+    {t && (url
+      ? <div className="card center"><img src={url} alt="QR" style={{ width: '100%', maxWidth: 280, borderRadius: 12, background: '#000' }} /><div className="btnrow" style={{ justifyContent: 'center' }}><a className="btn sm" href={url} download="qr.png"><Icon n="download" size={16} /> Download</a></div></div>
+      : <Empty t="That text is too long for a QR code" />)}
   </>);
 }
 

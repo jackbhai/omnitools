@@ -31,6 +31,7 @@ import { Icon } from '../ui/icons';
 import { OfflineBtn } from '../ui/PlayerUI';
 import { play as sfxPlay } from '../core/sfx.js';
 import { offlineAll, offlineDelete } from '../core/offline-store';
+import { qrDataUrl } from '../core/qr';
 import { favourites, isFav, toggleFav, history, topPlayed, playlists,
          createPlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist,
          clearHistory, onLibrary, libraryStats,
@@ -945,7 +946,7 @@ function LibraryTab({ player }) {
           {shareUrl && shareUrl.id === pl.id && (
             <div className="card center" style={{ marginBottom: 12 }}>
               <img alt="QR code for the playlist link" loading="lazy"
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(shareUrl.url)}&bgcolor=000000&color=00FF9C`}
+                src={qrDataUrl(shareUrl.url, { size: 200 })}
                 style={{ width: 160, height: 160, borderRadius: 12, background: '#000' }} />
               <div className="dim sm" style={{ margin: '8px 0' }}>
                 Anyone opening this link or scanning the code can import the playlist.
