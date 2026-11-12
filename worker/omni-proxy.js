@@ -1088,14 +1088,48 @@ async function raceSongs(q, limit, want) {
   return { rows: [], via: null, errors: errors.slice(0, 8) };
 }
 
+/* ------------------------------------------------------- live presence */
+/* One global Durable Object keeps a sid -> last-seen map in memory.
+ * A session counts as "using now" if it pinged within the last 90 s.
+ * The count is approximate by design (60 s heartbeat from the app). */
+export class Presence {
+  constructor() {
+    this.seen = new Map();
+  }
+  prune(now) {
+    for (const [sid, ts] of this.seen) {
+      if (now - ts > 90000) this.seen.delete(sid);
+    }
+  }
+  async fetch(request) {
+    const url = new URL(request.url);
+    const now = Date.now();
+    if (url.pathname.endsWith('/ping')) {
+      const sid = (url.searchParams.get('sid') || '').slice(0, 64);
+      if (sid) this.seen.set(sid, now);
+    }
+    this.prune(now);
+    return json({ online: this.seen.size });
+  }
+}
+
 /* ------------------------------------------------------------------ main */
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS });
     }
 
     const url = new URL(request.url);
+
+    /* ---- live users: how many people are using the app right now ---- */
+    if (url.pathname === '/presence' || url.pathname === '/presence/ping') {
+      if (!env || !env.PRESENCE) return json({ online: null, error: 'presence unavailable' }, 503);
+      const stub = env.PRESENCE.get(env.PRESENCE.idFromName('global'));
+      const target = new URL(request.url);
+      target.pathname = url.pathname === '/presence/ping' ? '/ping' : '/count';
+      return stub.fetch(new Request(target.toString(), { method: 'GET' }));
+    }
 
     /* ---- how many people carry this name, and where ---- */
     if (url.pathname === '/surname') {
