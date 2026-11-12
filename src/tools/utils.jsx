@@ -191,10 +191,16 @@ export function TempMail() {
 }
 
 /* ------------------------------------------------------------- WIKI → PDF */
+/* The PDF is rendered by a server-side generator that takes ~9–10 s per
+ * article (measured) — there is no faster route in the same family, and
+ * Wikimedia's own PDF endpoint measured slower still (~15 s), so the fix
+ * is honesty, not speed: the copy below sets the wait expectation up
+ * front, because the new tab looks blank while the document is built and
+ * users were closing it mid-generation. */
 export function WikiPdf() {
   const [q, setQ] = useState('Delhi');
   return (<><div className="fld"><label>Wikipedia article</label><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. Babar Azam" /></div><div className="btnrow">{['Delhi','Punjab','Cricket','ISRO'].map((x) =><button key={x} className="cat" onClick={() => setQ(x)}>{x}</button>)}</div><a className="btn" style={{ display: 'block', textAlign: 'center', marginTop: 12, textDecoration: 'none' }}
-      href={`${MEDIA_API}wikipdf?query=${encodeURIComponent(q)}`} target="_blank" rel="noreferrer"><Icon n="doc" size={18} /> Generate &amp; open PDF</a><div className="src"><span className="dot" /><span>Opens a real, printable PDF</span></div></>);
+      href={`${MEDIA_API}wikipdf?query=${encodeURIComponent(q)}`} target="_blank" rel="noreferrer"><Icon n="doc" size={18} /> Generate &amp; open PDF</a><div className="src"><span className="dot" /><span>Building the PDF usually takes about 10 seconds — the new tab stays blank while it works. Don't close it; the document opens as soon as it is ready.</span></div></>);
 }
 
 /* ------------------------------------------------------------- HANDWRITING */
