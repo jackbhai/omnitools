@@ -182,6 +182,7 @@ const TOOLS = [
   { id:'hand',      n:'Handwriting',   i:'pen',      c:'Everyday', t:'live', d:'Neat page, ready to print', C:Handwriting },
   { id:'websnap',   n:'Screenshot',    i:'camera',   c:'Everyday', t:'live', d:'Capture any site',           C:U.WebSnap },
   { id:'certs',     n:'Certificates',  i:'badge',    c:'Everyday', t:'live', d:'Templates',                  C:U.Certificates },
+  { id:'telenor',   n:'My Telenor Quiz', i:'check',  c:'Everyday', t:'live', d:'Today’s quiz answers',       C:U.Telenor },
 
   // ---------- Space ----------
   { id:'iss',       n:'ISS Tracker',   i:'satellite',c:'Space', t:'live', d:'Live position',             C:L.Space },
