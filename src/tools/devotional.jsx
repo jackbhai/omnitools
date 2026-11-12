@@ -116,88 +116,109 @@ export function Gita() {
   </>);
 }
 
+/* ------------------------------------------------------------- QURAN FULL READER
+ * Editions verified live on AlQuran Cloud (curl, 2026-11-13): quran-simple
+ * (Arabic), en.asad, hi.hindi, ur.jalandhry — every one answers per-surah.
+ * Whole surah loads at once; ayahs page 10 at a time; each opened surah is
+ * cached on-device (memory + localStorage) for offline re-reading. */
+const Q_EDITIONS = [
+  ['ar', 'quran-simple', 'Arabic'],
+  ['en', 'en.asad', 'English'],
+  ['hi', 'hi.hindi', 'Hindi'],
+  ['ur', 'ur.jalandhry', 'Urdu'],
+];
+const quranCache = new Map();
+async function quranSurahEd(n, ed) {
+  const key = `quran:${n}:${ed}`;
+  if (quranCache.has(key)) return quranCache.get(key);
+  try { const raw = localStorage.getItem('omni:' + key); if (raw) { const v = JSON.parse(raw); quranCache.set(key, v); return v; } } catch { /* storage off */ }
+  const d = await jget(`https://api.alquran.cloud/v1/surah/${n}/${ed}`, { ms: 25000 });
+  const ayahs = (d.data?.ayahs || []).map((a) => a.text);
+  if (!ayahs.length) throw new Error('empty surah');
+  quranCache.set(key, ayahs);
+  try { const s = JSON.stringify(ayahs); if (s.length < 350000) localStorage.setItem('omni:' + key, s); } catch { /* quota */ }
+  return ayahs;
+}
+
 export function Quran() {
   const [surah, setSurah] = useState(1);
-  const [ayah, setAyah] = useState(1);
-  const [langTab, setLangTab] = useState('all');
-  const [multi, setMulti] = useState(null);
-  const [loadingMulti, setLoadingMulti] = useState(false);
+  const [lang, setLang] = useState('all');
+  const [page, setPage] = useState(0);
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [jump, setJump] = useState('');
   const surahs = useData('quranSurahs', P.quranSurahs, {}, { ttl: 86400000 });
-  const ay = useData('quranAyahs', P.quranAyahs, { surah, ayah, edition: 'en.asad' }, { ttl: 3600000, deps: [surah, ayah] });
   const cur = surahs.data?.find((s) => s.number === surah);
-  const fetchMulti = async () => {
-    setLoadingMulti(true);
-    try {
-      const editions = ['ar.alafasy', 'en.asad', 'hi.hindi', 'ur.jalandhry'];
-      const results = await Promise.all(editions.map(async (ed) => {
-        try {
-          const d = await jget(`https://api.alquran.cloud/v1/ayah/${surah}:${ayah}/${ed}`);
-          return { edition: ed, text: d.data?.text || '', name: d.data?.edition?.englishName || ed };
-        } catch { return { edition: ed, text: '', name: ed }; }
-      }));
-      setMulti(results);
-    } catch { setMulti(null); }
-    setLoadingMulti(false);
-  };
-  useEffect(() => { fetchMulti(); }, [surah, ayah]);
+  const PER = 10;
+  const total = data?.ar?.length || data?.en?.length || 0;
+  const pages = Math.max(1, Math.ceil(total / PER));
+
+  useEffect(() => {
+    let on = 1;
+    setLoading(true); setErr(''); setPage(0); setData(null);
+    Promise.all(Q_EDITIONS.map(async ([k, ed]) => { try { return [k, await quranSurahEd(surah, ed)]; } catch { return [k, null]; } }))
+      .then((rows) => {
+        if (!on) return;
+        const obj = {}; rows.forEach(([k, v]) => { obj[k] = v; });
+        if (!obj.ar && !obj.en && !obj.hi && !obj.ur) setErr('This surah could not be loaded. Check your connection and tap Retry — surahs you have opened before stay saved on this device for offline reading.');
+        setData(obj); setLoading(false);
+      });
+    return () => { on = 0; };
+  }, [surah]);
+
+  const show = (k) => lang === 'all' || lang === k;
   return (<>
     <Card>
-      <div className="chead"><Icon n="book" size={16} /> Quran Deep · {cur ? `${cur.englishName} (${cur.name})` : `Surah ${surah}`} · 4 languages</div>
-      {cur && <div className="dim sm">{cur.englishTranslation} · {cur.revelationType} · {cur.ayahs} ayahs · Arabic OG + English + Hindi + Urdu</div>}
+      <div className="chead"><Icon n="book" size={16} /> Quran · Full Surah Reader · Arabic + English + Hindi + Urdu</div>
+      <div className="dim sm">{cur ? `${cur.number}. ${cur.englishName} (${cur.name}) · ${cur.englishTranslation} · ${cur.revelationType} · ${cur.ayahs} ayahs` : `Surah ${surah} of 114 · 6236 ayahs total`}</div>
       <div className="g2" style={{ marginTop: 12 }}>
-        <div className="fld"><label>Surah (1-114)</label><input type="number" min={1} max={114} value={surah} onChange={(e) => setSurah(Math.max(1, Math.min(114, parseInt(e.target.value) || 1)))} /></div>
-        <div className="fld"><label>Ayah</label><input type="number" min={1} value={ayah} onChange={(e) => setAyah(Math.max(1, parseInt(e.target.value) || 1))} /></div>
+        <div className="fld"><label>Surah</label>
+          {surahs.data ? (
+            <select value={surah} onChange={(e) => setSurah(parseInt(e.target.value) || 1)} style={{ width: '100%', background: 'var(--s2)', border: '1px solid var(--s3)', borderRadius: 8, color: 'var(--fg)', padding: 8 }}>
+              {surahs.data.map((s) => <option key={s.number} value={s.number}>{s.number}. {s.englishName} · {s.ayahs} ayahs</option>)}
+            </select>
+          ) : <input type="number" min={1} max={114} value={surah} onChange={(e) => setSurah(Math.max(1, Math.min(114, parseInt(e.target.value) || 1)))} />}
+        </div>
+        <div className="fld"><label>Go to ayah</label>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input type="number" min={1} value={jump} onChange={(e) => setJump(e.target.value)} placeholder="e.g. 255" />
+            <button className="btn sm" onClick={() => { const a = parseInt(jump) || 1; setPage(Math.max(0, Math.floor((a - 1) / PER))); }}>Go</button>
+          </div>
+        </div>
       </div>
       <div className="cats" style={{ marginTop: 10 }}>
-        {[
-          ['all', 'All 4 Lang', 'books'],
-          ['ar', 'Arabic OG', 'book'],
-          ['en', 'English', 'globe'],
-          ['hi', 'Hindi', 'type'],
-          ['ur', 'Urdu', 'quote'],
-        ].map(([v, n, i]) => (
-          <button key={v} className={`cat ${langTab === v ? 'on' : ''}`} onClick={() => setLangTab(v)}><Icon n={i} size={11} /> {n}</button>
+        {[['all', 'All 4'], ['ar', 'Arabic'], ['en', 'English'], ['hi', 'Hindi'], ['ur', 'Urdu']].map(([v, n]) => (
+          <button key={v} className={`cat ${lang === v ? 'on' : ''}`} onClick={() => setLang(v)}>{n}</button>
         ))}
       </div>
-      <div className="btnrow" style={{ marginTop: 10 }}>
-        <button className="btn sm" onClick={() => setAyah((a) => Math.max(1, a - 1))}>Prev ayah</button>
-        <button className="btn sm" onClick={() => setAyah((a) => a + 1)}>Next ayah</button>
-        <button className="btn sm ghost" onClick={() => { ay.run(); fetchMulti(); }}>Refresh 4 Lang</button>
-      </div>
-      {ay.loading && <Spin t="Loading ayah Arabic" />}
-      {ay.error && <Err error={ay.error} retry={() => { ay.run(); fetchMulti(); }} />}
-      {loadingMulti && <Spin t="Loading 4 languages parallel - Arabic English Hindi Urdu" />}
-      {multi && (
+      {loading && <Spin t="Loading full surah — Arabic, English, Hindi, Urdu" />}
+      {err && <div style={{ marginTop: 12 }}><Err error={err} retry={() => setSurah((s) => s)} /></div>}
+      {data && total > 0 && (
         <>
-          {(langTab === 'all' || langTab === 'ar') && multi.find((m) => m.edition.startsWith('ar'))?.text && (
-            <div style={{ marginTop: 14, padding: 16, background: 'var(--s2)', borderRadius: 12, borderRight: '4px solid #00c853' }}>
-              <div className="dim sm">Arabic - العربية الأصلية - Original</div>
-              <div style={{ fontSize: 22, lineHeight: 1.9, textAlign: 'right', fontWeight: 600, marginTop: 8, fontFamily: 'serif' }}>{multi.find((m) => m.edition.startsWith('ar'))?.text}</div>
+          <div className="btnrow" style={{ marginTop: 12 }}>
+            <button className="btn sm" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>Prev 10</button>
+            <span className="dim sm" style={{ alignSelf: 'center' }}>Ayahs {page * PER + 1}–{Math.min(total, (page + 1) * PER)} of {total} · Page {page + 1}/{pages}</span>
+            <button className="btn sm" disabled={page >= pages - 1} onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}>Next 10</button>
+          </div>
+          {Array.from({ length: Math.min(PER, total - page * PER) }, (_, i) => page * PER + i).map((idx) => (
+            <div key={idx} style={{ marginTop: 12, padding: 14, background: 'var(--s2)', borderRadius: 12 }}>
+              <div className="dim sm">{surah}:{idx + 1}</div>
+              {show('ar') && data.ar?.[idx] && <div style={{ fontSize: 21, lineHeight: 1.9, textAlign: 'right', fontWeight: 600, marginTop: 6, fontFamily: 'serif' }}>{data.ar[idx]}</div>}
+              {show('en') && data.en?.[idx] && <div style={{ fontSize: 14.5, lineHeight: 1.7, marginTop: 8 }}><span className="dim sm">English (Asad) · </span>{data.en[idx]}</div>}
+              {show('hi') && data.hi?.[idx] && <div style={{ fontSize: 14.5, lineHeight: 1.7, marginTop: 8 }}><span className="dim sm">हिंदी · </span>{data.hi[idx]}</div>}
+              {show('ur') && data.ur?.[idx] && <div style={{ fontSize: 17, lineHeight: 1.8, textAlign: 'right', marginTop: 8 }}><span className="dim sm">اردو (Jalandhry) · </span>{data.ur[idx]}</div>}
             </div>
-          )}
-          {(langTab === 'all' || langTab === 'en') && multi.find((m) => m.edition.startsWith('en'))?.text && (
-            <div style={{ marginTop: 10, padding: 14, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid var(--cyan)' }}>
-              <div className="dim sm">English - Translation - Muhammad Asad</div>
-              <div style={{ fontSize: 15, lineHeight: 1.7, color: 'var(--fg)', marginTop: 6 }}>{multi.find((m) => m.edition.startsWith('en'))?.text}</div>
-            </div>
-          )}
-          {(langTab === 'all' || langTab === 'hi') && multi.find((m) => m.edition.startsWith('hi'))?.text && (
-            <div style={{ marginTop: 10, padding: 14, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid #ff9933' }}>
-              <div className="dim sm">Hindi - हिंदी अनुवाद</div>
-              <div style={{ fontSize: 15, lineHeight: 1.7, color: 'var(--fg)', marginTop: 6 }}>{multi.find((m) => m.edition.startsWith('hi'))?.text}</div>
-            </div>
-          )}
-          {(langTab === 'all' || langTab === 'ur') && multi.find((m) => m.edition.startsWith('ur'))?.text && (
-            <div style={{ marginTop: 10, padding: 14, background: 'var(--s2)', borderRadius: 12, borderLeft: '3px solid #ab47bc' }}>
-              <div className="dim sm">Urdu - اردو ترجمہ - Jalandhry</div>
-              <div style={{ fontSize: 18, lineHeight: 1.8, textAlign: 'right', marginTop: 6 }}>{multi.find((m) => m.edition.startsWith('ur'))?.text}</div>
-            </div>
-          )}
+          ))}
+          <div className="btnrow" style={{ marginTop: 12 }}>
+            <button className="btn sm" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>Prev 10</button>
+            <button className="btn sm" disabled={page >= pages - 1} onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}>Next 10</button>
+            {surah < 114 && <button className="btn sm ghost" onClick={() => setSurah(surah + 1)}>Next surah →</button>}
+          </div>
         </>
       )}
-      <Src meta={ay.meta} />
     </Card>
-    <div className="src"><span className="dot" /><span>Quran 4 languages verified · Arabic OG + English + Hindi + Urdu · 3 independent sources · 6236 ayahs real</span></div>
+    <div className="src"><span className="dot" /><span>Quran full reader · all 114 surahs · Arabic original + English (Asad) + Hindi + Urdu (Jalandhry) — four editions verified live · opened surahs cached on this device for offline reading</span></div>
   </>);
 }
 
