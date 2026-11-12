@@ -69,7 +69,7 @@ const RAW = 'https://raw.githubusercontent.com';
  */
 export const PLAYLISTS = [
   { id: 'in',     name: 'India',
-    sub: 'Eight indexes, best-tested first',
+    sub: 'Nine indexes, best-tested first',
     urls: [
       `${RAW}/satyadevchauhan/DugguTV/main/streams/channels.m3u`,          // 92% live
       `${FREETV}/playlists/playlist_india.m3u8`,                            // 90% live
@@ -79,12 +79,14 @@ export const PLAYLISTS = [
       `${RAW}/Yaarokayaar1110/India-iptv.m3u/main/@yaarokayaar1110.m3u`,    // 60% live
       `${CDN}/countries/in.m3u`,                                            // 67% live
       `${RAW}/deep2772/Hindi_Punjabi-iptv-playlist/main/Hindi_Punjabi_Merged.m3u`,
-      /* FINAL_IPTV_COMPLETE used to be ninth here. Re-measured 2026-11-12:
-         it is now 19 MB / 23,139 rows and took 8.4 s on its own — and
-         because the merge awaits every source, the whole India tab waited
-         on it on every cold load. Its Indian subset largely duplicates
-         the ACTIVE cut above. It moved to EXTRA as "India Complete",
-         loaded only when someone actually asks for it. */
+      `${RAW}/Zaman-Topu/Ip-tv-Collection/main/FINAL_IPTV_COMPLETE.m3u`,    // 44%, but huge
+      /* The COMPLETE cut was briefly removed on 2026-11-12 for speed and
+         restored the same day on measurement: the merged India list is
+         2,715 channels with it and 1,203 without — it contributes ~1,500
+         channels no other source has. The cost is real (19 MB, ~8 s on a
+         cold load, fetched in parallel with the other eight) and the
+         owner's call was breadth first. It stays LAST so its dead half
+         sorts below everything else via liveness. */
     ],
     /* Two of those sources are worldwide collections that happen to contain a
        lot of Indian television. Merged unfiltered they turned this tab into
@@ -150,11 +152,34 @@ export const EXTRA = [
   { id: 'travel', name: 'Travel',   urls: [`${CDN}/categories/travel.m3u`] },   // [66]
   { id: 'cook',   name: 'Cooking',  urls: [`${CDN}/categories/cooking.m3u`] },  // [59]
   { id: 'sci',    name: 'Science',  urls: [`${CDN}/categories/science.m3u`] },  // [22]
-  /* The 19 MB archive cut of the big Indian collection — on demand only,
-     for the reasons given in the India tab above. Same Indian filter. */
-  { id: 'infull', name: 'India Complete',
-    urls: [`${RAW}/Zaman-Topu/Ip-tv-Collection/main/FINAL_IPTV_COMPLETE.m3u`],
-    only: /\b(india|indian|hindi|tamil|telugu|punjab|bengali|marathi|kannada|malayalam|gujarati|bhojpuri|odia|assam|urdu|desi|bollywood|jio|zee|sony|colors|star|sun\s|aaj\s?tak|ndtv|abp|republic|dd\s|doordarshan|tata|gemini|asianet|maa\s|udaya|etv|news18|india\s?today|tv9|sahara|b4u|mahua|shemaroo|sansad|aastha|bhakti|gurbani|ptc|chardikala)\b/i },
+  /* Second expansion wave, same day — again every list fetched and
+     counted first (channels in brackets). Diaspora + neighbourhood
+     first, then the big world lists, then the remaining categories.
+     The general list alone is 2,757 worldwide channels. */
+  { id: 'np',     name: 'Nepal',    urls: [`${CDN}/countries/np.m3u`] },        // [22]
+  { id: 'lk',     name: 'Sri Lanka', urls: [`${CDN}/countries/lk.m3u`] },       // [19]
+  { id: 'af',     name: 'Afghanistan', urls: [`${CDN}/countries/af.m3u`] },     // [25]
+  { id: 'sa',     name: 'Saudi Arabia', urls: [`${CDN}/countries/sa.m3u`] },    // [55]
+  { id: 'qa',     name: 'Qatar',    urls: [`${CDN}/countries/qa.m3u`] },        // [10]
+  { id: 'kw',     name: 'Kuwait',   urls: [`${CDN}/countries/kw.m3u`] },        // [12]
+  { id: 'om',     name: 'Oman',     urls: [`${CDN}/countries/om.m3u`] },        // [6]
+  { id: 'ir',     name: 'Iran',     urls: [`${CDN}/countries/ir.m3u`] },        // [183]
+  { id: 'tr',     name: 'Türkiye',  urls: [`${CDN}/countries/tr.m3u`] },        // [175]
+  { id: 'de',     name: 'Germany',  urls: [`${CDN}/countries/de.m3u`] },        // [306]
+  { id: 'fr',     name: 'France',   urls: [`${CDN}/countries/fr.m3u`] },        // [201]
+  { id: 'es',     name: 'Spain',    urls: [`${CDN}/countries/es.m3u`] },        // [326]
+  { id: 'br',     name: 'Brazil',   urls: [`${CDN}/countries/br.m3u`] },        // [398]
+  { id: 'id',     name: 'Indonesia', urls: [`${CDN}/countries/id.m3u`] },       // [173]
+  { id: 'my',     name: 'Malaysia', urls: [`${CDN}/countries/my.m3u`] },        // [6]
+  { id: 'sg',     name: 'Singapore', urls: [`${CDN}/countries/sg.m3u`] },       // [9]
+  { id: 'gen',    name: 'World Mix', urls: [`${CDN}/categories/general.m3u`] }, // [2757]
+  { id: 'edu',    name: 'Education', urls: [`${CDN}/categories/education.m3u`] }, // [209]
+  { id: 'cul',    name: 'Culture',  urls: [`${CDN}/categories/culture.m3u`] },  // [195]
+  { id: 'leg',    name: 'Parliament', urls: [`${CDN}/categories/legislative.m3u`] }, // [181]
+  { id: 'life',   name: 'Lifestyle', urls: [`${CDN}/categories/lifestyle.m3u`] }, // [150]
+  { id: 'out',    name: 'Outdoors', urls: [`${CDN}/categories/outdoor.m3u`] },  // [81]
+  { id: 'fam',    name: 'Family',   urls: [`${CDN}/categories/family.m3u`] },   // [64]
+  { id: 'relax',  name: 'Relax',    urls: [`${CDN}/categories/relax.m3u`] },    // [10]
 ];
 
 const cache = new Map();

@@ -227,6 +227,7 @@ const MIRRORS = [
      fast when it refuses. */
   { id: 'm13', base: 'https://shnwazdev-jiosaavn-apii.vercel.app',       path: '/api/search/songs?query=', linkKey: 'url' },
   { id: 'm01', base: 'https://jio-saavn-api-iota.vercel.app',            path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm18', base: 'https://saavnx.vercel.app',                        path: '/api/search/songs?query=', linkKey: 'url' },
   { id: 'm04', base: 'https://jiosaavn-api-instance-mu.vercel.app',      path: '/api/search/songs?query=', linkKey: 'url' },
   { id: 'm05', base: 'https://jiosaavn-api-lovat.vercel.app',            path: '/api/search/songs?query=', linkKey: 'url' },
   { id: 'm07', base: 'https://jiosaavn-api-seven-xi.vercel.app',         path: '/api/search/songs?query=', linkKey: 'url' },
@@ -241,8 +242,20 @@ const MIRRORS = [
   { id: 'm09', base: 'https://jiosaavn-api.anmolmaan5468.workers.dev',   path: '/api/search/songs?query=', linkKey: 'url' },
   { id: 'm15', base: 'https://saavnapi-psi.vercel.app',                  path: '/api/search/songs?query=', linkKey: 'url' },
   { id: 'm4',  base: 'https://saavn-api-sable.vercel.app',               path: '/api/search/songs?query=', linkKey: 'url' },
+  { id: 'm19', base: 'https://saavn-api-mukesh.vercel.app',              path: '/api/search/songs?query=', linkKey: 'url' },
   { id: 'm02', base: 'https://jio-saavn-api-nu.vercel.app',              path: '/search/songs?query=',     linkKey: 'link' },
   { id: 'm1',  base: 'https://jiosaavn-api-codyandersan.vercel.app',     path: '/search/songs?query=',     linkKey: 'link' },
+  /* The Flask-fork family — the five deployments the relay used to keep
+     to itself because they were believed to send no CORS header. They do
+     (verified 2026-11-12), and their rows carry an already-decrypted
+     stream address. They are SLOW (3.6-4.6 s — cold Python apps), so they
+     sit in the last race waves as pure depth: reached only when every
+     faster mirror has failed. */
+  { id: 'm20', base: 'https://jio-saavn-api-navy.vercel.app',            path: '/result/?query=',          linkKey: 'url' },
+  { id: 'm21', base: 'https://saavnsksk.vercel.app',                     path: '/result/?query=',          linkKey: 'url' },
+  { id: 'm22', base: 'https://saavnsk.vercel.app',                       path: '/result/?query=',          linkKey: 'url' },
+  { id: 'm23', base: 'https://jiosaavnapi-amjadimdad00.vercel.app',      path: '/result/?query=',          linkKey: 'url' },
+  { id: 'm24', base: 'https://jio-saavn-free-api.vercel.app',            path: '/result/?query=',          linkKey: 'url' },
 ];
 
 /* Public CORS relays, used only when this app's own is unreachable. A rotation
@@ -285,6 +298,28 @@ function mirrorRows(d) {
 }
 
 function shapeMirrorSong(x, linkKey) {
+  /* The Flask-fork family (path /result/) returns the catalogue's own row
+     shape with the stream address already decrypted in `media_url` —
+     verified 2026-11-12: direct CDN address, Range 206. Shape it with the
+     same quality ladder the official route uses. */
+  if (x && x.media_url) {
+    const streams = streamsFor(x.media_url);
+    return {
+      id: x.id,
+      title: clean(x.song || x.title || x.name),
+      artist: clean(x.primary_artists || x.singers || ''),
+      album: clean(x.album || ''),
+      year: x.year || '',
+      dur: +(x.duration || 0),
+      art: x.image || '',
+      lang: x.language || '',
+      playCount: +(x.play_count || 0),
+      base: x.media_url,
+      streams,
+      stream: x.media_url.replace(/_\d+\.mp[34]$/, '_320.mp4'),
+      src: 'catalogue-2',
+    };
+  }
   const dl = Array.isArray(x.downloadUrl) ? x.downloadUrl : [];
   const at = (want) => {
     const hit = dl.find((q) => String(q.quality || '').startsWith(want));
