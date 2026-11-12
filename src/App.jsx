@@ -41,6 +41,7 @@ import { searchMusic } from './core/music';
 import { history as libHistory } from './core/library';
 import { recent as tvRecent } from './core/iptv';
 import { getLiveStatus } from './core/live-status';
+import { startPresence, usePresence } from './core/presence';
 import { Icon } from './ui/icons';
 
 /* ------------------------------------------------------ universal search
@@ -236,6 +237,7 @@ export default function App() {
   const [snd, setSnd] = useState(() => sfxEnabled());
 
   useEffect(() => sfxAttach(), []);
+  useEffect(() => { startPresence(); }, []);
   const [fav, setFav] = useState(() => {
     try { return JSON.parse(localStorage.getItem('omni:fav') || '[]'); } catch { return []; }
   });
@@ -347,6 +349,7 @@ export default function App() {
             <p>{TOOLS.length} tools. Multi-source fallback on every live feature.
               No login, no signup, no API keys.</p>
             <div className="pillrow">
+              <PresenceChip />
               <span className="pill on"><Icon n="check" size={13} /> {offCount} work offline</span>
               <span className="pill"><Icon n="refresh" size={13} /> Auto-failover</span>
               <span className="pill"><Icon n="shield" size={13} /> No tracking</span>
@@ -447,6 +450,7 @@ function StatusPanel({ onClose, offCount, total }) {
       <div className="chead">System status
         <button className="iconbtn" style={{ marginLeft: 'auto', width: 28, height: 28 }}
           onClick={onClose} aria-label="Close"><Icon n="x" size={15} /></button></div>
+      <PresenceRow />
       <div className="chead" style={{ fontSize: 12, marginTop: 2 }}>Live status
         <button className="rowbtn" style={{ marginLeft: 'auto' }} aria-label="Recheck services"
           onClick={recheck}><Icon n="refresh" size={15} /></button></div>
@@ -614,4 +618,31 @@ function ScrollTopBtn() {
       onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
       <Icon n="up" size={18} />
     </button>);
+}
+
+/* ------------------------------------------------------------- presence
+   How many people are in the app right now, from the relay's heartbeat
+   count. Renders nothing at all when there is no honest number: a failed
+   check must never turn into a made-up audience. A count older than the
+   last heartbeat shows greyed and says it is the last known reading. */
+function PresenceChip() {
+  const pres = usePresence();
+  if (!pres) return null;
+  return (
+    <span className="pill" title="People using the app right now — counted by a once-a-minute heartbeat, so treat it as approximate"
+      style={pres.fresh ? undefined : { opacity: 0.55 }}>
+      <span className="dot" style={pres.fresh ? undefined : { background: 'var(--fg3)', boxShadow: 'none' }} />
+      {pres.n} online now{pres.fresh ? '' : ' · last known'}
+    </span>);
+}
+
+function PresenceRow() {
+  const pres = usePresence();
+  if (!pres) return null;
+  return (
+    <div className="src" style={pres.fresh ? undefined : { opacity: 0.6 }}>
+      <span className="dot" style={pres.fresh ? undefined : { background: 'var(--fg3)', boxShadow: 'none' }} />
+      <span style={{ flex: 1 }}>{pres.n} online now</span>
+      <span className="src-meta">{pres.fresh ? 'live count · approximate' : 'last known count'}</span>
+    </div>);
 }
