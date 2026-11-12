@@ -22,9 +22,15 @@ export const PRESETS = {
   'Bass Boost': [10,8,6,3,0,0,0,0,0,0],
   'Punjabi Beat': [9,7,4,0,-1,1,3,5,4,2],
   Vocal: [-3,-2,0,3,6,6,3,1,0,-1],
-  Treble: [0,0,0,0,0,2,4,6,8,8],
+  'Treble Boost': [0,0,0,0,0,2,4,6,8,8],
   'Lo-Fi': [5,4,2,0,-2,-4,-6,-8,-9,-10],
   Party: [8,6,3,0,-1,0,3,6,7,7],
+  /* Low-volume listening: a loudness curve — lows and presence lifted,
+     top softened — so a quiet track still sounds full late at night. */
+  Night: [6,5,3,1,0,1,2,1,-1,-3],
+  /* Band-limited on purpose: everything outside the old telephone band
+     is pulled down hard, which is the whole sound of an old radio. */
+  'Old Radio': [-12,-11,-5,2,5,5,2,-5,-11,-12],
 };
 
 /**
@@ -55,6 +61,7 @@ export const PRESETS = {
 class Chain {
   constructor() {
     this.ctx = this.src = this.eq = this.bass = this.treb = this.comp = this.an = null;
+    this.ms = null;   // mid/side processor nodes — see _buildMs()
     this.el = null; this.ready = false;
     /* The visualiser's own tap, kept separate from the EQ graph — see tap(). */
     this.vizCtx = this.vizSrc = this.vizAn = this.vizEl = null;
@@ -88,11 +95,14 @@ class Chain {
    *   MediaElementSource: the browser refuses to expose the samples. Verified
    *   directly — a known-good oscillator reads analyser peak 128 in the same
    *   browser, while the real stream reads 0 while still "playing".
-   *   So attaching the EQ to these streams silences them, permanently, and
-   *   `createMediaElementSource` cannot be undone on that element.
    *
-   *   Hence: the graph refuses to attach to a cross-origin stream at all.
-   *   Sound matters more than an equaliser.
+   *   Hence the two guards that keep sound ahead of the equaliser:
+   *   canProcess() refuses to attach unless the source is same-origin, a
+   *   blob, or the element carries the CORS opt-in (which playWithFallback
+   *   sets first and drops the moment a load fails) — and if a LATER track
+   *   turns out not to be readable while the graph is up, the provider
+   *   detaches the graph and the watchdog drops it the moment it hears
+   *   silence, so a song can never sit there playing mutely.
    */
   async attach(el) {
     if (this.ready && this.el === el) return this.ensureRunning();
@@ -115,7 +125,9 @@ class Chain {
       this.comp = this.ctx.createDynamicsCompressor();
       this.comp.threshold.value = 0; this.comp.ratio.value = 1;   // transparent until asked
       this.an = this.ctx.createAnalyser(); this.an.fftSize = 128;
+      this.ms = this._buildMs();
       let n = this.src;
+      n.connect(this.ms.input); n = this.ms.output;
       for (const f of this.eq) { n.connect(f); n = f; }
       n.connect(this.bass); this.bass.connect(this.treb);
       this.treb.connect(this.comp); this.comp.connect(this.an);
@@ -155,6 +167,7 @@ class Chain {
     try { this.src?.disconnect(); } catch {}
     try { this.ctx?.close(); } catch {}
     this.ctx = this.src = this.eq = this.bass = this.treb = this.comp = this.an = null;
+    this.ms = null;
     this.el = null;
     this.ready = false;
   }
@@ -236,12 +249,126 @@ class Chain {
   }
 
   resume() { return this.ensureRunning(); }
-  band(i, v) { this.eq?.[i] && (this.eq[i].gain.value = v); }
-  setBass(v) { this.bass && (this.bass.gain.value = v); }
-  setTreb(v) { this.treb && (this.treb.gain.value = v); }
-  setComp(on) { if (this.comp) { this.comp.threshold.value = on ? -32 : 0; this.comp.ratio.value = on ? 12 : 1; } }
+
+  /** Glide an AudioParam to a value. Setting .value directly from a slider
+     drag produces zipper noise and clicks; a short exponential approach
+     (40 ms) is inaudible as a transition and still feels instant. */
+  _ramp(param, v) {
+    if (!param || !this.ctx) return;
+    try { param.setTargetAtTime(v, this.ctx.currentTime, 0.04); }
+    catch { try { param.value = v; } catch {} }
+  }
+
+  band(i, v) { this.eq?.[i] && this._ramp(this.eq[i].gain, v); }
+  setBass(v) { this.bass && this._ramp(this.bass.gain, v); }
+  setTreb(v) { this.treb && this._ramp(this.treb.gain, v); }
+  setComp(on) { if (this.comp) { this._ramp(this.comp.threshold, on ? -32 : 0); this._ramp(this.comp.ratio, on ? 12 : 1); } }
+
+  /**
+   * Mid/side processor — the vocal tools and the stereo-width control.
+   *
+   *   Mid  = (L + R) / 2   — everything panned centre: lead vocals, kick,
+   *                          bass, most of what a mix is anchored on.
+   *   Side = (L − R) / 2   — everything that differs between the ears:
+   *                          backing vocals, reverb, wide synths, chorus.
+   *
+   * Attenuating Mid is the classic "oops" karaoke trick: the centred lead
+   * vocal drops while the stereo music largely survives. It is NOT stem
+   * separation — a vocal mixed wide, or a mono recording, will barely
+   * change, and the UI says so rather than promising isolation.
+   *
+   * Wiring: splitter → mid gain (both channels summed, gain carries the
+   * ½) → a gentle peaking filter that lives ONLY in the mid path (the
+   * vocal-presence lift for Vocal Focus) → merger inputs (mid+side = L,
+   * mid−side = R). At mid = side = 1 and presence = 0 dB the block is an
+   * exact identity for stereo material. Karaoke never takes Mid below
+   * 0.15, so centre content is reduced, never carved out entirely.
+   */
+  _buildMs() {
+    const ctx = this.ctx;
+    const input = ctx.createChannelSplitter(2);
+    const mid = ctx.createGain(); mid.gain.value = 0.5;
+    const sideInv = ctx.createGain(); sideInv.gain.value = -1;
+    const side = ctx.createGain(); side.gain.value = 0.5;
+    const pres = ctx.createBiquadFilter();
+    pres.type = 'peaking'; pres.frequency.value = 3200; pres.Q.value = 0.9; pres.gain.value = 0;
+    const sideInvOut = ctx.createGain(); sideInvOut.gain.value = -1;
+    const output = ctx.createChannelMerger(2);
+    input.connect(mid, 0); input.connect(mid, 1);
+    input.connect(side, 0); input.connect(sideInv, 1); sideInv.connect(side);
+    mid.connect(pres);
+    pres.connect(output, 0, 0); pres.connect(output, 0, 1);
+    side.connect(output, 0, 0);
+    side.connect(sideInvOut); sideInvOut.connect(output, 0, 1);
+    return { input, output, mid, side, pres };
+  }
+
+  /** vocal = { mid, side, pres } levels (1 = untouched), or null = identity. */
+  _vocalApply(vocal) {
+    if (!this.ms) return;
+    const mid = vocal ? vocal.mid : 1;
+    const side = vocal ? vocal.side : 1;
+    const pres = vocal ? vocal.pres : 0;
+    this._ramp(this.ms.mid.gain, 0.5 * mid);
+    this._ramp(this.ms.side.gain, 0.5 * side);
+    this._ramp(this.ms.pres.gain, pres);
+  }
+
+  /**
+   * Apply the whole effects state in one place, so the power toggle can
+   * bypass EVERYTHING (bands, shelves, loudness, vocal tools, width) with
+   * the same smooth ramps instead of a hard disconnect — bypassed, the
+   * graph passes the audio through untouched and nothing can click.
+   */
+  applyState(s) {
+    if (!this.ready || !s) return;
+    const on = s.power !== false;
+    this.eq?.forEach((f, i) => this._ramp(f.gain, on ? (s.bands?.[i] || 0) : 0));
+    if (this.bass) this._ramp(this.bass.gain, on ? (s.bass || 0) : 0);
+    if (this.treb) this._ramp(this.treb.gain, on ? (s.treb || 0) : 0);
+    if (this.comp) {
+      this._ramp(this.comp.threshold, on && s.comp ? -32 : 0);
+      this._ramp(this.comp.ratio, on && s.comp ? 12 : 1);
+    }
+    this._vocalApply(on ? s.vocal : null);
+  }
 }
 export const chain = new Chain();
+
+/**
+ * Effects settings persist across sessions — bands, preset, shelves,
+ * loudness, the power toggle, the vocal tools and the stereo width.
+ * Read once at module load; the provider writes on every change.
+ */
+const EQ_KEY = 'omni:eq';
+function loadEqSettings() {
+  try {
+    const j = JSON.parse(localStorage.getItem(EQ_KEY));
+    if (j && Array.isArray(j.bands) && j.bands.length === BANDS.length) return j;
+  } catch {}
+  return null;
+}
+const SAVED_EQ = loadEqSettings();
+
+/**
+ * Turn the vocal-tools state into mid/side levels for the chain.
+ *   karaoke — Mid pulled down hard (floor 0.15, never carved out), Side
+ *             lifted slightly so the music keeps its body.
+ *   focus   — Side pulled down, Mid lifted a touch, plus a presence lift
+ *             applied only inside the mid path (see Chain._buildMs).
+ * The width control multiplies Side in every mode, including Off — that
+ * is the stereo-widening control. Side is capped so widening stacked on
+ * karaoke cannot push the recombined channels into harsh clipping; the
+ * compressor downstream catches what is left.
+ */
+function vocalLevels(mode, amt, width) {
+  const a = Math.min(100, Math.max(0, +amt || 0)) / 100;
+  let mid = 1, side = 1, pres = 0;
+  if (mode === 'karaoke') { mid = 1 - 0.85 * a; side = 1 + 0.2 * a; }
+  else if (mode === 'focus') { side = 1 - 0.6 * a; mid = 1 + 0.1 * a; pres = 4.5 * a; }
+  const w = width === 'wide' ? 1.35 : width === 'extra' ? 1.7 : 1;
+  return { mid, side: Math.min(side * w, 1.9), pres };
+}
 
 /* ------------------------------------------------------------------- HLS
  * The second catalogue serves HLS playlists rather than plain audio files.
@@ -393,11 +520,32 @@ export function PlayerProvider({ children }) {
   const [miniHidden, setMiniHidden] = useState(false);
   const [err, setErr] = useState('');
   const [lyrics, setLyrics] = useState(null);
-  const [eq, setEq] = useState([...PRESETS.Flat]);
-  const [preset, setPreset] = useState('Flat');
-  const [bass, setBass] = useState(0);
-  const [treb, setTreb] = useState(0);
-  const [comp, setComp] = useState(false);
+  const [eq, setEq] = useState(() => SAVED_EQ?.bands ? [...SAVED_EQ.bands] : [...PRESETS.Flat]);
+  const [preset, setPreset] = useState(SAVED_EQ?.preset || 'Flat');
+  const [bass, setBass] = useState(SAVED_EQ?.bass || 0);
+  const [treb, setTreb] = useState(SAVED_EQ?.treb || 0);
+  const [comp, setComp] = useState(!!SAVED_EQ?.comp);
+  const [eqPower, setEqPower] = useState(SAVED_EQ?.power !== false);
+  const [vocalMode, setVocalMode] = useState(SAVED_EQ?.vocalMode || 'off');  // off | karaoke | focus
+  const [vocalAmt, setVocalAmt] = useState(SAVED_EQ?.vocalAmt ?? 70);
+  const [width, setWidth] = useState(SAVED_EQ?.width || 'normal');           // normal | wide | extra
+  /* Persist every effects change; restored by loadEqSettings() on boot. */
+  useEffect(() => {
+    try {
+      localStorage.setItem(EQ_KEY, JSON.stringify({
+        bands: eq, preset, bass, treb, comp,
+        power: eqPower, vocalMode, vocalAmt, width,
+      }));
+    } catch {}
+  }, [eq, preset, bass, treb, comp, eqPower, vocalMode, vocalAmt, width]);
+  /* The current effects snapshot, always fresh for async callbacks — a
+     play() or enableEq() that resolves late must apply what the user has
+     set NOW, not what was set when it started. */
+  const eqStateRef = useRef(null);
+  eqStateRef.current = {
+    bands: eq, bass, treb, comp, power: eqPower,
+    vocal: vocalLevels(vocalMode, vocalAmt, width),
+  };
   const [rate, setRate] = useState(1);
   /* Sleep timer, two shapes: stop after N minutes (with a live countdown),
      or stop at the end of the current track. `sleep` stays the chosen
@@ -456,6 +604,19 @@ export function PlayerProvider({ children }) {
      rather than sitting there looking broken. */
   const [canViz, setCanViz] = useState(true);
   const [eqOn, setEqOn] = useState(false);
+
+  /* When a track turns out NOT to be readable (the CORS opt-in had to be
+     dropped for it to play at all), an attached EQ graph or visualiser tap
+     becomes a silence machine: the element's output is routed into a graph
+     whose source the browser mutes. Tear both down the moment that is
+     known, so the element goes back to feeding the speakers directly.
+     This is what makes switching between readable and unreadable sources
+     mid-session safe with the EQ switched on. */
+  useEffect(() => {
+    if (canViz) return;
+    if (chain.ready) { chain.detach(); setEqOn(false); }
+    if (chain.vizAn) chain.dropTap();
+  }, [canViz]);
   const [yt, setYt] = useState(null);
   const [stage, setStage] = useState('');   // active YouTube id (IFrame mode)
 
@@ -860,10 +1021,33 @@ export function PlayerProvider({ children }) {
   useEffect(() => {
     if (!playing) return;
     let strikes = 0;
+    let silentStrikes = 0, lastT = -1;
     const id = setInterval(async () => {
       const el = audio.current;
-      if (!el || el.paused || !chain.ready) { strikes = 0; return; }
-      if (chain.ctx?.state === 'running') { strikes = 0; return; }
+      if (!el || el.paused || !chain.ready) { strikes = 0; silentStrikes = 0; lastT = -1; return; }
+      if (chain.ctx?.state === 'running') {
+        strikes = 0;
+        /* A running context can still be fed silence: if this track's
+           source is not readable, the muted MediaElementSource outputs
+           zeros while the element's clock advances. Peak exactly 0 with
+           the clock moving, three checks running (~3.6 s), is that state
+           and nothing else — a real passage, even a quiet one, is not
+           digital zero. Drop the graph; the sound comes back and the EQ
+           simply turns off. (A track with several seconds of true digital
+           silence up front can trip this too — the cost is the EQ
+           switching itself off, never the audio.) */
+        const pk = chain.peak();
+        const now = el.currentTime;
+        if (pk === 0 && lastT >= 0 && now - lastT > 0.3) {
+          if (++silentStrikes >= 3) {
+            chain.detach();
+            setEqOn(false);
+            silentStrikes = 0;
+          }
+        } else silentStrikes = 0;
+        lastT = now;
+        return;
+      }
       const ok = await chain.ensureRunning();
       if (ok) { strikes = 0; return; }
       // three consecutive failures: the context is not coming back
@@ -927,25 +1111,25 @@ export function PlayerProvider({ children }) {
    */
   const enableEq = useCallback(async () => {
     const el = audio.current;
-    if (!el || chain.ready) return chain.ready;
+    if (!el) return false;
+    if (chain.ready) { chain.applyState(eqStateRef.current); return true; }
     const ok = await chain.attach(el);
     setEqOn(ok);
     if (!ok) { /* the EQ panel already explains why; never disturb playback */ }
-    else {
-      // re-apply whatever the user had set before the graph existed
-      eq.forEach((g, i) => chain.band(i, g));
-      chain.setBass(bass); chain.setTreb(treb); chain.setComp(comp);
-    }
+    else chain.applyState(eqStateRef.current);   // re-apply the saved settings
     return ok;
-  }, [eq, bass, treb, comp]);
+  }, []);
 
   const applyPreset = useCallback((name) => {
     setPreset(name);
     const v = PRESETS[name] || PRESETS.Flat;
     setEq([...v]);
-    // 'Flat' is the default, so it needs no graph — leave audio untouched.
-    if (name === 'Flat' && !chain.ready) return;
-    enableEq().then(() => v.forEach((g, i) => chain.band(i, g)));
+    // 'Flat' with no vocal tools and no width change needs no graph at
+    // all — leave the audio path completely untouched.
+    const s = eqStateRef.current;
+    const vocalActive = s && (s.vocal.mid !== 1 || s.vocal.side !== 1 || s.vocal.pres !== 0);
+    if (name === 'Flat' && !chain.ready && !vocalActive) return;
+    enableEq().then(() => chain.applyState({ ...eqStateRef.current, bands: [...v] }));
   }, [enableEq]);
 
   const value = {
@@ -963,11 +1147,27 @@ export function PlayerProvider({ children }) {
     /* The equaliser needs the same CORS read access the visualiser does, so
        one measured fact drives both instead of two guesses. */
     eqCapable: canViz && Chain.canProcess(audio.current),
-    setEqBand: (i, v) => { const n = [...eq]; n[i] = v; setEq(n);
-      enableEq().then(() => chain.band(i, v)); setPreset('Custom'); },
-    setBassV: (v) => { setBass(v); enableEq().then(() => chain.setBass(v)); },
-    setTrebV: (v) => { setTreb(v); enableEq().then(() => chain.setTreb(v)); },
-    setCompV: (v) => { setComp(v); enableEq().then(() => chain.setComp(v)); },
+    eqPower, vocalMode, vocalAmt, width,
+    setEqBand: (i, v) => { const n = [...eq]; n[i] = v; setEq(n); setPreset('Custom');
+      enableEq().then(() => chain.applyState({ ...eqStateRef.current, bands: n })); },
+    setBassV: (v) => { setBass(v); enableEq().then(() => chain.applyState({ ...eqStateRef.current, bass: v })); },
+    setTrebV: (v) => { setTreb(v); enableEq().then(() => chain.applyState({ ...eqStateRef.current, treb: v })); },
+    setCompV: (v) => { setComp(v); enableEq().then(() => chain.applyState({ ...eqStateRef.current, comp: v })); },
+    /* Power bypasses the whole chain with ramps (see Chain.applyState) —
+       the graph stays connected and simply passes audio through, so
+       toggling can never click, pop, or risk the silence failure. */
+    setEqPower: (on) => { setEqPower(on);
+      if (on) enableEq().then(() => chain.applyState({ ...eqStateRef.current, power: true }));
+      else chain.applyState({ ...eqStateRef.current, power: false }); },
+    setVocalModeV: (m) => { setVocalMode(m);
+      enableEq().then(() => chain.applyState({ ...eqStateRef.current, vocal: vocalLevels(m, vocalAmt, width) })); },
+    /* Dragging intensity only re-applies when the graph is already up —
+       attaching a graph because of a slider drag, before any mode is
+       chosen, would be processing for nothing. */
+    setVocalAmtV: (v) => { setVocalAmt(v);
+      if (chain.ready) chain.applyState({ ...eqStateRef.current, vocal: vocalLevels(vocalMode, v, width) }); },
+    setWidthV: (w) => { setWidth(w);
+      enableEq().then(() => chain.applyState({ ...eqStateRef.current, vocal: vocalLevels(vocalMode, vocalAmt, w) })); },
     setRateV: (v) => { setRate(v); if (audio.current) { audio.current.playbackRate = v; audio.current.preservesPitch = true; } },
     BANDS,
   };

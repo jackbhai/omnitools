@@ -23,51 +23,96 @@ const PRESETS = {
   'Bass Boost':[9,8,6,3,0,0,0,0,0,0],
   'Punjabi Beat':[8,7,3,0,-1,1,3,4,3,2],
   Vocal:      [-3,-2,0,3,5,5,3,1,0,-1],
-  Treble:     [0,0,0,0,0,2,4,6,7,7],
+  'Treble Boost':[0,0,0,0,0,2,4,6,7,7],
   'Lo-Fi':    [5,4,2,0,-2,-3,-5,-7,-8,-9],
   Party:      [7,6,3,0,-1,0,3,5,6,6],
 };
 
+/**
+ * This tool's own engine — same safety rules as the main player's chain
+ * (src/core/player.jsx), learned from the same failure: routing an element
+ * through Web Audio on every play, with an unverified resume, can leave a
+ * track "playing" in complete silence when the OS suspends the context.
+ * So the graph is built ONLY when the user opens the equalizer, the resume
+ * is awaited and verified, and if the context will not run the graph is
+ * torn down (closing the context hands the element its speakers back) and
+ * playback continues untouched.
+ */
 class Engine {
-  constructor() { this.ready = false; }
+  constructor() { this.ready = false; this.ctx = null; this._attaching = null; }
   attach(el) {
-    if (this.ready) return;
+    if (this.ready) return Promise.resolve(true);
+    if (this._attaching) return this._attaching;
+    this._attaching = this._attach(el).finally(() => { this._attaching = null; });
+    return this._attaching;
+  }
+  async _attach(el) {
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    this.ctx = new AC();
-    this.src = this.ctx.createMediaElementSource(el);
-    this.filters = BANDS.map((f, i) => {
-      const b = this.ctx.createBiquadFilter();
-      b.type = i === 0 ? 'lowshelf' : i === BANDS.length - 1 ? 'highshelf' : 'peaking';
-      b.frequency.value = f; b.Q.value = 1.1; b.gain.value = 0;
-      return b;
-    });
-    this.bass = this.ctx.createBiquadFilter();
-    this.bass.type = 'lowshelf'; this.bass.frequency.value = 200;
-    this.treble = this.ctx.createBiquadFilter();
-    this.treble.type = 'highshelf'; this.treble.frequency.value = 3000;
-    this.comp = this.ctx.createDynamicsCompressor();
-    this.pan = this.ctx.createStereoPanner();
-    this.gain = this.ctx.createGain();
-    this.analyser = this.ctx.createAnalyser();
-    this.analyser.fftSize = 128;
+    if (!AC || !el) return false;
+    try {
+      this.ctx = new AC();
+      this.src = this.ctx.createMediaElementSource(el);
+      this.filters = BANDS.map((f, i) => {
+        const b = this.ctx.createBiquadFilter();
+        b.type = i === 0 ? 'lowshelf' : i === BANDS.length - 1 ? 'highshelf' : 'peaking';
+        b.frequency.value = f; b.Q.value = 1.1; b.gain.value = 0;
+        return b;
+      });
+      this.bass = this.ctx.createBiquadFilter();
+      this.bass.type = 'lowshelf'; this.bass.frequency.value = 200;
+      this.treble = this.ctx.createBiquadFilter();
+      this.treble.type = 'highshelf'; this.treble.frequency.value = 3000;
+      this.comp = this.ctx.createDynamicsCompressor();
+      this.pan = this.ctx.createStereoPanner();
+      this.gain = this.ctx.createGain();
+      this.analyser = this.ctx.createAnalyser();
+      this.analyser.fftSize = 128;
 
-    let node = this.src;
-    for (const f of this.filters) { node.connect(f); node = f; }
-    node.connect(this.bass); this.bass.connect(this.treble);
-    this.treble.connect(this.comp); this.comp.connect(this.pan);
-    this.pan.connect(this.gain); this.gain.connect(this.analyser);
-    this.analyser.connect(this.ctx.destination);
-    this.ready = true;
+      let node = this.src;
+      for (const f of this.filters) { node.connect(f); node = f; }
+      node.connect(this.bass); this.bass.connect(this.treble);
+      this.treble.connect(this.comp); this.comp.connect(this.pan);
+      this.pan.connect(this.gain); this.gain.connect(this.analyser);
+      this.analyser.connect(this.ctx.destination);
+      this.ready = true;
+      this.ctx.addEventListener?.('statechange', () => {
+        if (this.ctx?.state === 'suspended') this.ctx.resume().catch(() => {});
+      });
+      try { await this.ctx.resume(); } catch {}
+      if (this.ctx.state !== 'running') { this.detach(); return false; }
+      return true;
+    } catch { this.detach(); return false; }
+  }
+  detach() {
+    try { this.src?.disconnect(); } catch {}
+    try { this.ctx?.close(); } catch {}
+    this.ctx = this.src = this.filters = this.bass = this.treble = null;
+    this.comp = this.pan = this.gain = this.analyser = null;
+    this.ready = false;
   }
   resume() { this.ctx?.state === 'suspended' && this.ctx.resume(); }
-  setBand(i, v) { this.filters?.[i] && (this.filters[i].gain.value = v); }
-  setBass(v) { this.bass && (this.bass.gain.value = v); }
-  setTreble(v) { this.treble && (this.treble.gain.value = v); }
-  setPan(v) { this.pan && (this.pan.pan.value = v); }
-  setComp(on) { if (this.comp) { this.comp.threshold.value = on ? -30 : 0; this.comp.ratio.value = on ? 12 : 1; } }
+  _ramp(param, v) {
+    if (!param || !this.ctx) return;
+    try { param.setTargetAtTime(v, this.ctx.currentTime, 0.04); }
+    catch { try { param.value = v; } catch {} }
+  }
+  setBand(i, v) { this.filters?.[i] && this._ramp(this.filters[i].gain, v); }
+  setBass(v) { this.bass && this._ramp(this.bass.gain, v); }
+  setTreble(v) { this.treble && this._ramp(this.treble.gain, v); }
+  setPan(v) { this.pan && this._ramp(this.pan.pan, v); }
+  setComp(on) { if (this.comp) { this._ramp(this.comp.threshold, on ? -30 : 0); this._ramp(this.comp.ratio, on ? 12 : 1); } }
 }
 const engine = new Engine();
+
+/* This panel's equalizer settings persist too, under their own key. */
+const MUSIC_EQ_KEY = 'omni:eq:music';
+const savedMusicEq = (() => {
+  try {
+    const j = JSON.parse(localStorage.getItem(MUSIC_EQ_KEY));
+    if (j && Array.isArray(j.bands) && j.bands.length === BANDS.length) return j;
+  } catch {}
+  return null;
+})();
 
 /* --------------------------------------------------------- offline cache */
 const DB = 'omni-audio';
@@ -104,10 +149,32 @@ export function Music() {
   const [track, setTrack] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [showEq, setShowEq] = useState(false);
-  const [eq, setEq] = useState([...PRESETS.Flat]);
-  const [preset, setPreset] = useState('Flat');
-  const [bass, setBass] = useState(0), [treble, setTreble] = useState(0);
-  const [comp, setComp] = useState(false), [rate, setRate] = useState(1);
+  const [eq, setEq] = useState(() => savedMusicEq ? [...savedMusicEq.bands] : [...PRESETS.Flat]);
+  const [preset, setPreset] = useState(savedMusicEq?.preset || 'Flat');
+  const [bass, setBass] = useState(savedMusicEq?.bass || 0), [treble, setTreble] = useState(savedMusicEq?.treble || 0);
+  const [comp, setComp] = useState(!!savedMusicEq?.comp), [rate, setRate] = useState(1);
+  const [eqErr, setEqErr] = useState(false);
+  const [eqLive, setEqLive] = useState(false);
+  useEffect(() => {
+    try { localStorage.setItem(MUSIC_EQ_KEY, JSON.stringify({ bands: eq, preset, bass, treble, comp })); } catch {}
+  }, [eq, preset, bass, treble, comp]);
+
+  /* Bring the engine up on demand — never from plain playback. Applies
+     the given snapshot (a control passes its NEW values, so a first drag
+     that triggers the attach still lands exactly where the user put it). */
+  const applyEngine = (s) => {
+    s.bands.forEach((g, i) => engine.setBand(i, g));
+    engine.setBass(s.bass); engine.setTreble(s.treble); engine.setComp(s.comp);
+  };
+  const ensureEngine = async (snap) => {
+    const el = audio.current; if (!el) return false;
+    const s = snap || { bands: eq, bass, treble, comp };
+    if (engine.ready) { engine.resume(); applyEngine(s); return true; }
+    const ok = await engine.attach(el);
+    if (ok) { applyEngine(s); setEqErr(false); setEqLive(true); }
+    else setEqErr(true);
+    return ok;
+  };
   const [pos, setPos] = useState(0), [dur, setDur] = useState(0);
   const [offline, setOffline] = useState([]);
   const [saving, setSaving] = useState('');
@@ -143,7 +210,7 @@ export function Music() {
     };
     draw();
     return () => cancelAnimationFrame(raf);
-  }, [playing]);
+  }, [playing, eqLive]);
 
   const play = async (t) => {
     const el = audio.current; if (!el) return;
@@ -152,7 +219,11 @@ export function Music() {
     setTrack(t);
     el.src = url; el.playbackRate = rate;
     try {
-      engine.attach(el); engine.resume();
+      /* Playback itself never touches the engine — the graph is attached
+         only from the equalizer (ensureEngine). If it is already up it
+         rides along on the same element, and a context the OS suspended
+         gets its resume attempt here. */
+      if (engine.ready) engine.resume();
       await el.play(); setPlaying(true);
       if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
@@ -175,7 +246,7 @@ export function Music() {
 
   const applyPreset = (name) => {
     setPreset(name); const v = PRESETS[name]; setEq([...v]);
-    v.forEach((g, i) => engine.setBand(i, g));
+    ensureEngine({ bands: [...v], bass, treble, comp });
   };
 
   /* Archive.org: resolve the actual audio file before playing/downloading */
@@ -233,7 +304,7 @@ export function Music() {
         {dur > 0 && isFinite(dur) && (
           <input type="range" min="0" max={dur} value={pos} style={{ width: '100%', marginTop: 10 }}
             onChange={(e) => { audio.current.currentTime = +e.target.value; }} />)}
-        <div className="btnrow"><button className="btn ghost sm" onClick={() => setShowEq((v) => !v)}> Equalizer</button>
+        <div className="btnrow"><button className="btn ghost sm" onClick={() => { const next = !showEq; setShowEq(next); if (next) ensureEngine(); }}> Equalizer</button>
           {(track.dlUrl || (track.download && track.download !== 'archive')) && (<><a className="btn sm" href={track.dlUrl || track.download} download target="_blank" rel="noreferrer"><Icon n="download" size={16} /> Download</a><button className="btn ghost sm" disabled={saving === track.id} onClick={() => cacheTrack(track)}>
               {saving === track.id ? 'Saving…' : <><Icon n="save" size={18} /> Save offline</>}</button></>)}
           {track.src === 'iTunes' && <span className="tag w">preview only</span>}
@@ -242,22 +313,23 @@ export function Music() {
 
     {/* ---------------- equalizer ---------------- */}
     {showEq && (
-      <Card style={{ marginTop: 12 }}><div className="chead"> 10-band equalizer</div><div className="btnrow" style={{ marginBottom: 12 }}>
+      <Card style={{ marginTop: 12 }}><div className="chead"> 10-band equalizer</div>
+        {eqErr && <p className="dim sm" style={{ marginBottom: 10 }}>The equalizer could not start on this device — playback continues without it.</p>}<div className="btnrow" style={{ marginBottom: 12 }}>
           {Object.keys(PRESETS).map((p) =><button key={p} className={`cat ${preset === p ? 'on' : ''}`} onClick={() => applyPreset(p)}>{p}</button>)}
         </div><div style={{ display: 'flex', gap: 4, alignItems: 'flex-end', justifyContent: 'space-between' }}>
           {BANDS.map((f, i) => (
             <div key={f} style={{ flex: 1, textAlign: 'center' }}><input type="range" min="-12" max="12" step="1" value={eq[i]}
                 onChange={(e) => { const v = +e.target.value; const n = [...eq]; n[i] = v; setEq(n);
-                  engine.setBand(i, v); setPreset('Custom'); }}
+                  setPreset('Custom'); ensureEngine({ bands: n, bass, treble, comp }); }}
                 style={{ writingMode: 'vertical-lr', direction: 'rtl', width: 20, height: 84, accentColor: '#00FF9C' }} /><div style={{ fontSize: 8.5, color: 'var(--fg3)', marginTop: 4 }}>
                 {f >= 1000 ? f / 1000 + 'k' : f}</div><div style={{ fontSize: 8.5, color: 'var(--green)' }}>{eq[i] > 0 ? '+' : ''}{eq[i]}</div></div>))}
         </div><div className="hr" /><label className="dim sm">Bass {bass > 0 ? '+' : ''}{bass} dB</label><input type="range" min="-15" max="15" value={bass} style={{ width: '100%', accentColor: '#00FF9C' }}
-          onChange={(e) => { setBass(+e.target.value); engine.setBass(+e.target.value); }} /><label className="dim sm">Treble {treble > 0 ? '+' : ''}{treble} dB</label><input type="range" min="-15" max="15" value={treble} style={{ width: '100%', accentColor: '#00E5FF' }}
-          onChange={(e) => { setTreble(+e.target.value); engine.setTreble(+e.target.value); }} /><label className="dim sm">Speed {rate}×</label><input type="range" min="0.5" max="2" step="0.05" value={rate} style={{ width: '100%', accentColor: '#00FF9C' }}
+          onChange={(e) => { const v = +e.target.value; setBass(v); ensureEngine({ bands: eq, bass: v, treble, comp }); }} /><label className="dim sm">Treble {treble > 0 ? '+' : ''}{treble} dB</label><input type="range" min="-15" max="15" value={treble} style={{ width: '100%', accentColor: '#00E5FF' }}
+          onChange={(e) => { const v = +e.target.value; setTreble(v); ensureEngine({ bands: eq, bass, treble: v, comp }); }} /><label className="dim sm">Speed {rate}×</label><input type="range" min="0.5" max="2" step="0.05" value={rate} style={{ width: '100%', accentColor: '#00FF9C' }}
           onChange={(e) => { setRate(+e.target.value); if (audio.current) { audio.current.playbackRate = +e.target.value;
-            audio.current.preservesPitch = true; } }} /><div className="btnrow"><button className={`cat ${comp ? 'on' : ''}`} onClick={() => { setComp(!comp); engine.setComp(!comp); }}>
-             Loudness</button><button className="cat" onClick={() => { applyPreset('Flat'); setBass(0); setTreble(0);
-            engine.setBass(0); engine.setTreble(0); setRate(1); }}> Reset</button></div></Card>)}
+            audio.current.preservesPitch = true; } }} /><div className="btnrow"><button className={`cat ${comp ? 'on' : ''}`} onClick={() => { const next = !comp; setComp(next); ensureEngine({ bands: eq, bass, treble, comp: next }); }}>
+             Loudness</button><button className="cat" onClick={() => { setPreset('Flat'); setEq([...PRESETS.Flat]); setBass(0); setTreble(0);
+            setRate(1); ensureEngine({ bands: [...PRESETS.Flat], bass: 0, treble: 0, comp }); }}> Reset</button></div></Card>)}
 
     {/* ---------------- offline library ---------------- */}
     {tab === 'offline' && (

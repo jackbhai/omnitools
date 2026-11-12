@@ -213,21 +213,32 @@ export function FullPlayer() {
    * every CDN in use) and exposes `canViz` when that succeeded — when it did
    * not, this draws nothing and the UI says why instead of faking motion.
    */
-  const [vizMode, setVizMode] = useState(() => localStorage.getItem('omni:viz') || 'bars');
+  const VIZ_MODES = ['off', 'bars', 'wave', 'ring', 'glow', 'dots'];
+  const [vizMode, setVizMode] = useState(() => {
+    const v = localStorage.getItem('omni:viz');
+    return VIZ_MODES.includes(v) ? v : 'bars';   // default: Bars — the lightest live theme
+  });
   const [vizOn, setVizOn] = useState(false);
   useEffect(() => { localStorage.setItem('omni:viz', vizMode); }, [vizMode]);
 
   useEffect(() => {
-    if (!p?.full || tab !== 'art' || !p.playing || !p.canViz) { setVizOn(false); return; }
+    if (!p?.full || tab !== 'art' || !p.playing || !p.canViz || vizMode === 'off') { setVizOn(false); return; }
     const el = p.audio?.current;
     if (!el || !cv.current) return;
     let raf = 0, dead = false, an = null;
     const peaks = [];
+    const dots = Array.from({ length: 42 }, (_, i) => ({
+      band: i % 28, x: Math.random(), y: Math.random(), s: 0.5 + Math.random() * 0.9,
+    }));
 
     (async () => {
       an = await chain.tap(el);
       if (!an || dead) return;
       setVizOn(true);
+      /* Ring and Glow are CSS-variable effects driven by the separate
+         loop below — the canvas has nothing to draw for them, so running
+         this loop would only burn battery painting a hidden canvas. */
+      if (vizMode === 'ring' || vizMode === 'glow') return;
       const c = cv.current;
       if (!c) return;
       const cx = c.getContext('2d');
@@ -254,6 +265,28 @@ export function FullPlayer() {
             i ? cx.lineTo(x, y) : cx.moveTo(x, y);
           }
           cx.stroke();
+          return;
+        }
+
+        if (vizMode === 'dots') {
+          /* Particles that rise faster and shine brighter where their
+             frequency band has energy. The dots are pre-made once per
+             effect run; per frame it is one bin read and one circle each
+             — cheap enough for low-end phones. */
+          an.getByteFrequencyData(freq);
+          const used = Math.floor(freq.length * 0.72);
+          for (const d of dots) {
+            const bin = 2 + Math.floor((d.band / 28) * (used - 4));
+            const e = (freq[bin] || 0) / 255;
+            d.y -= (0.0016 + e * 0.014) * d.s * dpr;
+            if (d.y < -0.04) { d.y = 1.04; d.x = Math.random(); }
+            const x = d.x * w, y = d.y * h;
+            const r = (1.1 + e * 2.8) * dpr;
+            cx.beginPath();
+            cx.fillStyle = d.band % 3 ? `rgba(0,255,156,${0.18 + e * 0.75})` : `rgba(0,229,255,${0.18 + e * 0.75})`;
+            cx.arc(x, y, r, 0, 6.2832);
+            cx.fill();
+          }
           return;
         }
 
@@ -300,31 +333,108 @@ export function FullPlayer() {
     return () => { dead = true; cancelAnimationFrame(raf); setVizOn(false); };
   }, [p?.full, p?.playing, p?.canViz, tab, vizMode]);   // eslint-disable-line
 
-  /* The ring around the sleeve is driven by the same analyser, but it is a
-     separate loop so it keeps running while the user is on the Lyrics tab. */
+  /* Ring and Glow are driven by the same analyser through CSS variables
+     on the disc stage: Ring breathes the artwork's scale with the bass,
+     Glow holds the scale still and pours the energy into the halo
+     instead. One style write per frame at ~30 fps (every other frame) —
+     and the loop stands down entirely on the Lyrics tab, so synced
+     lyrics scrolling never shares a frame budget with the visuals. */
   const ringRef = useRef(null);
   useEffect(() => {
-    if (!p?.full || !p.playing || !p.canViz || vizMode !== 'ring') return;
+    if (!p?.full || !p.playing || !p.canViz || tab === 'lyrics') return;
+    if (vizMode !== 'ring' && vizMode !== 'glow') return;
     const el = p.audio?.current;
     if (!el) return;
-    let raf = 0, dead = false;
+    let raf = 0, dead = false, frame = 0;
     (async () => {
       const an = await chain.tap(el);
       if (!an || dead) return;
       const buf = new Uint8Array(an.frequencyBinCount);
       const tick = () => {
         raf = requestAnimationFrame(tick);
+        if ((frame++ & 1) === 1) return;         // ~30 fps is plenty for ambience
         an.getByteFrequencyData(buf);
         let s = 0;
         for (let i = 0; i < 24; i++) s += buf[i];
-        const v = s / 24 / 255;
-        ringRef.current?.style.setProperty('--pulse', (1 + v * 0.09).toFixed(3));
-        ringRef.current?.style.setProperty('--glow', (v * 46).toFixed(1) + 'px');
+        const v = s / 24 / 255;                  // low-band (bass) energy 0..1
+        if (vizMode === 'glow') {
+          ringRef.current?.style.setProperty('--pulse', '1');
+          ringRef.current?.style.setProperty('--glow', (v * 72).toFixed(1) + 'px');
+        } else {
+          ringRef.current?.style.setProperty('--pulse', (1 + v * 0.09).toFixed(3));
+          ringRef.current?.style.setProperty('--glow', (v * 46).toFixed(1) + 'px');
+        }
       };
       tick();
     })();
     return () => { dead = true; cancelAnimationFrame(raf); };
-  }, [p?.full, p?.playing, p?.canViz, vizMode]);        // eslint-disable-line
+  }, [p?.full, p?.playing, p?.canViz, vizMode, tab]);        // eslint-disable-line
+
+  /* Ambient fallback. When a source will not let the app read its audio
+     (canViz false), the analyser has nothing real to draw. Rather than
+     fake a beat-sync out of random motion, the canvas runs a slow,
+     openly-ambient drift and the note under it says it is not synced to
+     the song. Same honesty rule as the equalizer's unavailable note. */
+  const [vizIdle, setVizIdle] = useState(false);
+  useEffect(() => {
+    if (!p?.full || tab !== 'art' || !p.playing || p.canViz || p.yt) { setVizIdle(false); return; }
+    if (!['bars', 'wave', 'dots'].includes(vizMode)) { setVizIdle(false); return; }
+    const c = cv.current;
+    if (!c) return;
+    setVizIdle(true);
+    const cx = c.getContext('2d');
+    let raf = 0;
+    const t0 = performance.now();
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const t = (performance.now() - t0) / 1000;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = c.width = c.offsetWidth * dpr;
+      const h = c.height = 74 * dpr;
+      cx.clearRect(0, 0, w, h);
+      if (vizMode === 'wave') {
+        cx.lineWidth = 2 * dpr;
+        const g = cx.createLinearGradient(0, 0, w, 0);
+        g.addColorStop(0, 'rgba(0,255,156,.5)'); g.addColorStop(1, 'rgba(0,229,255,.5)');
+        cx.strokeStyle = g;
+        cx.beginPath();
+        for (let i = 0; i <= 60; i++) {
+          const x = (i / 60) * w;
+          const y = h / 2 + Math.sin(i * 0.32 + t * 0.7) * h * 0.16 * Math.sin(t * 0.21 + i * 0.05);
+          i ? cx.lineTo(x, y) : cx.moveTo(x, y);
+        }
+        cx.stroke();
+        return;
+      }
+      if (vizMode === 'dots') {
+        for (let i = 0; i < 30; i++) {
+          const ph = (t * 0.045 * (0.6 + (i % 5) * 0.13) + i * 0.37) % 1;
+          const x = ((i * 0.618) % 1) * w + Math.sin(t * 0.4 + i) * 4 * dpr;
+          const y = (1 - ph) * h;
+          cx.beginPath();
+          cx.fillStyle = i % 3 ? 'rgba(0,255,156,.4)' : 'rgba(0,229,255,.4)';
+          cx.arc(x, y, 1.6 * dpr, 0, 6.2832);
+          cx.fill();
+        }
+        return;
+      }
+      const bars = 24, bw = w / bars;
+      for (let i = 0; i < bars; i++) {
+        const v = 0.16 + 0.11 * (0.5 + 0.5 * Math.sin(t * 0.6 + i * 0.55)) * (0.5 + 0.5 * Math.sin(t * 0.19 + i * 1.7));
+        const bh = Math.max(2 * dpr, v * h);
+        const g = cx.createLinearGradient(0, h, 0, h - bh);
+        g.addColorStop(0, 'rgba(0,255,156,.45)'); g.addColorStop(1, 'rgba(0,229,255,.45)');
+        cx.fillStyle = g;
+        const bwd = Math.max(1, bw - 2 * dpr);
+        const r = Math.max(0, Math.min(bwd / 2, 3 * dpr));
+        cx.beginPath();
+        cx.roundRect ? cx.roundRect(i * bw, h - bh, bwd, bh, [r, r, 0, 0]) : cx.rect(i * bw, h - bh, bwd, bh);
+        cx.fill();
+      }
+    };
+    draw();
+    return () => { cancelAnimationFrame(raf); setVizIdle(false); };
+  }, [p?.full, p?.playing, p?.canViz, p?.yt, tab, vizMode]);   // eslint-disable-line
 
   /* auto-scroll synced lyrics */
   const activeLine = (() => {
@@ -382,7 +492,7 @@ export function FullPlayer() {
                   version toggled the animation off, which snapped the artwork
                   back to zero degrees and looked like a glitch. The angle is
                   now carried in a custom property that survives the pause. */}
-              <div className={`disc-stage ${vizMode === 'ring' ? 'ring' : ''}`} ref={ringRef}>
+              <div className={`disc-stage ${vizMode === 'ring' ? 'ring' : vizMode === 'glow' ? 'glow' : ''}`} ref={ringRef}>
                 {vizMode === 'ring' && vizOn && <span className="disc-ring" />}
                 <div className={`art-disc ${p.playing ? 'spin' : 'coast'}`}>
                   <span className="groove g1" /><span className="groove g2" />
@@ -399,17 +509,19 @@ export function FullPlayer() {
           {/* The visualiser, and an honest line when it cannot run. */}
           <div className="vizbox">
             <canvas ref={cv} className="viz"
-              style={{ display: vizOn && vizMode !== 'ring' ? 'block' : 'none' }} />
-            {p.playing && !p.canViz && (
+              style={{ display: (vizOn && vizMode !== 'ring' && vizMode !== 'glow') || vizIdle ? 'block' : 'none' }} />
+            {p.playing && !p.canViz && vizMode !== 'off' && (
               <p className="viz-note">
-                This stream will not allow the visualiser — the server did not
-                permit reading its audio. Playback is unaffected.
+                Live visuals are not available for this source — the server did
+                not permit reading its audio, so the motion shown is ambient,
+                not synced to the song. Playback is unaffected.
               </p>)}
             <div className="vizpick">
-              {[['bars', 'wave', 'Bars'], ['wave', 'signal', 'Wave'], ['ring', 'disc', 'Ring']].map(([m, ic, lbl]) => (
+              {[['off', 'x', 'Off'], ['bars', 'wave', 'Bars'], ['wave', 'signal', 'Wave'],
+                ['ring', 'disc', 'Ring'], ['glow', 'sparkle', 'Glow'], ['dots', 'star', 'Dots']].map(([m, ic, lbl]) => (
                 <button key={m} className={`vizb ${vizMode === m ? 'on' : ''}`}
                   onClick={() => setVizMode(m)} aria-label={lbl} title={lbl}>
-                  <Icon n={ic} size={13} />
+                  <Icon n={ic} size={12} /><span>{lbl}</span>
                 </button>))}
             </div>
           </div>
@@ -480,36 +592,81 @@ export function FullPlayer() {
 
         {tab === 'eq' && (
           <div>
+            <div className="btnrow" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+              <span className="dim sm">Equalizer and sound effects</span>
+              <button className={`cat ${p.eqPower ? 'on' : ''}`} onClick={() => p.setEqPower(!p.eqPower)}
+                aria-pressed={p.eqPower}>
+                Equalizer {p.eqPower ? 'On' : 'Off'}</button>
+            </div>
             {!p.eqCapable && (
               <div className="note" style={{ marginTop: 0, marginBottom: 12 }}>
-                The equaliser cannot run on streamed tracks. Routing them through
-                it silences them — a browser will not expose audio it fetched
-                from another site. Speed still works, and playback is untouched.
+                Equalizer is not available for this source. This stream does not
+                allow the app to process its audio, so playback stays direct and
+                untouched — routing it through the equalizer would silence it.
+                Speed still works.
               </div>)}
-            <div className="btnrow" style={{ marginBottom: 14 }}>
-              {Object.keys(PRESETS).map((n) => (
-                <button key={n} className={`cat ${p.preset === n ? 'on' : ''}`}
-                  onClick={() => p.applyPreset(n)}>{n}</button>))}
-            </div>
-            <div className="eqrow">
-              {p.BANDS.map((f, i) => (
-                <div key={f} className="eqband">
-                  <input type="range" min="-12" max="12" step="1" value={p.eq[i]}
-                    onChange={(e) => p.setEqBand(i, +e.target.value)} className="vert" />
-                  <span className="eqhz">{f >= 1000 ? f / 1000 + 'k' : f}</span>
-                  <span className="eqdb">{p.eq[i] > 0 ? '+' : ''}{p.eq[i]}</span>
-                </div>))}
-            </div>
-            <div className="hr" />
-            <label className="dim sm">Bass {p.bass > 0 ? '+' : ''}{p.bass} dB</label>
-            <input type="range" min="-15" max="15" value={p.bass} onChange={(e) => p.setBassV(+e.target.value)} />
-            <label className="dim sm">Treble {p.treb > 0 ? '+' : ''}{p.treb} dB</label>
-            <input type="range" min="-15" max="15" value={p.treb} onChange={(e) => p.setTrebV(+e.target.value)} />
-            <label className="dim sm">Speed {p.rate}×</label>
-            <input type="range" min="0.5" max="2" step="0.05" value={p.rate} onChange={(e) => p.setRateV(+e.target.value)} />
-            <div className="btnrow">
-              <button className={`cat ${p.comp ? 'on' : ''}`} onClick={() => p.setCompV(!p.comp)}><Icon n="radio" size={13} /> Loudness</button>
-              <button className="cat" onClick={() => { p.applyPreset('Flat'); p.setBassV(0); p.setTrebV(0); p.setRateV(1); }}><Icon n="refresh" size={13} /> Reset</button>
+            {p.eqCapable && !p.eqPower && (
+              <div className="note" style={{ marginTop: 0, marginBottom: 12 }}>
+                The equalizer is off. Your settings are saved and will apply
+                again when you turn it back on.
+              </div>)}
+            <div style={{ opacity: p.eqPower ? 1 : 0.45 }}>
+              <div className="btnrow" style={{ marginBottom: 14 }}>
+                {Object.keys(PRESETS).map((n) => (
+                  <button key={n} className={`cat ${p.preset === n ? 'on' : ''}`}
+                    onClick={() => p.applyPreset(n)}>{n}</button>))}
+              </div>
+              <div className="eqrow">
+                {p.BANDS.map((f, i) => (
+                  <div key={f} className="eqband">
+                    <input type="range" min="-12" max="12" step="1" value={p.eq[i]}
+                      onChange={(e) => p.setEqBand(i, +e.target.value)} className="vert" />
+                    <span className="eqhz">{f >= 1000 ? f / 1000 + 'k' : f}</span>
+                    <span className="eqdb">{p.eq[i] > 0 ? '+' : ''}{p.eq[i]}</span>
+                  </div>))}
+              </div>
+              <div className="hr" />
+              <label className="dim sm">Bass {p.bass > 0 ? '+' : ''}{p.bass} dB</label>
+              <input type="range" min="-15" max="15" value={p.bass} onChange={(e) => p.setBassV(+e.target.value)} />
+              <label className="dim sm">Treble {p.treb > 0 ? '+' : ''}{p.treb} dB</label>
+              <input type="range" min="-15" max="15" value={p.treb} onChange={(e) => p.setTrebV(+e.target.value)} />
+              <label className="dim sm">Speed {p.rate}×</label>
+              <input type="range" min="0.5" max="2" step="0.05" value={p.rate} onChange={(e) => p.setRateV(+e.target.value)} />
+
+              <div className="hr" />
+              <label className="dim sm">Vocal tools (best on stereo songs)</label>
+              <div className="btnrow" style={{ margin: '8px 0' }}>
+                <button className={`cat ${p.vocalMode === 'off' ? 'on' : ''}`}
+                  onClick={() => p.setVocalModeV('off')}>Off</button>
+                <button className={`cat ${p.vocalMode === 'karaoke' ? 'on' : ''}`}
+                  onClick={() => p.setVocalModeV('karaoke')}>Karaoke — Reduce Vocals</button>
+                <button className={`cat ${p.vocalMode === 'focus' ? 'on' : ''}`}
+                  onClick={() => p.setVocalModeV('focus')}>Vocal Focus</button>
+              </div>
+              {p.vocalMode !== 'off' && (<>
+                <label className="dim sm">Strength {p.vocalAmt}%</label>
+                <input type="range" min="10" max="100" step="5" value={p.vocalAmt}
+                  onChange={(e) => p.setVocalAmtV(+e.target.value)} />
+              </>)}
+              <p className="dim sm" style={{ marginTop: 6 }}>
+                These reshape the stereo image of the song — they are not studio
+                stem separation. A centred lead vocal drops or steps forward;
+                results vary with how each song was mixed, and mono recordings
+                may change very little.
+              </p>
+
+              <div className="hr" />
+              <label className="dim sm">Stereo width</label>
+              <div className="btnrow" style={{ margin: '8px 0' }}>
+                {[['normal', 'Normal'], ['wide', 'Wide'], ['extra', 'Extra Wide']].map(([v, l]) => (
+                  <button key={v} className={`cat ${p.width === v ? 'on' : ''}`}
+                    onClick={() => p.setWidthV(v)}>{l}</button>))}
+              </div>
+
+              <div className="btnrow">
+                <button className={`cat ${p.comp ? 'on' : ''}`} onClick={() => p.setCompV(!p.comp)}><Icon n="radio" size={13} /> Loudness</button>
+                <button className="cat" onClick={() => { p.applyPreset('Flat'); p.setBassV(0); p.setTrebV(0); p.setRateV(1); p.setVocalModeV('off'); p.setWidthV('normal'); }}><Icon n="refresh" size={13} /> Reset</button>
+              </div>
             </div>
           </div>)}
 
