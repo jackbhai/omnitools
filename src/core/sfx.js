@@ -117,7 +117,9 @@ function swept(ctx, dest, o) {
 /* ------------------------------------------------------------------ sounds */
 
 /**
- * Six sounds, each with what it means on screen. `dur` is the length the graph
+ * Two families: the travel sounds the panels ask for by name, and the soft
+ * UI family the whole app shares. Each entry says what it means on screen.
+ * `dur` is the length the graph
  * occupies, `minMs` the anti-repeat window, `whileHidden` whether the tab being
  * in the background may silence it — an alert never may, a button press should.
  */
@@ -174,7 +176,7 @@ export const SOUNDS = {
     label: 'A key press', when: 'an option, a sort, a departure chip',
     dur: 0.1, minMs: 45,
     build(ctx, dest, t) {
-      tone(ctx, dest, { type: 'square', f: 1180, to: 900, t, dur: 0.045, peak: 0.075 });
+      tone(ctx, dest, { type: 'triangle', f: 1400, to: 920, t, dur: 0.045, peak: 0.06 });
     },
   },
   chime: {
@@ -183,6 +185,124 @@ export const SOUNDS = {
     build(ctx, dest, t) {
       [NOTE.C6, NOTE.E6, NOTE.G6, NOTE.C7].forEach((f, i) =>
         tone(ctx, dest, { f, t: t + i * 0.09, dur: 0.34, peak: i === 3 ? 0.2 : 0.15 }));
+    },
+  },
+
+  /* ------------------------------------------------------ the UI family
+     The premium set: soft, rounded, quiet. Nothing here is a beep — every
+     sound is a sine or triangle with a slow-enough attack that it lands
+     like a fingertip, not a buzzer, and peaks stay low because the master
+     bus is shared with the travel family above. 60–350 ms each. */
+
+  pop: {
+    label: 'A soft tap', when: 'a button, chip, row or nav item is pressed',
+    dur: 0.08, minMs: 45,
+    build(ctx, dest, t) {
+      tone(ctx, dest, { f: 640, to: 360, t, dur: 0.07, peak: 0.1, attack: 0.004 });
+      tone(ctx, dest, { type: 'triangle', f: 1280, t, dur: 0.03, peak: 0.02 });
+    },
+  },
+  toggleon: {
+    label: 'A switch turning on', when: 'a setting or switch flips on',
+    dur: 0.18, minMs: 60,
+    build(ctx, dest, t) {
+      tone(ctx, dest, { f: NOTE.E5, t, dur: 0.09, peak: 0.07 });
+      tone(ctx, dest, { f: NOTE.A5, t: t + 0.055, dur: 0.11, peak: 0.08 });
+    },
+  },
+  toggleoff: {
+    label: 'A switch turning off', when: 'a setting or switch flips off',
+    dur: 0.18, minMs: 60,
+    build(ctx, dest, t) {
+      tone(ctx, dest, { f: NOTE.A5, t, dur: 0.08, peak: 0.07 });
+      tone(ctx, dest, { f: NOTE.E5, t: t + 0.05, dur: 0.1, peak: 0.06 });
+    },
+  },
+  open: {
+    label: 'A panel opening', when: 'a tool or a section opens',
+    dur: 0.18, minMs: 90,
+    build(ctx, dest, t) {
+      swept(ctx, dest, { t, dur: 0.16, peak: 0.05, f: 480, f1: 1500, f2: 1100, q: 1.1 });
+      tone(ctx, dest, { f: 300, to: 520, t, dur: 0.14, peak: 0.02 });
+    },
+  },
+  close: {
+    label: 'A panel closing', when: 'a section folds shut',
+    dur: 0.16, minMs: 90,
+    build(ctx, dest, t) {
+      swept(ctx, dest, { t, dur: 0.14, peak: 0.045, f: 1500, f1: 480, f2: 420, q: 1.1 });
+      tone(ctx, dest, { f: 520, to: 300, t, dur: 0.12, peak: 0.018 });
+    },
+  },
+  success: {
+    label: 'Two warm notes — done', when: 'something saved, finished or was added',
+    dur: 0.45, minMs: 150,
+    build(ctx, dest, t) {
+      tone(ctx, dest, { f: NOTE.G5, t, dur: 0.3, peak: 0.09, attack: 0.006 });
+      tone(ctx, dest, { f: NOTE.C6, t: t + 0.09, dur: 0.34, peak: 0.1, attack: 0.006 });
+      tone(ctx, dest, { f: NOTE.E6, t: t + 0.09, dur: 0.2, peak: 0.03 });
+    },
+  },
+  error: {
+    label: 'A low soft thud', when: 'something could not be done',
+    dur: 0.22, minMs: 200,
+    build(ctx, dest, t) {
+      tone(ctx, dest, { f: 150, to: 68, t, dur: 0.2, peak: 0.14, attack: 0.005 });
+      swept(ctx, dest, { t, dur: 0.16, peak: 0.05, type: 'lowpass', f: 420, f1: 300, f2: 140, q: 0.7 });
+    },
+  },
+  play: {
+    label: 'Playback starting', when: 'you press play',
+    dur: 0.1, minMs: 80,
+    build(ctx, dest, t) {
+      tone(ctx, dest, { f: 540, to: 820, t, dur: 0.09, peak: 0.07 });
+      tone(ctx, dest, { f: 1080, to: 1640, t, dur: 0.06, peak: 0.02 });
+    },
+  },
+  pause: {
+    label: 'Playback pausing', when: 'you press pause',
+    dur: 0.1, minMs: 80,
+    build(ctx, dest, t) {
+      tone(ctx, dest, { f: 820, to: 540, t, dur: 0.09, peak: 0.06 });
+    },
+  },
+  add: {
+    label: 'A bright pluck — kept', when: 'a favourite, pin or like is added',
+    dur: 0.18, minMs: 80,
+    build(ctx, dest, t) {
+      tone(ctx, dest, { type: 'triangle', f: NOTE.A5, t, dur: 0.07, peak: 0.08 });
+      tone(ctx, dest, { f: NOTE.E6, t: t + 0.05, dur: 0.12, peak: 0.07 });
+    },
+  },
+  remove: {
+    label: 'One note stepping down', when: 'a favourite, pin or saved copy is removed',
+    dur: 0.12, minMs: 80,
+    build(ctx, dest, t) {
+      tone(ctx, dest, { type: 'triangle', f: 660, to: 440, t, dur: 0.11, peak: 0.06 });
+    },
+  },
+  copy: {
+    label: 'Two tiny pips', when: 'text or a link is copied',
+    dur: 0.1, minMs: 80,
+    build(ctx, dest, t) {
+      tone(ctx, dest, { f: 1250, t, dur: 0.03, peak: 0.05 });
+      tone(ctx, dest, { f: 1250, t: t + 0.05, dur: 0.03, peak: 0.05 });
+    },
+  },
+  fetch: {
+    label: 'A gentle dip — fetching', when: 'a download starts',
+    dur: 0.17, minMs: 150,
+    build(ctx, dest, t) {
+      tone(ctx, dest, { f: 920, to: 480, t, dur: 0.15, peak: 0.07 });
+      tone(ctx, dest, { f: 460, t: t + 0.02, dur: 0.1, peak: 0.03 });
+    },
+  },
+  timer: {
+    label: 'One soft bell', when: 'a sleep timer is set',
+    dur: 0.4, minMs: 150,
+    build(ctx, dest, t) {
+      tone(ctx, dest, { f: NOTE.A5, t, dur: 0.38, peak: 0.07, attack: 0.005 });
+      tone(ctx, dest, { f: NOTE.E6, t: t + 0.004, dur: 0.3, peak: 0.025 });
     },
   },
 };
@@ -296,16 +416,15 @@ export function play(name, { delay = 0 } = {}) {
 const PRESS_SOUNDS = [
   ['[data-sfx="none"]', null],
   ['.sndrow', null],
-  ['.tile', 'whoosh'],
+  ['.tile', 'open'],
   ['button[aria-label="Back"]', 'back'],
-  ['.btn', 'tick'],
-  ['.cat', 'tick'],
-  ['.chip', 'tick'],
-  ['.tabs button', 'tick'],
-  ['.iconbtn', 'tick'],
-  ['.row', 'tick'],
-  ['input[type="checkbox"]', 'tick'],
-  ['input[type="radio"]', 'tick'],
+  ['.nav button', 'pop'],
+  ['.btn', 'pop'],
+  ['.cat', 'pop'],
+  ['.chip', 'pop'],
+  ['.tabs button', 'pop'],
+  ['.iconbtn', 'pop'],
+  ['.row', 'pop'],
 ];
 
 let ATTACHED = null;
@@ -335,11 +454,27 @@ export function attach(root) {
   };
   const onDown = (ev) => fire(ev, false);
   const onKey = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') fire(ev, true); };
+  /* Switches speak on `change`, not on press: only the change event knows
+     which way the switch landed, and deferring one tick lets the setting
+     itself land first — flipping sound OFF must answer with silence, and
+     flipping it ON with the on-notes, never the other way round. */
+  const onChange = (ev) => {
+    const el = ev.target;
+    if (!el || !el.matches) return;
+    if (el.matches('input[type="checkbox"], input[type="radio"]')) {
+      const on = !!el.checked;
+      setTimeout(() => { if (enabled()) play(on ? 'toggleon' : 'toggleoff'); }, 0);
+    } else if (el.tagName === 'SELECT') {
+      play('pop');
+    }
+  };
   host.addEventListener('pointerdown', onDown, true);
   host.addEventListener('keydown', onKey, true);
+  host.addEventListener('change', onChange, true);
   const off = () => {
     host.removeEventListener('pointerdown', onDown, true);
     host.removeEventListener('keydown', onKey, true);
+    host.removeEventListener('change', onChange, true);
     ATTACHED = null;
   };
   ATTACHED = { off, host };

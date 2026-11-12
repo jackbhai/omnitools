@@ -572,8 +572,8 @@ console.log('\n=== 9. the sounds: synthesised, bounded, and honest about silence
   chk('no Web Audio is said out loud, and support is reported honestly',
     noAudio.ok === false && noAudio.why === 'this browser has no Web Audio'
       && saidSupported === false, `${noAudio.why} · supported() said ${saidSupported}`);
-  chk('the seven sounds are the whole vocabulary, so nothing can name a missing one',
-    fresh.SOUND_NAMES.length === 7 && SOUND_NAMES.every((n) => fresh.SOUNDS[n].label === SOUNDS[n].label)
+  chk('the twenty-one sounds are the whole vocabulary, so nothing can name a missing one',
+    fresh.SOUND_NAMES.length === 21 && SOUND_NAMES.every((n) => fresh.SOUNDS[n].label === SOUNDS[n].label)
     && fresh.SOUNDS.back.label === SOUNDS.back.label, fresh.SOUND_NAMES.join(' · '));
   chk('the gesture layer exists and keeps its promise off-browser',
     typeof fresh.attach === 'function' && typeof fresh.attach() === 'function' && fresh.attached() === false,

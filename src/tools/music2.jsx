@@ -29,6 +29,7 @@ import { catalogueReady, searchCatalogue, searchArtists, artistPage, albumTracks
 import { Spin, Err, Empty, Card, fmt, Section, SkelRows, toast } from '../ui/kit';
 import { Icon } from '../ui/icons';
 import { OfflineBtn } from '../ui/PlayerUI';
+import { play as sfxPlay } from '../core/sfx.js';
 import { offlineAll, offlineDelete } from '../core/offline-store';
 import { favourites, isFav, toggleFav, history, topPlayed, playlists,
          createPlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist,
@@ -825,14 +826,16 @@ function OfflineView({ player }) {
   };
   const remove = async (r) => {
     await offlineDelete(r.key);
-    toast('Offline copy removed');
+    sfxPlay('remove');
+    toast('Offline copy removed', 'info');
     load();
   };
   const clearAll = async () => {
     if (!confirmClear) { setConfirmClear(true); return; }
     for (const r of recs) await offlineDelete(r.key);
     setConfirmClear(false);
-    toast('All offline songs removed');
+    sfxPlay('remove');
+    toast('All offline songs removed', 'info');
     load();
   };
 
@@ -934,7 +937,7 @@ function LibraryTab({ player }) {
               setShareUrl({ id: pl.id, url: u });
               if (navigator.clipboard) {
                 navigator.clipboard.writeText(u)
-                  .then(() => toast('Playlist link copied'))
+                  .then(() => { sfxPlay('copy'); toast('Playlist link copied', 'info'); })
                   .catch(() => {});
               }
             }}><Icon n="link" size={15} /> Share</button>
@@ -951,7 +954,7 @@ function LibraryTab({ player }) {
                 <button className="btn ghost sm" onClick={() => {
                   if (navigator.clipboard) {
                     navigator.clipboard.writeText(shareUrl.url)
-                      .then(() => toast('Playlist link copied')).catch(() => {});
+                      .then(() => { sfxPlay('copy'); toast('Playlist link copied', 'info'); }).catch(() => {});
                   }
                 }}><Icon n="link" size={14} /> Copy link</button>
                 <button className="btn ghost sm" onClick={() => setShareUrl(null)}>

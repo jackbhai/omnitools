@@ -9,6 +9,7 @@ import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached,
          pauseWarming, resumeWarming, rememberTrack } from './audio-resolve';
 import { resolve } from './engine';
 import { notePlay } from './library';
+import { play as sfxPlay } from './sfx.js';
 import { noteStation } from './sources';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -705,6 +706,7 @@ export function PlayerProvider({ children }) {
 
   const toggle = useCallback(() => {
     if (yt) {                       // control the IFrame player
+      sfxPlay(playing ? 'pause' : 'play');
       const f = document.getElementById('yt-frame');
       f?.contentWindow?.postMessage(JSON.stringify({ event: 'command',
         func: playing ? 'pauseVideo' : 'playVideo', args: [] }), '*');
@@ -713,7 +715,8 @@ export function PlayerProvider({ children }) {
     }
     const el = audio.current; if (!el?.src) return;
     if (chain.ready) chain.ensureRunning();   // only matters when the EQ is on
-    if (el.paused) { el.play(); setPlaying(true); } else { el.pause(); setPlaying(false); }
+    if (el.paused) { sfxPlay('play'); el.play(); setPlaying(true); }
+    else { sfxPlay('pause'); el.pause(); setPlaying(false); }
   }, [yt, playing]);
 
   const step = useCallback((d) => {

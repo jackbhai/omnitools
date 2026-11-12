@@ -118,7 +118,7 @@ export function SoundToggle({ note = '' }) {
     const id = setInterval(() => { if (live) { set(soundOn()); setLog(soundLog()); } }, 1200);
     return () => { live = false; clearInterval(id); };
   }, []);
-  const flip = () => { const v = !on; setEnabled(v); set(v); setLog(soundLog()); if (v) sound('ding'); };
+  const flip = () => { const v = !on; setEnabled(v); set(v); setLog(soundLog()); if (v) sound('toggleon'); };
   if (!soundSupported()) {
     return <div className="dim sm">Sound: this browser has no Web Audio, so nothing plays and nothing is fetched.</div>;
   }

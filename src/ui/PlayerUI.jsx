@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { usePlayer, PRESETS, chain } from '../core/player';
 import { isFav, toggleFav, playlists, addToPlaylist } from '../core/library';
 import { downloadTrack, offlineHas, offlineDelete } from '../core/offline-store';
+import { play as sfxPlay } from '../core/sfx.js';
 import { toast, SkelRows } from './kit';
 import { Icon } from './icons';
 
@@ -24,17 +25,19 @@ export function OfflineBtn({ track, className = 'btn ghost sm' }) {
     if (state === 'saved') {
       await offlineDelete(key);
       setState('idle');
-      toast('Offline copy removed');
+      sfxPlay('remove');
+      toast('Offline copy removed', 'info');
       return;
     }
     setState('busy'); setPct(-1);
+    sfxPlay('fetch');
     try {
       const r = await downloadTrack(track, (p) => setPct(p));
       setState('saved');
       toast(r?.already ? 'Already saved offline' : 'Saved — plays without internet');
     } catch (err) {
       setState('error');
-      toast(err.message || 'Could not save this track');
+      toast(err.message || 'Could not save this track', 'err');
       setTimeout(() => setState('idle'), 2400);
     }
   };
@@ -95,7 +98,7 @@ export function MiniPlayer() {
         </div>
         <button className="mini-btn" aria-label="Previous"
           onClick={(e) => { e.stopPropagation(); p.step(-1); }}><Icon n="prev" size={17} /></button>
-        <button className="mini-btn play" aria-label={p.playing ? 'Pause' : 'Play'}
+        <button className="mini-btn play" data-sfx="none" aria-label={p.playing ? 'Pause' : 'Play'}
           onClick={(e) => { e.stopPropagation(); p.toggle(); }}>
           {p.loading ? <span className="spin-sm" /> : <Icon n={p.playing ? 'pause' : 'play'} size={15} />}</button>
         <button className="mini-btn" aria-label="Next"
@@ -193,6 +196,7 @@ export function FullPlayer() {
     try {
       if (navigator.share) { await navigator.share({ title: q, text: q, url }); return; }
       await navigator.clipboard.writeText(`${q} — ${url}`);
+      sfxPlay('copy');
       setShared(true); setTimeout(() => setShared(false), 1500);
     } catch { /* the user dismissed the sheet */ }
   };
@@ -459,10 +463,10 @@ export function FullPlayer() {
                   const text = p.lyrics.synced
                     ? p.lyrics.synced.map((l) => l.line).join('\n')
                     : (p.lyrics.plain || '');
-                  if (!text) { toast('Nothing to copy yet'); return; }
+                  if (!text) { toast('Nothing to copy yet', 'info'); return; }
                   navigator.clipboard?.writeText(text)
-                    .then(() => toast('Lyrics copied'))
-                    .catch(() => toast('Copy was blocked by the browser'));
+                    .then(() => { sfxPlay('copy'); toast('Lyrics copied', 'info'); })
+                    .catch(() => toast('Copy was blocked by the browser', 'err'));
                 }}><Icon n="doc" size={14} /> Copy lyrics</button>
                 <button className="btn ghost sm" onClick={() => p.retryLyrics()}>
                   <Icon n="refresh" size={14} /> Try another source</button>
@@ -581,7 +585,7 @@ export function FullPlayer() {
             onClick={() => p.setShuffle(!p.shuffle)}><Icon n="shuffle" size={18} /></button>
           <button className="cbtn" aria-label="Previous" onClick={() => p.step(-1)}>
             <Icon n="prev" size={22} /></button>
-          <button className="cbtn big" aria-label={p.playing ? 'Pause' : 'Play'} onClick={p.toggle}>
+          <button className="cbtn big" data-sfx="none" aria-label={p.playing ? 'Pause' : 'Play'} onClick={p.toggle}>
             {p.loading ? <span className="spin-sm" /> : <Icon n={p.playing ? 'pause' : 'play'} size={22} />}</button>
           <button className="cbtn" aria-label="Next" onClick={() => p.step(1)}>
             <Icon n="next" size={22} /></button>
@@ -617,7 +621,7 @@ export function FullPlayer() {
           <button className="btn ghost sm" onClick={() => p.seek(Math.max(0, p.pos - 10))}>&minus;10s</button>
           <button className="btn ghost sm" onClick={() => p.seek(p.pos + 10)}>+10s</button>
           <button className={`btn ghost sm ${fav ? 'on' : ''}`} aria-label="Favourite"
-            onClick={() => { toggleFav(t); setFav((v) => !v); }}
+            onClick={() => { sfxPlay(fav ? 'remove' : 'add'); toggleFav(t); setFav((v) => !v); }}
             style={{ color: fav ? 'var(--green)' : '' }}>
             <Icon n={fav ? 'staron' : 'star'} size={15} /></button>
           <button className="btn ghost sm" aria-label="Share" onClick={share}>
@@ -646,14 +650,14 @@ export function FullPlayer() {
               <button key={m} className={`cat ${!p.sleepTrack && p.sleep === m ? 'on' : ''}`}
                 onClick={() => {
                   p.setSleep(m);
-                  if (m) toast(`Sleep timer — ${m} minutes`);
+                  if (m) { sfxPlay('timer'); toast(`Sleep timer — ${m} minutes`, 'info'); }
                   setSleepOpen(false);
                 }}>
                 {m === 0 ? 'Off' : `${m}m`}</button>))}
             <button className={`cat ${p.sleepTrack ? 'on' : ''}`}
               onClick={() => {
                 p.setSleepTrack(!p.sleepTrack);
-                if (!p.sleepTrack) toast('Will stop at the end of this track');
+                if (!p.sleepTrack) { sfxPlay('timer'); toast('Will stop at the end of this track', 'info'); }
                 setSleepOpen(false);
               }}>
               End of track</button>

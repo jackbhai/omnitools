@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { resolve } from '../core/engine';
+import { play as sfxPlay } from '../core/sfx.js';
 import { Icon } from './icons';
 
 /* ---------------------------------------------------------- data hook */
@@ -128,6 +129,7 @@ export function Copy({ text, label = 'Copy' }) {
         document.execCommand('copy'); ta.remove();
       }
       setDone(true); setTimeout(() => setDone(false), 1400);
+      sfxPlay('copy');
       navigator.vibrate?.(12);
     }}>{done ? '✓ Copied' : label}</button>
   );
@@ -187,7 +189,7 @@ export function Section({ id, title, badge, icon, defaultOpen = true, sticky = f
   return (
     <section className="sec">
       <button className={`sec-h ${open ? '' : 'closed'} ${sticky ? 'sticky' : ''}`}
-        onClick={toggle} aria-expanded={open}>
+        onClick={() => { sfxPlay(open ? 'close' : 'open'); toggle(); }} aria-expanded={open}>
         {icon && <Icon n={icon} size={16} style={{ color: 'var(--green)' }} />}
         <span className="sec-t">{title}</span>
         {badge && <span className="sec-badge">{badge}</span>}
@@ -205,16 +207,21 @@ export function Section({ id, title, badge, icon, defaultOpen = true, sticky = f
    timer set. A tiny emitter so any component can announce without prop
    drilling; <Toaster/> is mounted once in the shell. */
 const toastSubs = new Set();
-export function toast(msg) {
-  for (const f of toastSubs) { try { f(String(msg)); } catch {} }
+/* kind: 'ok' (default) answers with the soft success notes, 'err' with the
+   low thud and a red edge, 'info' stays silent — for callers that play
+   their own, more specific sound (a timer bell, a copy pip, a removal). */
+export function toast(msg, kind = 'ok') {
+  for (const f of toastSubs) { try { f(String(msg), kind); } catch {} }
 }
 
 export function Toaster() {
   const [items, setItems] = useState([]);
   useEffect(() => {
-    const push = (msg) => {
+    const push = (msg, kind = 'ok') => {
       const id = Date.now() + Math.random();
-      setItems((cur) => [...cur.slice(-2), { id, msg }]);
+      if (kind === 'err') sfxPlay('error');
+      else if (kind === 'ok') sfxPlay('success');
+      setItems((cur) => [...cur.slice(-2), { id, msg, kind }]);
       setTimeout(() => setItems((cur) => cur.filter((x) => x.id !== id)), 2600);
     };
     toastSubs.add(push);
@@ -223,7 +230,7 @@ export function Toaster() {
   if (!items.length) return null;
   return (
     <div className="toasts" role="status">
-      {items.map((t) => <div className="toast" key={t.id}>{t.msg}</div>)}
+      {items.map((t) => <div className={`toast ${t.kind === 'err' ? 'err' : ''}`} key={t.id}>{t.msg}</div>)}
     </div>);
 }
 

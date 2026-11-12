@@ -13,6 +13,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as P from '../core/providers';
 import { useData, Spin, Err, Empty, Src, Search, Card, Chips, fmt } from '../ui/kit';
+import { play as sfxPlay } from '../core/sfx.js';
 import { Icon } from '../ui/icons';
 
 /* --------------------------------------------------------- audio engine */
@@ -192,11 +193,13 @@ export function Music() {
     const url = t.dlUrl || t.download;
     if (!url || url === 'archive') return;
     setSaving(t.id);
+    sfxPlay('fetch');
     try {
       const blob = await fetch(url).then((r) => r.blob());
       await saveOffline(String(t.id), blob, { title: t.title, artist: t.artist, art: t.art });
+      sfxPlay('success');
       setOffline(await listOffline());
-    } catch { alert('Could not save offline.'); }
+    } catch { sfxPlay('error'); alert('Could not save offline.'); }
     setSaving('');
   };
 

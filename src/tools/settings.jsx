@@ -362,17 +362,17 @@ export function Settings() {
             </label>
             <label className="chk">
               <input type="checkbox" checked={settings.sfx} onChange={e => { const s = setSetting('sfx', e.target.checked); setSettingsState(s); }} />
-              <span>Sound effects - the whole app, not only travel: a train going past when you open a tool, a tick on a button or a filter, air going the other way when you leave, a bell when a get-off alert arms and three bells when it fires. Every one is synthesised in your browser - no audio file is downloaded, nothing is cached</span>
+              <span>Sound effects - the whole app: a soft pop on taps and switches, a gentle whoosh when a panel opens, two warm notes when something saves, a low thud when something fails, quiet blips for play and pause. The travel tools keep their own family too - a train going past, a bell when a get-off alert arms. Every one is synthesised in your browser - no audio file is downloaded, nothing is cached</span>
             </label>
             <div className="btnrow" style={{ marginTop: 8 }}>
-              {[['tick', 'Hear a tap'], ['whoosh', 'Hear a tool open'], ['back', 'Hear a leave'], ['chime', 'Hear an answer'], ['ding', 'Hear an alert armed']].map(([n, l]) => (
-                <button key={n} className="btn ghost" onClick={() => hear(n)}>{l}</button>
+              {[['pop', 'Hear a tap'], ['open', 'Hear a panel open'], ['toggleon', 'Hear a switch on'], ['success', 'Hear a save'], ['error', 'Hear a failure'], ['play', 'Hear play'], ['pause', 'Hear pause'], ['copy', 'Hear a copy'], ['whoosh', 'Hear a train pass'], ['chime', 'Hear an answer'], ['ding', 'Hear an alert armed']].map(([n, l]) => (
+                <button key={n} className="btn ghost" data-sfx="none" onClick={() => hear(n)}>{l}</button>
               ))}
             </div>
             <div className="dim sm" style={{ fontSize: 10, marginTop: 6 }}>
               {!sfxSupported() ? 'This browser has no Web Audio - nothing can play and nothing is fetched.'
                 : settings.sfx === false ? 'Switched off above, so these buttons answer with the reason, not a sound.'
-                : sfxLast ? `Last: ${sfxLast}` : 'Seven sounds in all; a backgrounded tab keeps only the get-off bell.'}
+                : sfxLast ? `Last: ${sfxLast}` : `${Object.keys(SFX).length} sounds in all; a backgrounded tab keeps only the get-off bell.`}
               <br />The same switch sits at the top right of every screen, and each travel panel keeps its own copy of it - one preference, three places to reach it, never out of step.
             </div>
             <label className="chk">
