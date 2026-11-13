@@ -62,6 +62,13 @@ const Gurbani = lazyTool(() => import('./tools/devotional'), 'Gurbani');
 const Devotional = lazyTool(() => import('./tools/devotional'), 'Devotional');
 const RecipesDeep = lazyTool(() => import('./tools/devotional'), 'RecipesDeep');
 const Rashifal = lazyTool(() => import('./tools/devotional'), 'Rashifal');
+const Radio = lazyTool(() => import('./tools/radio'), 'Radio');
+const Podcasts = lazyTool(() => import('./tools/podcasts'), 'Podcasts');
+const PayLinks = lazyTool(() => import('./tools/paylinks'), 'PayLinks');
+const DocScanner = lazyTool(() => import('./tools/scanner'), 'Scanner');
+const Games = lazyTool(() => import('./tools/games'), 'Games');
+const VoiceRecorder = lazyTool(() => import('./tools/recorder'), 'Recorder');
+const Bullion = lazyTool(() => import('./tools/bullion'), 'Bullion');
 import { Hub } from './tools/travel-hub';
 import { Spin, Section, SkelRows, Empty, Toaster, toast } from './ui/kit';
 import * as W from './tools/world';
@@ -88,6 +95,8 @@ const ALIASES = {
   gaana: 'music', gana: 'music', geet: 'music', songs: 'music',
   samachar: 'news', khabar: 'news', mausam: 'weather',
   dawai: 'med', dava: 'med', dawa: 'med', paisa: 'currency',
+  fm: 'radio', podcast: 'podcasts', khel: 'games', game: 'games',
+  sona: 'gold', chandi: 'gold', record: 'recorder', scan: 'scan',
 };
 function toolMatches(t, q) {
   const hay = normQ(`${t.n} ${t.d} ${t.c}`);
@@ -154,6 +163,7 @@ const TOOLS = [
   { id:'tax',       n:'Income Tax',    i:'rupee',    c:'India', t:'off',  d:'FY 2025-26',                C:O.TaxCalc },
   { id:'emi',       n:'EMI Calc',      i:'home',     c:'India', t:'off',  d:'Loan planner',              C:O.EmiCalc },
   { id:'sip',       n:'SIP Calc',      i:'chart',    c:'India', t:'off',  d:'Mutual funds',              C:O.SipCalc },
+  { id:'upi',       n:'UPI QR & Links',i:'qr',       c:'India', t:'off',  d:'Payment QR + chat link',    C:PayLinks },
 
   // ---------- Health ----------
   { id:'med',       n:'Medicine',      i:'pill',     c:'Health', t:'live', d:'253,802 medicines · uses & price', C:MedicineDeep },
@@ -169,6 +179,7 @@ const TOOLS = [
   // ---------- Money ----------
   { id:'currency',  n:'Currency',      i:'swap',     c:'Money', t:'live', d:'Live FX rates',             C:L.Currency },
   { id:'crypto',    n:'Crypto',        i:'coin',     c:'Money', t:'live', d:'Top 40 coins',              C:L.Crypto },
+  { id:'gold',      n:'Gold & Silver', i:'sparkle',  c:'Money', t:'live', d:'World spot price in ₹',     C:Bullion },
   { id:'pct',       n:'Percentage',    i:'percent',  c:'Money', t:'off',  d:'% calculator',              C:O.Percentage },
 
   // ---------- Music ----------
@@ -187,6 +198,8 @@ const TOOLS = [
   { id:'news',      n:'News',          i:'news',     c:'Media', t:'live', d:'52 countries · every topic', C:News },
   { id:'movies',    n:'Movies & TV',   i:'film',     c:'Media', t:'live', d:'Cast, seasons, episodes',    C:Screen },
   { id:'tv',        n:'Live TV',       i:'satellite',c:'Media', t:'live', d:'2,400+ Indian channels, free', C:LiveTV },
+  { id:'radio',     n:'Internet Radio',i:'radio',    c:'Media', t:'live', d:'World stations · India first', C:Radio },
+  { id:'podcasts',  n:'Podcasts',      i:'wave',     c:'Media', t:'live', d:'Shows & episodes, in-app play', C:Podcasts },
   { id:'jokes',     n:'Jokes',         i:'smile',    c:'Media', t:'live', d:'Random joke',               C:L.Jokes },
   { id:'quotes',    n:'Quotes',        i:'quote',    c:'Media', t:'live', d:'Inspiration',               C:L.Quotes },
   { id:'recipes',   n:'Recipes',       i:'flask',    c:'Everyday', t:'live', d:'790 recipes, 37 cuisines', C:Recipes },
@@ -194,6 +207,8 @@ const TOOLS = [
   { id:'cats',      n:'Cat Explorer',  i:'smile',    c:'Everyday', t:'live', d:'Facts & cute photos',        C:Cats },
   { id:'riddles',   n:'Riddles',       i:'quote',    c:'Everyday', t:'live', d:'Brain teasers with answer',  C:Riddles },
   { id:'trivia',    n:'Trivia Quiz',   i:'star',     c:'Everyday', t:'live', d:'Multiple choice quiz',       C:Trivia },
+  { id:'games',     n:'Games',         i:'dice',     c:'Everyday', t:'off', d:'2048 · Snake · Memory',      C:Games },
+  { id:'recorder',  n:'Voice Recorder',i:'mic',      c:'Everyday', t:'off', d:'Record, save & play notes',  C:VoiceRecorder },
   { id:'horoscope', n:'Horoscope',     i:'star',     c:'Everyday', t:'live', d:'Daily zodiac predictions',   C:Horoscope },
   { id:'food',      n:'Food Scanner',  i:'flask',    c:'Everyday', t:'live', d:'Products & nutrition',       C:Food },
   { id:'uni',       n:'Universities',  i:'cap',      c:'Learn',    t:'live', d:'Find universities worldwide',C:Universities },
@@ -253,6 +268,7 @@ const TOOLS = [
   { id:'color',     n:'Colour Tool',   i:'palette',  c:'Convert', t:'off', d:'HEX/RGB/HSL + WCAG',       C:O.ColorTool },
   { id:'imgconv',   n:'Image Convert', i:'image',    c:'Convert', t:'off', d:'JPG/PNG/WEBP + resize',    C:C.ImageConvert },
   { id:'img2pdf',   n:'Images → PDF',  i:'doc',      c:'Convert', t:'off', d:'Multi-page PDF',           C:C.ImagesToPdf },
+  { id:'scan',      n:'Doc Scanner',   i:'camera',   c:'Convert', t:'off', d:'Scan pages → one PDF',     C:DocScanner },
   { id:'audioconv', n:'Audio → WAV',   i:'disc',     c:'Convert', t:'off', d:'Decode any format',        C:C.AudioConvert },
   { id:'vidframe',  n:'Video Frames',  i:'film',     c:'Convert', t:'off', d:'Extract as JPG',           C:C.VideoFrames },
   { id:'dataconv',  n:'Data Convert',  i:'swap',     c:'Convert', t:'off', d:'JSON/CSV/XML',             C:C.DataConvert },
@@ -262,13 +278,48 @@ const TOOLS = [
 const CATS = ['All', 'Travel', 'India', 'Bhakti', 'Health', 'Everyday', 'Convert', 'Music',
               'Time', 'Money', 'Learn', 'Media', 'Space', 'Text', 'Dev', 'Generate'];
 
+/* ------------------------------------------------------- category cards
+   Home's browsing surface is one big card per category. The cards are
+   DERIVED from the registry above — counts, membership and preview names
+   are computed from TOOLS, never hardcoded — so a tool registered by
+   anyone, in any category (including a brand-new one), appears on its
+   own. This map only carries the dressing: an icon, one line of copy
+   and an accent chosen from the existing theme variables. A category
+   with no entry here still gets a card, with the generic icon and an
+   accent by rotation. */
+const CATMETA = {
+  Travel:   { i: 'route',     a: '--cyan',  d: 'Bus, train & metro — routes, fares, live status' },
+  India:    { i: 'flag',      a: '--warn',  d: 'Weather, PIN, IFSC, mandi prices & tax' },
+  Bhakti:   { i: 'book',      a: '--green', d: 'Gita, Quran, Bible, Gurbani, aarti & mantra' },
+  Health:   { i: 'heart',     a: '--bad',   d: 'Medicine search, BMI & health checks' },
+  Everyday: { i: 'sparkle',   a: '--cyan',  d: 'Recipes, quizzes, horoscope & more' },
+  Convert:  { i: 'swap',      a: '--warn',  d: 'Units, images, audio & file conversion' },
+  Music:    { i: 'music',     a: '--green', d: 'Ad-free player — EQ, lyrics, offline songs' },
+  Time:     { i: 'clock',     a: '--cyan',  d: 'World clock, sun times, age & dates' },
+  Money:    { i: 'rupee',     a: '--green', d: 'Currency, crypto & percentage tools' },
+  Learn:    { i: 'cap',       a: '--warn',  d: 'Wikipedia, dictionary, books & world data' },
+  Media:    { i: 'film',      a: '--cyan',  d: 'Downloader, news, movies & live TV' },
+  Space:    { i: 'satellite', a: '--cyan',  d: 'ISS tracker, earthquakes & launches' },
+  Text:     { i: 'type',      a: '--warn',  d: 'Case, word count & line tools' },
+  Dev:      { i: 'code',      a: '--green', d: 'Base64, JSON, JWT, regex & hash' },
+  Generate: { i: 'qr',        a: '--cyan',  d: 'Passwords, UUIDs, QR codes & dice' },
+};
+const CAT_ACCENTS = ['--green', '--cyan', '--warn', '--bad'];
+function catMeta(name, idx) {
+  if (name === '__az') return { i: 'list', a: '--cyan', d: 'Every tool, in alphabetical order' };
+  if (name === '__fav') return { i: 'staron', a: '--warn', d: 'Your pinned tools, one tap away' };
+  return CATMETA[name] || { i: 'grid', a: CAT_ACCENTS[(idx || 0) % CAT_ACCENTS.length], d: '' };
+}
+const parseCat = (r) => {
+  try { return decodeURIComponent(r.slice(4)); } catch { return r.slice(4); }
+};
+
 /* The hash may carry share/pl params after the tool id (#dl?url=…) —
    the route is only the part before ? or &. */
 const readRoute = () => (location.hash.slice(1) || '').split(/[?&]/)[0];
 
 export default function App() {
   const [route, setRoute] = useState(readRoute);
-  const [cat, setCat] = useState('All');
   const [q, setQ] = useState('');
   const [showStatus, setShowStatus] = useState(false);
   const [offline, setOffline] = useState(() => !navigator.onLine);
@@ -351,7 +402,9 @@ export default function App() {
   }, [route]);
   useEffect(() => { localStorage.setItem('omni:fav', JSON.stringify(fav)); }, [fav]);
   useEffect(() => {
-    if (!route) return;
+    /* Only real tools are "recently used" — a category route must not
+       evict tools from the shelf's short memory. */
+    if (!route || !TOOLS.some((t) => t.id === route)) return;
     setRecentTools((cur) => {
       const nxt = [route, ...cur.filter((x) => x !== route)].slice(0, 8);
       try { localStorage.setItem('omni:recent', JSON.stringify(nxt)); } catch {}
@@ -360,13 +413,36 @@ export default function App() {
   }, [route]);
 
   const tool = TOOLS.find((t) => t.id === route);
-  const shown = useMemo(() => {
-    let list = TOOLS;
-    if (cat === 'Fav') list = list.filter((t) => fav.includes(t.id));
-    else if (cat !== 'All') list = list.filter((t) => t.c === cat);
-    if (q.trim()) list = list.filter((t) => toolMatches(t, q));
-    return list;
-  }, [cat, q, fav]);
+
+  /* A category is a route too (#cat:Travel), so the category view gets
+     the same gifts a tool gets: the in-app Back stack, browser Back,
+     and a scroll position of its own. Two pseudo-categories ride along:
+     __fav (pinned) and __az (every tool, A–Z). */
+  const openCat = !tool && route.startsWith('cat:') ? parseCat(route) : null;
+  const favTools = useMemo(() => TOOLS.filter((t) => fav.includes(t.id)), [fav]);
+  const catViewList = openCat === '__az'
+    ? [...TOOLS].sort((a, b) => a.n.localeCompare(b.n))
+    : openCat === '__fav' ? favTools
+    : openCat ? TOOLS.filter((t) => t.c === openCat) : [];
+  const catViewMeta = openCat ? catMeta(openCat, 0) : null;
+  const catViewTitle = openCat === '__az' ? 'All tools A–Z'
+    : openCat === '__fav' ? 'Pinned tools' : openCat;
+
+  /* The home category cards, derived from the registry: every category
+     that has tools, in the house order first, then any new category in
+     the order its first tool registered it. */
+  const catList = useMemo(() => {
+    const seen = [];
+    for (const t of TOOLS) if (!seen.includes(t.c)) seen.push(t.c);
+    const ordered = CATS.slice(1).filter((c) => seen.includes(c));
+    for (const c of seen) if (!ordered.includes(c)) ordered.push(c);
+    return ordered
+      .map((name, i) => ({ name, meta: catMeta(name, i), list: TOOLS.filter((t) => t.c === name) }))
+      .filter((c) => c.list.length);
+  }, []);
+
+  const shown = useMemo(
+    () => (q.trim() ? TOOLS.filter((t) => toolMatches(t, q)) : TOOLS), [q]);
 
   /* Songs + channels for the universal search, debounced. */
   const [uni, setUni] = useState({ songs: null, chans: null, loading: false });
@@ -397,32 +473,73 @@ export default function App() {
   };
   const offCount = TOOLS.filter((t) => t.t === 'off').length;
 
-  const tileBtn = (t) => (
-    <button className="tile" key={t.id} onClick={() => go(t.id)}>
+  /* ------------------------------------------------------ tool-open flight
+     Opening a tool is one small ceremony, the same from every surface:
+     the tapped tile lifts off and flies into the top bar while the tool
+     view rises underneath it (see ToolGhost). The source rectangle is
+     measured once, at the tap; the flight itself is transform/opacity
+     only. Reduced motion — or a tap with nothing to lift — navigates
+     plainly, exactly as before. */
+  const ghostSeq = useRef(0);
+  const [ghost, setGhost] = useState(null);
+  const openTool = (t, e) => {
+    try {
+      const el = e && e.currentTarget;
+      if (el && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 4 && r.height > 4) {
+          setGhost({ id: t.id, n: t.n, i: t.i, d: t.d,
+            x: r.left, y: r.top, w: r.width, h: r.height, k: (ghostSeq.current += 1) });
+        }
+      }
+    } catch { /* a failed flourish must never block the tool itself */ }
+    go(t.id);
+  };
+
+  const tileBtn = (t, i) => (
+    <button className="tile" key={t.id} onClick={(e) => openTool(t, e)}
+      style={{ '--i': Math.min(i || 0, 14) }}>
       {t.t === 'live' ? <span className="live" /> : <span className="off">OFF</span>}
       <span className="ic"><Icon n={t.i} size={24} /></span>
       <b>{t.n}</b>
       <small>{t.d}</small>
     </button>);
-  const catsRow = (
-    <div className="cats">
-      {fav.length > 0 && (
-        <button className={`cat ${cat === 'Fav' ? 'on' : ''}`} onClick={() => setCat('Fav')}>
-          <Icon n="staron" size={13} /> {fav.length}</button>)}
-      {CATS.map((c) => <button key={c} className={`cat ${cat === c ? 'on' : ''}`} onClick={() => setCat(c)}>{c}</button>)}
-    </div>);
+
+  /* One home category card. Count and preview names are read off the
+     registry list it is handed — nothing about the tools is restated. */
+  const catCard = (name, list, i, meta) => {
+    const m = meta || catMeta(name, i);
+    const title = name === '__az' ? 'All tools A–Z' : name === '__fav' ? 'Pinned' : name;
+    return (
+      <button className="catcard" key={name}
+        style={{ '--ca': `var(${m.a})`, '--i': Math.min(i, 9) }}
+        onClick={() => go(`cat:${encodeURIComponent(name)}`)}
+        aria-label={`${title} — ${list.length} tools`}>
+        <span className="catcard-ic"><Icon n={m.i} size={25} /></span>
+        <span className="catcard-tx">
+          <span className="catcard-n"><b>{title}</b>
+            <span className="catcard-n2">{list.length}</span></span>
+          {m.d && <span className="catcard-d">{m.d}</span>}
+          <span className="catcard-p">
+            {list.slice(0, 3).map((t) => t.n).join(' · ')}{list.length > 3 ? ' · …' : ''}
+          </span>
+        </span>
+        <Icon n="chevron" size={17} className="catcard-chev" />
+      </button>);
+  };
 
   return (
    <LocProvider>
     <PlayerProvider>
     <Shell>
       <header className={`topbar ${scrolled ? 'scrolled' : ''}`}>
-        {tool
+        {tool || openCat
           ? <button className="iconbtn" onClick={goBack} aria-label="Back"><Icon n="back" size={19} /></button>
           : <span className="brand gradtext">OMNI</span>}
         <div className="tb-t">
-          <b>{tool ? tool.n : 'OmniTools'}</b>
-          <span>{tool ? tool.d : `${TOOLS.length} tools · no login`}</span>
+          <b>{tool ? tool.n : openCat ? catViewTitle : 'OmniTools'}</b>
+          <span>{tool ? tool.d : openCat ? `${catViewList.length} tools`
+            : `${TOOLS.length} tools · no login`}</span>
         </div>
         {tool && (
           <button className="iconbtn" aria-label="Favourite" onClick={() => {
@@ -453,7 +570,27 @@ export default function App() {
             <span className="dot warn" />
             <span>You&rsquo;re offline — {offCount} tools still work without internet.</span>
           </div>)}
-        {!tool && (<>
+        {!tool && openCat && (
+          <div className="catview">
+            <div className="catview-h" style={{ '--ca': `var(${catViewMeta.a})` }}>
+              <span className="catview-ic"><Icon n={catViewMeta.i} size={30} /></span>
+              <div className="catview-tx">
+                <h2>{catViewTitle}</h2>
+                <p>{catViewList.length} tools{catViewMeta.d ? ` — ${catViewMeta.d}` : ''}</p>
+              </div>
+            </div>
+            {catViewList.length === 0
+              ? <Empty icon={openCat === '__fav' ? 'staron' : 'search'}
+                  t={openCat === '__fav'
+                    ? 'No pinned tools yet — tap the star at the top of any tool to pin it'
+                    : 'No tools here yet'} />
+              : <div className="grid catview-grid">{catViewList.map((t, i) => tileBtn(t, i))}</div>}
+            <div className="hr" />
+            <button className="btn ghost" onClick={goBack}>
+              <Icon n="back" size={15} /> All categories</button>
+          </div>)}
+
+        {!tool && !openCat && (<>
           <div className="hero">
             <h1 className="gradtext">EVERYTHING<br />IN ONE APP</h1>
             <p>{TOOLS.length} tools. Multi-source fallback on every live feature.
@@ -467,7 +604,7 @@ export default function App() {
             </div>
           </div>
 
-          {!q.trim() && <Shelf fav={fav} recentTools={recentTools} go={go} />}
+          {!q.trim() && <Shelf fav={fav} recentTools={recentTools} go={go} open={openTool} />}
 
           <div className="search">
             <Icon n="search" size={18} />
@@ -505,25 +642,14 @@ export default function App() {
             {shown.length === 0
               ? <div className="state">No tool matched — songs and channels are below.</div>
               : <div className="grid">{shown.map(tileBtn)}</div>}
-            <UniResults uni={uni} go={go} />
-          </>) : cat === 'All' ? (<>
-            {catsRow}
-            {CATS.slice(1).map((c, i) => {
-              const list = TOOLS.filter((t) => t.c === c);
-              if (!list.length) return null;
-              return (
-                <Section key={c} id={`home-cat-${c}`} title={c}
-                  badge={`${list.length} tools`} defaultOpen={i < 2} sticky>
-                  <div className="grid">{list.map(tileBtn)}</div>
-                </Section>);
-            })}
+            <UniResults uni={uni} go={go} open={openTool} />
           </>) : (<>
-            {catsRow}
-            {shown.length === 0
-              ? <Empty icon={cat === 'Fav' ? 'staron' : 'search'}
-                  t={cat === 'Fav' ? 'No pinned tools yet — tap the star on any tool to pin it here'
-                    : 'No tools in this category yet'} />
-              : <div className="grid">{shown.map(tileBtn)}</div>}
+            <div className="seclabel" style={{ marginTop: 18 }}>Browse by category</div>
+            <div className="catgrid">
+              {fav.length > 0 && catCard('__fav', favTools, 0)}
+              {catList.map((c, i) => catCard(c.name, c.list, i + (fav.length ? 1 : 0), c.meta))}
+              {catCard('__az', [...TOOLS].sort((a, b) => a.n.localeCompare(b.n)), 9)}
+            </div>
           </>)}
 
           <div className="hr" />
@@ -549,10 +675,50 @@ export default function App() {
       <InstallPrompt />
       <Toaster />
       <ScrollTopBtn />
+      {ghost && <ToolGhost key={ghost.k} g={ghost}
+        done={() => setGhost((cur) => (cur && cur.k === ghost.k ? null : cur))} />}
     </Shell>
     </PlayerProvider>
    </LocProvider>
   );
+}
+
+/* ------------------------------------------------------- tool-open flight
+   The ghost of the tapped tile, flown to the top bar. It is rendered
+   outside the routed views, so it survives the home → tool swap it
+   celebrates. Both rectangles are measured exactly once (the source at
+   the tap, the top bar here); the flight is a single transform +
+   opacity transition on one fixed element — no layout work per frame.
+   It never takes pointer events, and it removes itself in ~340 ms; a
+   second tap simply replaces it. */
+function ToolGhost({ g, done }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const tb = document.querySelector('.topbar');
+    const tr = tb ? tb.getBoundingClientRect() : { left: 0, top: 0 };
+    const dx = tr.left + 10 - g.x;
+    const dy = tr.top + 9 - g.y;
+    const sx = 46 / g.w;
+    const sy = 46 / g.h;
+    const tx = el.querySelector('.ghost-tx');
+    const raf = requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (tx) tx.style.opacity = '0';
+      el.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+      el.style.opacity = '0';
+      el.style.borderRadius = '14px';
+    }));
+    const t = setTimeout(done, 360);
+    return () => { cancelAnimationFrame(raf); clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [g.k]);
+  return (
+    <div className="ghost" ref={ref} aria-hidden="true"
+      style={{ left: g.x, top: g.y, width: g.w, height: g.h }}>
+      <span className="ic"><Icon n={g.i} size={24} /></span>
+      <span className="ghost-tx"><b>{g.n}</b><small>{g.d}</small></span>
+    </div>);
 }
 
 function Shell({ children }) {
@@ -704,7 +870,13 @@ function StatusPanel({ onClose, offCount, total }) {
    the last song or channel, then pinned tools, then recently used ones.
    Everything reads the same stores the features themselves write, so the
    shelf can never promise something the app does not have. */
-function Shelf({ fav, recentTools, go }) {
+function Shelf({ fav, recentTools, go, open }) {
+  /* Shelf taps open tools through the same flight as the tiles, so the
+     ceremony is identical wherever a tool is opened from. */
+  const fly = (id, e) => {
+    const t = TOOLS.find((x) => x.id === id);
+    if (t && open) open(t, e); else go(id);
+  };
   let lastSong = null;
   let lastChan = null;
   let lastBook = null;
@@ -729,9 +901,9 @@ function Shelf({ fav, recentTools, go }) {
               waiting here to resume. Pin a tool and it stays one tap away.
             </p>
             <div className="btnrow">
-              <button className="btn sm" onClick={() => go('music')}>
+              <button className="btn sm" onClick={(e) => fly('music', e)}>
                 <Icon n="music" size={15} /> Play a song</button>
-              <button className="btn ghost sm" onClick={() => go('tv')}>
+              <button className="btn ghost sm" onClick={(e) => fly('tv', e)}>
                 <Icon n="film" size={15} /> Watch TV</button>
             </div>
             <p className="dim sm" style={{ marginTop: 8 }}>
@@ -743,7 +915,7 @@ function Shelf({ fav, recentTools, go }) {
   }
 
   const chip = (t) => (
-    <button key={t.id} className="cat shelf-chip" onClick={() => go(t.id)}>
+    <button key={t.id} className="cat shelf-chip" onClick={(e) => (open ? open(t, e) : go(t.id))}>
       <Icon n={t.i} size={14} /> {t.n}</button>);
 
   return (
@@ -752,16 +924,16 @@ function Shelf({ fav, recentTools, go }) {
         <Section id="shelf-continue" title="Continue" icon="play">
           <div className="shelf-col">
             {lastBook && (
-              <button className="cont-card" onClick={() => go(lastBook.tool)}>
+              <button className="cont-card" onClick={(e) => fly(lastBook.tool, e)}>
                 <span className="cont-ic"><Icon n="book" size={18} /></span>
                 <span className="cont-tx"><b>{lastBook.label?.t || 'Continue reading'}</b>
                   <small>{lastBook.label?.s ? `${lastBook.label.s} · ` : ''}tap to continue reading</small></span>
                 <Icon n="play" size={18} style={{ color: 'var(--green)', flex: '0 0 auto' }} />
               </button>)}
             {lastSong && (
-              <button className="cont-card" onClick={() => {
+              <button className="cont-card" onClick={(e) => {
                 try { sessSet(SESS_RESUME_MUSIC, JSON.stringify(lastSong)); } catch {}
-                go('music');
+                fly('music', e);
               }}>
                 {lastSong.art && !ld
                   ? <img src={lastSong.art} alt="" loading="lazy" />
@@ -771,9 +943,9 @@ function Shelf({ fav, recentTools, go }) {
                 <Icon n="play" size={18} style={{ color: 'var(--green)', flex: '0 0 auto' }} />
               </button>)}
             {lastChan && (
-              <button className="cont-card" onClick={() => {
+              <button className="cont-card" onClick={(e) => {
                 try { sessSet(SESS_OPEN_TV, JSON.stringify(lastChan)); } catch {}
-                go('tv');
+                fly('tv', e);
               }}>
                 {lastChan.logo && !ld
                   ? <img src={lastChan.logo} alt="" loading="lazy" />
@@ -799,12 +971,13 @@ function Shelf({ fav, recentTools, go }) {
 /* ------------------------------------------------- universal search hits
    Songs play right here through the shared player; a channel hands off
    to the TV tool, which opens it on arrival. */
-function UniResults({ uni, go }) {
+function UniResults({ uni, go, open }) {
   const p = usePlayer();
   const { songs, chans, loading } = uni;
-  const openChan = (c) => {
+  const openChan = (c, e) => {
     try { sessSet(SESS_OPEN_TV, JSON.stringify(c)); } catch {}
-    go('tv');
+    const tv = TOOLS.find((x) => x.id === 'tv');
+    if (tv && open) open(tv, e); else go('tv');
   };
   return (<>
     <div className="seclabel">Songs{songs ? ` · ${songs.length}` : ''}</div>
@@ -829,7 +1002,7 @@ function UniResults({ uni, go }) {
       : chans && chans.length ? (
         <div className="list">
           {chans.map((c, i) => (
-            <button className="row uni-row" key={(c.id || 'c') + i} onClick={() => openChan(c)}>
+            <button className="row uni-row" key={(c.id || 'c') + i} onClick={(e) => openChan(c, e)}>
               {c.logo
                 ? <img src={c.logo} alt="" loading="lazy"
                     style={{ width: 44, height: 44, borderRadius: 9, objectFit: 'contain', flex: '0 0 auto', background: 'var(--s3)' }}

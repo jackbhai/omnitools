@@ -417,6 +417,7 @@ const PRESS_SOUNDS = [
   ['[data-sfx="none"]', null],
   ['.sndrow', null],
   ['.tile', 'open'],
+  ['.catcard', 'open'],
   ['button[aria-label="Back"]', 'back'],
   ['.nav button', 'pop'],
   ['.btn', 'pop'],
