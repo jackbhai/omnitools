@@ -7,6 +7,10 @@
  * total distance — for 5,208 trains, with no network needed once a route
  * has been opened once. Passing stations (where the train does not halt)
  * are shown under "All stops"; "Halts only" keeps the booked stops.
+ *
+ * The "Between stations" mode answers the other planning question — every
+ * direct train from A to B, by departure — from two small positional
+ * shards (rail-bsp-<xx>.json), never by downloading whole routes.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import * as R from '../core/bigdata';
@@ -98,7 +102,122 @@ function RouteView({ t, onBack }) {
   </>);
 }
 
+/* ------------------------------------------------------- between stations
+   From + To pickers over the 8,990-station list; the query itself reads the
+   two positional shards of the two station codes (rail-bsp-<xx>.json) and
+   intersects them — no route files are fetched until one train is opened. */
+function StationPicker({ label, value, onPick, stations }) {
+  const [text, setText] = useState('');
+  const [focus, setFocus] = useState(false);
+  const hits = useMemo(() => {
+    if (!stations || !focus || text.trim().length < 2 || value) return null;
+    const v = text.trim().toLowerCase();
+    return Object.entries(stations)
+      .filter(([c, n]) => c.toLowerCase() === v || n.toLowerCase().includes(v) || c.toLowerCase().startsWith(v))
+      .slice(0, 8);
+  }, [stations, text, focus, value]);
+  return (<div style={{ flex: 1, minWidth: 0 }}>
+    <div className="dim sm" style={{ marginBottom: 4 }}>{label}</div>
+    {value ? (
+      <button className="fld" style={{ textAlign: 'left', width: '100%' }}
+        onClick={() => { onPick(null); setText(''); }}>
+        <b>{value.name}</b> <span className="dim mono" style={{ fontSize: 11 }}>{value.code}</span>
+        <span className="dim" style={{ float: 'right' }}>change</span>
+      </button>
+    ) : (<>
+      <input className="fld" style={{ width: '100%' }} placeholder="Station name or code"
+        value={text} onChange={(e) => setText(e.target.value)}
+        onFocus={() => setFocus(true)} onBlur={() => setTimeout(() => setFocus(false), 150)} />
+      {hits && (<div className="list" style={{ marginTop: 4 }}>
+        {hits.length === 0 && <Empty t="No station matches that" />}
+        {hits.map(([code, name]) => (
+          <button key={code} className="row uni-row" onClick={() => onPick({ code, name })}>
+            <Icon n="pin" size={15} />
+            <div className="main"><b style={{ fontSize: 13 }}>{name}</b><span className="dim sm mono">{code}</span></div>
+          </button>))}
+      </div>)}
+    </>)}
+  </div>);
+}
+
+function BetweenStations({ idx, onOpen }) {
+  const [stations, setStations] = useState(null);
+  const [from, setFrom] = useState(null);
+  const [to, setTo] = useState(null);
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => { R.railStations().then(setStations).catch(() => {}); }, []);
+
+  const run = async (a, b) => {
+    if (!a || !b) return;
+    if (a.code === b.code) { setErr('Pick two different stations'); setRes(null); return; }
+    setBusy(true); setErr(''); setRes(null);
+    try {
+      const [rowsA, rowsB] = await Promise.all([R.railByStationPos(a.code), R.railByStationPos(b.code)]);
+      const byNo = new Map((idx?.trains || []).map((t) => [t[0], t]));
+      const bByTrain = new Map();
+      rowsB.forEach((r) => { if (!bByTrain.has(r[0])) bByTrain.set(r[0], []); bByTrain.get(r[0]).push(r); });
+      const best = new Map();
+      rowsA.forEach((ra) => {
+        (bByTrain.get(ra[0]) || []).forEach((rb) => {
+          if (ra[1] >= rb[1]) return;
+          const dep = ra[3] || ra[2]; const arr = rb[2] || rb[3];
+          if (!dep || !arr) return;
+          const mins = (rb[4] - ra[4]) * 1440 + toMin(arr) - toMin(dep);
+          if (mins <= 0) return;
+          const prev = best.get(ra[0]);
+          if (!prev || mins < prev.mins) best.set(ra[0], { ra, rb, dep, arr, mins });
+        });
+      });
+      const out = [...best.entries()].map(([no, v]) => {
+        const t = byNo.get(no);
+        if (!t) return null;
+        const off = v.ra[4] - 1;
+        let maskFrom = 0;
+        for (let i = 0; i < 7; i++) if (t[5] & (1 << i)) maskFrom |= 1 << ((i + off) % 7);
+        return { t, ...v, maskFrom, depMin: toMin(v.dep) };
+      }).filter(Boolean).sort((x, y) => x.depMin - y.depMin || x.mins - y.mins);
+      setRes(out);
+    } catch (e) { setErr(e.message || 'Could not run that search'); }
+    setBusy(false);
+  };
+
+  useEffect(() => { if (from && to) run(from, to); /* eslint-disable-next-line */ }, [from, to]);
+
+  return (<>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 4 }}>
+      <StationPicker label="From" value={from} onPick={setFrom} stations={stations} />
+      <button className="btn ghost sm" style={{ marginTop: 22 }} aria-label="Swap stations"
+        onClick={() => { setFrom(to); setTo(from); }}>
+        <Icon n="swap" size={14} /></button>
+      <StationPicker label="To" value={to} onPick={setTo} stations={stations} />
+    </div>
+    {err && <Err error={err} retry={() => run(from, to)} />}
+    {busy && <Spin t="Finding trains" />}
+    {res && !busy && (<>
+      <div className="dim sm" style={{ margin: '10px 0 6px' }}>
+        {res.length} direct train(s) · {from.name} → {to.name} · by departure</div>
+      {res.length === 0 && <Empty icon="train" t="No direct trains between these stations in the timetable" />}
+      <div className="list">
+        {res.map(({ t, dep, arr, mins, rb, maskFrom }) => (
+          <button key={t[0]} className="row uni-row" onClick={() => onOpen(t)}>
+            <span className="mono" style={{ color: 'var(--green)', fontSize: 12.5, width: 46 }}>{t[0]}</span>
+            <div className="main"><b style={{ fontSize: 13.5 }}>{t[1]}</b>
+              <span className="dim sm">{dep} → {arr}{rb[4] > 1 ? ` · +${rb[4] - 1}d` : ''} · {Math.floor(mins / 60)}h {String(mins % 60).padStart(2, '0')}m</span>
+              <span className="dim sm">{DAYS.filter((_, i) => maskFrom & (1 << i)).join(' ') || 'Daily'}</span></div>
+          </button>))}
+      </div>
+      <div className="src"><span className="dot" /><span>Scheduled timetable · days shown are the days the train is at {from.name}</span></div>
+    </>)}
+    {!res && !busy && !err && (
+      <Empty icon="train" t="Pick both stations — every direct train between them, by departure time" />)}
+  </>);
+}
+
 export function TrainTimeTable() {
+  const [mode, setMode] = useState('trains');
   const [idx, setIdx] = useState(null);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
@@ -140,6 +259,12 @@ export function TrainTimeTable() {
   if (open) return <RouteView t={open} onBack={() => setOpen(null)} />;
 
   return (<>
+    <div className="btnrow" style={{ marginTop: 2 }}>
+      <button className={`cat ${mode === 'trains' ? 'on' : ''}`} onClick={() => setMode('trains')}>Trains</button>
+      <button className={`cat ${mode === 'between' ? 'on' : ''}`} onClick={() => setMode('between')}>Between stations</button>
+    </div>
+    {mode === 'between' && <BetweenStations idx={idx} onOpen={setOpen} />}
+    {mode === 'trains' && (<>
     <Search value={q} onChange={(v) => { setQ(v); setStationHits(null); setStationTrains(null); }}
       onSubmit={findStation} ph="Train number, name, or station" />
     <div className="btnrow">
@@ -189,6 +314,7 @@ export function TrainTimeTable() {
           </button>))}
       </div>
       {results.length === 0 && <Empty t="No train matches that search" />}
+    </>)}
     </>)}
   </>);
 }

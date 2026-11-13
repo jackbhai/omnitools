@@ -206,7 +206,7 @@ const TOOLS = [
   { id:'dict',      n:'Dictionary',    i:'book',     c:'Learn', t:'live', d:'Definitions + audio',       C:L.Dictionary },
   { id:'books',     n:'Books',         i:'books',    c:'Learn', t:'live', d:'Open Library',              C:L.Books },
   { id:'classics',  n:'Classic Books', i:'book',     c:'Learn', t:'live', d:'70,000+ free books · read here', C:ClassicBooks },
-  { id:'cricket',   n:'Cricket Archive', i:'chart',  c:'Media', t:'live', d:'1,243 IPL matches · full scorecards', C:CricketArchive },
+  { id:'cricket',   n:'Cricket Archive', i:'chart',  c:'Media', t:'live', d:'IPL + ODI · T20I · Test · full scorecards', C:CricketArchive },
   { id:'country',   n:'Countries',     i:'earth',    c:'Learn', t:'live', d:'250 countries, full detail', C:W.Countries },
   { id:'names',     n:'Names & Surnames', i:'smile', c:'Learn', t:'live', d:'5,695 names · caste, region',C:Names },
   { id:'saraiki',   n:'Saraiki Seekhna', i:'book',   c:'Learn', t:'off',  d:'Sabaq course · Shahmukhi + Roman', C:Saraiki },

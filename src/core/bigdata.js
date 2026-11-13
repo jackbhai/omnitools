@@ -9,7 +9,8 @@
  *   IFSC directory   183,214 bank branches of 1,367 banks
  *   Blood banks      2,820 banks, state/district, address + phone
  *   Kanoon           BNS 358 sections (Gazette text) + IPC 575 sections
- *   Cricket archive  1,243 IPL matches, full computed scorecards + records
+ *   Cricket archive  1,243 IPL + 7,165 men's international matches
+ *                    (ODI 2,617 · T20I 3,649 · Test 899), computed scorecards
  *
  * Shard files are flat arrays with positional fields; each loader below
  * documents its row shape once, here, so the tools stay readable.
@@ -50,6 +51,13 @@ export async function railRoute(no) {
 }
 export async function railByStation(code) {
   const all = await jget(`rail-bs-${code[0].toLowerCase()}.json`);
+  return all[code] || [];
+}
+/* between-stations rows: [trainNo, stopIndex, arr|null, dep|null, journeyDay]
+   — a From→To query fetches the two 2-letter shards of the two codes and
+   intersects them (see scripts/build_rail_between.py). */
+export async function railByStationPos(code) {
+  const all = await jget(`rail-bsp-${code.slice(0, 2).toLowerCase()}.json`);
   return all[code] || [];
 }
 
@@ -106,3 +114,10 @@ export const cricketIndex = () => jget('cricket-index.json');
 export const cricketSeason = (s) => jget(`cricket-s${String(s).replace('/', '-')}.json`);
 export const cricketMatch = (id) => jget(`cricket-m${id}.json`);
 export const cricketStats = () => jget('cricket-stats.json');
+/* international formats (men's): fmt is 'odi' | 't20' | 'test'; season keys
+   are years, 'wc<year>' for World Cup editions, 'wtc' for the WTC finals.
+   Season rows carry a 7th field — the event/series name. Stats files add
+   {matches, players, coverage:[firstDate, lastDate]} to the IPL row shapes. */
+export const cricketIntlIndex = () => jget('cricket-intl-index.json');
+export const cricketIntlSeason = (fmt, key) => jget(`cricket-x${fmt}-${key}.json`);
+export const cricketIntlStats = (fmt) => jget(`cricket-stats-${fmt}.json`);

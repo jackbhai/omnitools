@@ -1,11 +1,15 @@
 /**
- * Cricket Archive — every IPL match, with the full scorecard.
+ * Cricket Archive — every IPL match plus the men's international archive
+ * (ODI · T20I · Test), with full scorecards.
  *
- * Built from the open ball-by-ball record (1,243 matches, 2008–2026):
- * batting and bowling figures, extras, fall of wickets and career records
- * are computed from the balls themselves, not copied from a summary feed —
- * so a match card here shows exactly what the deliveries say happened.
- * Works offline once a season or match has been opened.
+ * Built from the open ball-by-ball record (1,243 IPL + 7,165 international
+ * matches): batting and bowling figures, extras, fall of wickets and career
+ * records are computed from the balls themselves, not copied from a summary
+ * feed — so a match card here shows exactly what the deliveries say happened.
+ * The source's ball-by-ball coverage starts in 2001–2005 depending on the
+ * format (each format's Records tab states its window), and fixtures the
+ * source withholds (Afghanistan matches) are absent — the numbers are the
+ * record's, labelled as such. Works offline once a season or match opened.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import * as C from '../core/bigdata';
@@ -16,6 +20,8 @@ const sr = (r, b) => (b ? (100 * r / b).toFixed(1) : '—');
 const econ = (r, balls) => (balls ? (r / (balls / 6)).toFixed(2) : '—');
 const bov = (balls) => `${Math.floor(balls / 6)}.${balls % 6}`;
 const ballsOf = (ov) => { const o = parseFloat(ov); const w = Math.floor(o); return w * 6 + Math.round((o - w) * 10); };
+const FMT_LABEL = { odi: 'ODI', t20: 'T20I', test: 'Test' };
+const fmtLabel = (f) => (f === 'T20' ? 'T20I' : f || '');
 
 function Scorecard({ id, onBack }) {
   const [d, setD] = useState(null);
@@ -36,7 +42,7 @@ function Scorecard({ id, onBack }) {
       <div className="chead">{m.teams.join(' vs ')}</div>
       <div style={{ fontFamily: 'var(--font-display)', fontSize: 18 }} className="gradtext">{m.result}</div>
       <div className="dim sm" style={{ marginTop: 4 }}>
-        {m.date} · {m.venue}{m.city ? `, ${m.city}` : ''} · IPL {m.season}
+        {m.date}{m.dateEnd ? ` – ${m.dateEnd}` : ''} · {m.venue}{m.city ? `, ${m.city}` : ''} · {m.event ? `${fmtLabel(m.fmt)} · ${m.event}` : `IPL ${m.season}`}
       </div>
       <div className="dim sm">{m.summ}</div>
       {m.toss?.winner && <div className="dim sm">Toss: {m.toss.winner} chose to {m.toss.decision}</div>}
@@ -74,15 +80,20 @@ function Scorecard({ id, onBack }) {
   </>);
 }
 
-function Records() {
+function Records({ load, batTitle, bowlTitle, note }) {
   const [s, setS] = useState(null);
   const [err, setErr] = useState('');
-  useEffect(() => { C.cricketStats().then(setS).catch((e) => setErr(e.message || 'Could not load records')); }, []);
-  if (err) return <Err error={err} retry={() => { setErr(''); C.cricketStats().then(setS).catch((e) => setErr(e.message)); }} />;
+  useEffect(() => {
+    let alive = true;
+    setS(null); setErr('');
+    load().then((r) => { if (alive) setS(r); }).catch((e) => { if (alive) setErr(e.message || 'Could not load records'); });
+    return () => { alive = false; };
+  }, [load]);
+  if (err) return <Err error={err} retry={() => { setErr(''); load().then(setS).catch((e) => setErr(e.message)); }} />;
   if (!s) return <Spin t="Loading records" />;
   return (<>
     <Card>
-      <div className="chead">Most runs — all IPL seasons</div>
+      <div className="chead">{batTitle}</div>
       <div className="list">
         {s.bat.slice(0, 25).map((p, i) => (
           <div className="row" key={i}>
@@ -94,23 +105,26 @@ function Records() {
       </div>
     </Card>
     <Card style={{ marginTop: 10 }}>
-      <div className="chead">Most wickets — all IPL seasons</div>
+      <div className="chead">{bowlTitle}</div>
       <div className="list">
         {s.bowl.slice(0, 25).map((p, i) => (
           <div className="row" key={i}>
             <span className="dim mono" style={{ width: 24, fontSize: 11 }}>{i + 1}</span>
             <div className="main"><b style={{ fontSize: 13.5 }}>{p[0]}</b>
-              <span className="dim sm">{p[1]} matches · best {p[4]} · {bov(p[2])} ov</span></div>
-            <div className="end"><b>{p[3 + 1]}</b><br /><span className="dim" style={{ fontSize: 10.5 }}>econ {econ(p[3], p[2])}</span></div>
+              <span className="dim sm">{p[1]} matches · best {p[5]} · {bov(p[2])} ov</span></div>
+            <div className="end"><b>{p[4]}</b><br /><span className="dim" style={{ fontSize: 10.5 }}>econ {econ(p[3], p[2])}</span></div>
           </div>))}
       </div>
     </Card>
+    {note && <div className="src"><span className="dot" /><span>{note}</span></div>}
   </>);
 }
 
 export function CricketArchive() {
   const [tab, setTab] = useState('matches');
+  const [format, setFormat] = useState('ipl');
   const [idx, setIdx] = useState(null);
+  const [iidx, setIidx] = useState(null);
   const [err, setErr] = useState('');
   const [season, setSeason] = useState('');
   const [matches, setMatches] = useState(null);
@@ -119,11 +133,15 @@ export function CricketArchive() {
   const [teamQ, setTeamQ] = useState('');
 
   useEffect(() => { C.cricketIndex().then(setIdx).catch((e) => setErr(e.message || 'Could not load the archive')); }, []);
+  useEffect(() => { C.cricketIntlIndex().then(setIidx).catch(() => {}); }, []);
   const pickSeason = async (s) => {
     setSeason(s); setBusy(true); setMatches(null);
-    try { setMatches(await C.cricketSeason(s)); } catch (e) { setErr(e.message || 'Could not load that season'); }
+    try {
+      setMatches(format === 'ipl' ? await C.cricketSeason(s) : await C.cricketIntlSeason(format, s));
+    } catch (e) { setErr(e.message || 'Could not load that season'); }
     setBusy(false);
   };
+  const pickFormat = (f) => { setFormat(f); setSeason(''); setMatches(null); setTeamQ(''); };
   const shown = useMemo(() => {
     if (!matches) return null;
     const v = teamQ.trim().toLowerCase();
@@ -132,21 +150,49 @@ export function CricketArchive() {
 
   if (open) return <Scorecard id={open} onBack={() => setOpen('')} />;
 
+  const fi = format !== 'ipl' && iidx ? iidx[format] : null;
+  const covNote = fi ? `Computed from the ball-by-ball record · ${FMT_LABEL[format]} coverage ${fi.coverage[0].slice(0, 4)}–${fi.coverage[1].slice(0, 4)} · ${fmt(fi.matches)} matches` : null;
+
   return (<>
     <div className="btnrow" style={{ marginTop: 2 }}>
+      {[['ipl', 'IPL'], ['odi', 'ODI'], ['t20', 'T20I'], ['test', 'Test']].map(([f, label]) => (
+        <button key={f} className={`cat ${format === f ? 'on' : ''}`} onClick={() => pickFormat(f)}>{label}</button>))}
+    </div>
+    <div className="btnrow" style={{ marginTop: 6 }}>
       <button className={`cat ${tab === 'matches' ? 'on' : ''}`} onClick={() => setTab('matches')}>Matches</button>
       <button className={`cat ${tab === 'records' ? 'on' : ''}`} onClick={() => setTab('records')}>Records</button>
     </div>
-    {tab === 'records' && <Records />}
+    {tab === 'records' && (format === 'ipl'
+      ? <Records key="ipl" load={C.cricketStats} batTitle="Most runs — all IPL seasons" bowlTitle="Most wickets — all IPL seasons" />
+      : fi && <Records key={format} load={() => C.cricketIntlStats(format)}
+          batTitle={`Most runs — ${FMT_LABEL[format]}`} bowlTitle={`Most wickets — ${FMT_LABEL[format]}`} note={covNote} />)}
+    {tab === 'records' && format !== 'ipl' && !fi && <Spin t="Loading formats" />}
     {tab === 'matches' && (<>
       {err && <Err error={err} retry={() => { setErr(''); C.cricketIndex().then(setIdx).catch((e) => setErr(e.message)); }} />}
-      {!idx && !err && <Spin t="Loading archive" />}
-      {idx && (<>
-        <div className="dim sm" style={{ margin: '8px 0 6px' }}>{fmt(idx.matches)} matches · {idx.seasons.length} seasons · full scorecards</div>
-        <div className="btnrow">
-          {[...idx.seasons].reverse().map((s) => (
-            <button key={s} className={`cat ${season === s ? 'on' : ''}`} onClick={() => pickSeason(s)}>IPL {s}</button>))}
-        </div>
+      {format === 'ipl' && (<>
+        {!idx && !err && <Spin t="Loading archive" />}
+        {idx && (<>
+          <div className="dim sm" style={{ margin: '8px 0 6px' }}>{fmt(idx.matches)} matches · {idx.seasons.length} seasons · full scorecards</div>
+          <div className="btnrow">
+            {[...idx.seasons].reverse().map((s) => (
+              <button key={s} className={`cat ${season === s ? 'on' : ''}`} onClick={() => pickSeason(s)}>IPL {s}</button>))}
+          </div>
+        </>)}
+      </>)}
+      {format !== 'ipl' && (<>
+        {!iidx && !err && <Spin t="Loading archive" />}
+        {fi && (<>
+          <div className="dim sm" style={{ margin: '8px 0 6px' }}>{fmt(fi.matches)} matches · {fi.coverage[0].slice(0, 4)}–{fi.coverage[1].slice(0, 4)} · full scorecards</div>
+          <div className="btnrow">
+            {fi.wc.map((y) => (
+              <button key={`wc${y}`} className={`cat ${season === `wc${y}` ? 'on' : ''}`}
+                onClick={() => pickSeason(`wc${y}`)}>World Cup {y}</button>))}
+            {format === 'test' && fi.wtc > 0 && (
+              <button className={`cat ${season === 'wtc' ? 'on' : ''}`} onClick={() => pickSeason('wtc')}>WTC Finals</button>)}
+            {fi.years.map((y) => (
+              <button key={y} className={`cat ${season === y ? 'on' : ''}`} onClick={() => pickSeason(y)}>{y}</button>))}
+          </div>
+        </>)}
       </>)}
       {busy && <Spin t="Loading season" />}
       {shown && (<>
@@ -156,14 +202,16 @@ export function CricketArchive() {
           {shown.map((m) => (
             <button key={m[0]} className="row uni-row" onClick={() => setOpen(m[0])}>
               <div className="main"><b style={{ fontSize: 13.5 }}>{m[2].join(' vs ')}</b>
-                <span className="dim sm">{m[5]}</span>
+                {m[6] ? <span className="dim sm">{m[6]}</span> : null}
+                <span className="dim sm">{m[5] || m[4]}</span>
                 <span className="dim sm">{m[3]}</span></div>
               <span className="dim sm" style={{ whiteSpace: 'nowrap' }}>{m[1]}</span>
             </button>))}
         </div>
         {shown.length === 0 && <Empty t="No matches for that team in this season" />}
       </>)}
-      {idx && !season && <Empty icon="chart" t="Pick a season to browse its matches" />}
+      {!season && format === 'ipl' && idx && <Empty icon="chart" t="Pick a season to browse its matches" />}
+      {!season && format !== 'ipl' && fi && <Empty icon="chart" t="Pick a year or a World Cup to browse its matches" />}
     </>)}
   </>);
 }
