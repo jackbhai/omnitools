@@ -10,7 +10,10 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROUTES, STOPS, nameOf, nextAtStop, haversine, minutesOfDay, planBus } from '../src/core/bus-route.js';
+import { ROUTES, STOPS, nameOf, nextAtStop, haversine, minutesOfDay, planBus, initBusData } from '../src/core/bus-route.js';
+
+/* The bus dataset is fetched data in the app now; install it from disk. */
+initBusData(JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../public/data/bus-delhi.json'), 'utf8')));
 import { STATIONS, stationAt, planRoutes, lineRecords } from '../src/core/metro-route.js';
 import {
   trackOfBus, trackOfRoute, trackOfMetro, trackOfLine, trackOfCombo, stepsOf, judge,
@@ -693,8 +696,12 @@ console.log('\n=== 11. what actually ships ===');
     const MARK = 'this browser has no Web Audio';
     const carriers = files.filter((f) => f.endsWith('.js')
       && fs.readFileSync(path.join(dist, f)).includes(MARK));
+    /* Since the bundle-diet round the engine may live in a shared chunk
+       instead of being inlined in the shell; what matters is that the shell
+       statically imports a carrier, so it loads with the shell either way. */
     chk('the sound engine ships in the start shell, where every tool can reach it',
-      carriers.includes(shell) || buf.includes(MARK), `${shell}, ${carriers.length} carrier(s)`);
+      carriers.includes(shell) || buf.includes(MARK) || carriers.some((f) => buf.includes(f)),
+      `${shell}, ${carriers.length} carrier(s)`);
     chk('the shell listens for presses and can silence them',
       buf.includes('pointerdown') && buf.includes('Sound effects off'), 'delegated press + header switch');
     chk('the shell still carries no transit data and no map library',
