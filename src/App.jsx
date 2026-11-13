@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import * as O from './tools/offline';
 import * as L from './tools/live';
 import * as T from './tools/transit';
@@ -72,6 +72,8 @@ import { history as libHistory } from './core/library';
 import { recent as tvRecent } from './core/iptv';
 import { getLiveStatus } from './core/live-status';
 import { startPresence, usePresence } from './core/presence';
+import { onInstallPrompt, triggerInstall, isStandalone } from './core/pwa';
+import { lastRead, lowDataOn, useLowData } from './ui/readerkit';
 import { Icon } from './ui/icons';
 
 /* ------------------------------------------------------ universal search
@@ -268,6 +270,14 @@ export default function App() {
   const [cat, setCat] = useState('All');
   const [q, setQ] = useState('');
   const [showStatus, setShowStatus] = useState(false);
+  const [offline, setOffline] = useState(() => !navigator.onLine);
+  useEffect(() => {
+    const on = () => setOffline(false);
+    const off = () => setOffline(true);
+    addEventListener('online', on); addEventListener('offline', off);
+    return () => { removeEventListener('online', on); removeEventListener('offline', off); };
+  }, []);
+  const lowData = useLowData();
   const [snd, setSnd] = useState(() => sfxEnabled());
   const [scrolled, setScrolled] = useState(false);
   /* Search remembers what worked: the last few searches, one tap to
@@ -306,10 +316,38 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('omni:recent') || '[]'); } catch { return []; }
   });
 
+  /* Navigation remembers two things the old handler threw away: where
+     each view was scrolled to (restored on return — home above all),
+     and the in-app stack, so the top bar's Back is a real Back. */
+  const routeRef = useRef(route);
+  const navStackRef = useRef([route]);
   useEffect(() => {
-    const h = () => { setRoute(readRoute()); window.scrollTo(0, 0); };
+    const h = () => {
+      const nxt = readRoute();
+      const prev = routeRef.current;
+      try {
+        const map = JSON.parse(sessionStorage.getItem('omni:scrollpos') || '{}');
+        map[prev] = window.scrollY;
+        sessionStorage.setItem('omni:scrollpos', JSON.stringify(map));
+      } catch { /* storage off — views just open at the top */ }
+      const st = navStackRef.current;
+      if (st.length > 1 && st[st.length - 2] === nxt) st.pop();
+      else if (st[st.length - 1] !== nxt) st.push(nxt);
+      routeRef.current = nxt;
+      setRoute(nxt);
+    };
     addEventListener('hashchange', h); return () => removeEventListener('hashchange', h);
   }, []);
+  useEffect(() => {
+    let y = 0;
+    try { y = JSON.parse(sessionStorage.getItem('omni:scrollpos') || '{}')[route] || 0; } catch { /* ignore */ }
+    if (y > 0) {
+      const t = setTimeout(() => window.scrollTo(0, y), 60);
+      return () => clearTimeout(t);
+    }
+    window.scrollTo(0, 0);
+    return undefined;
+  }, [route]);
   useEffect(() => { localStorage.setItem('omni:fav', JSON.stringify(fav)); }, [fav]);
   useEffect(() => {
     if (!route) return;
@@ -339,7 +377,7 @@ export default function App() {
     const t = setTimeout(async () => {
       const [songs, chans] = await Promise.all([
         searchMusic(s, { deep: false }).then((r) => (r.tracks || []).slice(0, 8)).catch(() => []),
-        loadChanIndex().then((rows) => {
+        lowData ? Promise.resolve([]) : loadChanIndex().then((rows) => {
           const nq = normQ(s);
           return rows.filter((c) => normQ(`${c.name} ${c.group || ''}`).includes(nq)).slice(0, 10);
         }).catch(() => []),
@@ -347,9 +385,15 @@ export default function App() {
       if (!dead) { setUni({ songs, chans, loading: false }); commitSearch(s); }
     }, 450);
     return () => { dead = true; clearTimeout(t); };
-  }, [q]);
+  }, [q, lowData]);
 
   const go = (id) => { location.hash = id; };
+  /* True Back where this session has somewhere to go back to; a deep
+     link that landed straight on a tool goes Home instead. */
+  const goBack = () => {
+    if (navStackRef.current.length > 1) history.back();
+    else go('');
+  };
   const offCount = TOOLS.filter((t) => t.t === 'off').length;
 
   const tileBtn = (t) => (
@@ -373,7 +417,7 @@ export default function App() {
     <Shell>
       <header className={`topbar ${scrolled ? 'scrolled' : ''}`}>
         {tool
-          ? <button className="iconbtn" onClick={() => go('')} aria-label="Back"><Icon n="back" size={19} /></button>
+          ? <button className="iconbtn" onClick={goBack} aria-label="Back"><Icon n="back" size={19} /></button>
           : <span className="brand gradtext">OMNI</span>}
         <div className="tb-t">
           <b>{tool ? tool.n : 'OmniTools'}</b>
@@ -397,14 +441,17 @@ export default function App() {
         </button>
         <button className="iconbtn" aria-label="Settings" title="Settings - themes, PWA, sounds, proxy"
           onClick={() => go('settings')}><Icon n="cog" size={18} /></button>
-        <button className="iconbtn" aria-label="System status" onClick={() => setShowStatus((s) => !s)}>
-          <span className="dot" />
-        </button>
+        <TopStatusDot onClick={() => setShowStatus((s) => !s)} />
       </header>
 
       {showStatus && <StatusPanel onClose={() => setShowStatus(false)} offCount={offCount} total={TOOLS.length} />}
 
       <div className="main-area">
+        {offline && (
+          <div className="offlinebar" role="status">
+            <span className="dot warn" />
+            <span>You&rsquo;re offline — {offCount} tools still work without internet.</span>
+          </div>)}
         {!tool && (<>
           <div className="hero">
             <h1 className="gradtext">EVERYTHING<br />IN ONE APP</h1>
@@ -425,8 +472,9 @@ export default function App() {
             <Icon n="search" size={18} />
             <input value={q} onChange={(e) => setQ(e.target.value)}
               onFocus={() => setQFocus(true)} onBlur={() => setQFocus(false)}
+              aria-label="Search tools, songs and channels"
               placeholder="Search tools, songs, channels…" enterKeyHint="search" />
-            {q && <button onClick={() => setQ('')} aria-label="Clear"
+            {q && <button onClick={() => setQ('')} aria-label="Clear search"
               style={{ background: 'none', border: 0, color: 'var(--fg3)', display: 'grid', placeItems: 'center' }}>
               <Icon n="x" size={17} /></button>}
           </div>
@@ -497,6 +545,7 @@ export default function App() {
       </nav>
       <MiniPlayer />
       <FullPlayer />
+      <InstallPrompt />
       <Toaster />
       <ScrollTopBtn />
     </Shell>
@@ -507,7 +556,83 @@ export default function App() {
 
 function Shell({ children }) {
   const p = usePlayer();
-  return <div className={`app ${p?.track ? 'has-mini' : ''}`}>{children}</div>;
+  return (
+    <div className={`app ${p?.track ? 'has-mini' : ''}`}
+      style={{ '--mini-lift': p?.track ? '64px' : '0px' }}>
+      {children}
+    </div>);
+}
+
+/* ---------------------------------------------------------- status dot
+   The header dot used to be painted permanently green. It now reads
+   the same source-health stats the status panel shows: green when
+   every used source is answering, amber when some are open, red when
+   most are — and plain green-with-honest-title before anything has
+   been used, since no claim exists yet either way. */
+function TopStatusDot({ onClick }) {
+  const [stats, setStats] = useState([]);
+  useEffect(() => {
+    const read = () => setStats(providerStats());
+    read();
+    const t = setInterval(read, 5000);
+    return () => clearInterval(t);
+  }, []);
+  const open = stats.filter((x) => x.open).length;
+  const cls = stats.length && open > 0 ? (open < stats.length / 2 ? 'warn' : 'bad') : '';
+  const title = !stats.length
+    ? 'System status — nothing has been loaded yet'
+    : open === 0
+      ? 'System status — every source is answering'
+      : `System status — ${open} of ${stats.length} sources are having trouble`;
+  return (
+    <button className="iconbtn" aria-label="System status" title={title} onClick={onClick}>
+      <span className={`dot ${cls}`} />
+    </button>);
+}
+
+/* ------------------------------------------------------- install prompt
+   The banner design existed in the stylesheet with no component using
+   it; the only route to install was a folded Settings section. This
+   surfaces it with manners: only when the browser actually offers an
+   install, only from the second visit on, and a dismissal is
+   remembered for a fortnight rather than nagging every open. */
+function InstallPrompt() {
+  const p = usePlayer();
+  const [ready, setReady] = useState(false);
+  const [visits, setVisits] = useState(0);
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      const t = +localStorage.getItem('omni:install:dismissed') || 0;
+      return t > 0 && Date.now() - t < 14 * 864e5;
+    } catch { return false; }
+  });
+  useEffect(() => {
+    try {
+      const n = (+localStorage.getItem('omni:visits') || 0) + 1;
+      localStorage.setItem('omni:visits', String(n));
+      setVisits(n);
+    } catch { /* storage off — the prompt simply waits for a later visit */ }
+    return onInstallPrompt(() => setReady(true));
+  }, []);
+  if (!ready || dismissed || visits < 2 || isStandalone()) return null;
+  const dismiss = () => {
+    try { localStorage.setItem('omni:install:dismissed', String(Date.now())); } catch { /* ignore */ }
+    setDismissed(true);
+  };
+  return (
+    <div className="pwa-install-prompt" role="dialog" aria-label="Install OmniTools"
+      style={p?.track ? { bottom: 'calc(138px + var(--safe-b))' } : undefined}>
+      <Icon n="download" size={22} style={{ color: 'var(--green)', flex: '0 0 auto' }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <b style={{ fontSize: 13.5, display: 'block' }}>Install OmniTools</b>
+        <span className="dim sm">On your home screen — opens like an app, works offline.</span>
+      </div>
+      <button className="btn sm" onClick={async () => { await triggerInstall(); dismiss(); }}>Install</button>
+      <button className="iconbtn" style={{ width: 34, height: 34, flex: '0 0 auto' }}
+        aria-label="Not now" onClick={dismiss}>
+        <Icon n="x" size={15} />
+      </button>
+    </div>);
 }
 
 function StatusPanel({ onClose, offCount, total }) {
@@ -581,8 +706,11 @@ function StatusPanel({ onClose, offCount, total }) {
 function Shelf({ fav, recentTools, go }) {
   let lastSong = null;
   let lastChan = null;
+  let lastBook = null;
   try { lastSong = libHistory()[0] || null; } catch {}
   try { lastChan = tvRecent()[0] || null; } catch {}
+  try { lastBook = lastRead(); } catch {}
+  const ld = lowDataOn();
   const favTools = TOOLS.filter((t) => fav.includes(t.id));
   const recent = recentTools
     .map((id) => TOOLS.find((t) => t.id === id))
@@ -590,7 +718,7 @@ function Shelf({ fav, recentTools, go }) {
   /* First run: the shelf introduces itself instead of vanishing, so a
      new user learns the home screen keeps their place for them. The
      moment anything lands here, this face is gone for good. */
-  if (!lastSong && !lastChan && !favTools.length && !recent.length) {
+  if (!lastSong && !lastChan && !lastBook && !favTools.length && !recent.length) {
     return (
       <div className="shelf">
         <Section id="shelf-start" title="Start here" icon="sparkle">
@@ -619,15 +747,22 @@ function Shelf({ fav, recentTools, go }) {
 
   return (
     <div className="shelf">
-      {(lastSong || lastChan) && (
+      {(lastSong || lastChan || lastBook) && (
         <Section id="shelf-continue" title="Continue" icon="play">
           <div className="shelf-col">
+            {lastBook && (
+              <button className="cont-card" onClick={() => go(lastBook.tool)}>
+                <span className="cont-ic"><Icon n="book" size={18} /></span>
+                <span className="cont-tx"><b>{lastBook.label?.t || 'Continue reading'}</b>
+                  <small>{lastBook.label?.s ? `${lastBook.label.s} · ` : ''}tap to continue reading</small></span>
+                <Icon n="play" size={18} style={{ color: 'var(--green)', flex: '0 0 auto' }} />
+              </button>)}
             {lastSong && (
               <button className="cont-card" onClick={() => {
                 try { sessionStorage.setItem('omni:music:resume', JSON.stringify(lastSong)); } catch {}
                 go('music');
               }}>
-                {lastSong.art
+                {lastSong.art && !ld
                   ? <img src={lastSong.art} alt="" loading="lazy" />
                   : <span className="cont-ic"><Icon n="music" size={18} /></span>}
                 <span className="cont-tx"><b>{lastSong.title}</b>
@@ -639,7 +774,7 @@ function Shelf({ fav, recentTools, go }) {
                 try { sessionStorage.setItem('omni:tv:open', JSON.stringify(lastChan)); } catch {}
                 go('tv');
               }}>
-                {lastChan.logo
+                {lastChan.logo && !ld
                   ? <img src={lastChan.logo} alt="" loading="lazy" />
                   : <span className="cont-ic"><Icon n="film" size={18} /></span>}
                 <span className="cont-tx"><b>{lastChan.name}</b>
@@ -676,8 +811,7 @@ function UniResults({ uni, go }) {
       : songs && songs.length ? (
         <div className="list" style={{ marginBottom: 4 }}>
           {songs.map((t, i) => (
-            <div className="row" key={t.id || i} onClick={() => p.play(t, songs)}
-              style={{ cursor: 'pointer' }}>
+            <button className="row uni-row" key={t.id || i} onClick={() => p.play(t, songs)}>
               {t.art
                 ? <img src={t.art} alt="" loading="lazy"
                     style={{ width: 44, height: 44, borderRadius: 9, objectFit: 'cover', flex: '0 0 auto', background: 'var(--s3)' }}
@@ -686,7 +820,7 @@ function UniResults({ uni, go }) {
               <div className="main"><b style={{ fontSize: 13.5 }}>{(t.title || '').slice(0, 54)}</b>
                 <span className="dim sm">{t.artist || ''}</span></div>
               <Icon n="play" size={18} style={{ color: 'var(--green)', flex: '0 0 auto' }} />
-            </div>))}
+            </button>))}
         </div>)
       : <div className="state sm">No songs matched — the Music tab searches deeper.</div>}
     <div className="seclabel">TV channels{chans ? ` · ${chans.length}` : ''}</div>
@@ -694,8 +828,7 @@ function UniResults({ uni, go }) {
       : chans && chans.length ? (
         <div className="list">
           {chans.map((c, i) => (
-            <div className="row" key={(c.id || 'c') + i} onClick={() => openChan(c)}
-              style={{ cursor: 'pointer' }}>
+            <button className="row uni-row" key={(c.id || 'c') + i} onClick={() => openChan(c)}>
               {c.logo
                 ? <img src={c.logo} alt="" loading="lazy"
                     style={{ width: 44, height: 44, borderRadius: 9, objectFit: 'contain', flex: '0 0 auto', background: 'var(--s3)' }}
@@ -704,7 +837,7 @@ function UniResults({ uni, go }) {
               <div className="main"><b style={{ fontSize: 13.5 }}>{c.name}</b>
                 <span className="dim sm">{c.group || 'Channel'}</span></div>
               <Icon n="play" size={18} style={{ color: 'var(--green)', flex: '0 0 auto' }} />
-            </div>))}
+            </button>))}
         </div>)
       : <div className="state sm">No channel matched — open TV for the full list.</div>}
   </>);
