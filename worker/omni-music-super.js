@@ -1,5 +1,9 @@
 /**
  * Omni Music Super Aggregator - Cloudflare Worker
+ *
+ * SYNC NOTE: the Jamendo/Last.fm values below mirror src/core/music-engines.js
+ * (the client-side source of truth). This file is a standalone deployable and
+ * cannot import it — if a value changes there, change it here too.
  * 
  * BEST OF GITHUB + CLOUDFLARE - 100k req/day free tier
  * 

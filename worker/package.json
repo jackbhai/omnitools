@@ -1,0 +1,9 @@
+{
+  "name": "omnitools-workers",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cloudflare Workers fleet for OmniTools. Three standalone single-file workers (no build step, no shared imports — each file deploys as-is): omni-proxy (CORS relay + presence + YouTube resolver), omni-music-super (music aggregation mirror), omni-discovery (discovery mirror). Deploy with worker/deploy.sh (wrangler) or the Cloudflare helper (cf.py deploy). NOTE: omni-music-super.js carries a mirror of the Jamendo/Last.fm engine values whose source of truth is src/core/music-engines.js — keep them in sync.",
+  "scripts": {
+    "deploy": "bash deploy.sh"
+  }
+}

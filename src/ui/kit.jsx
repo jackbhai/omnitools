@@ -143,7 +143,7 @@ export function Copy({ text, label = 'Copy' }) {
 }
 
 export const fmt = (n, d = 0) =>
-  n == null || Number.isNaN(+n) ? '—' : (+n).toLocaleString('en-IN', { maximumFractionDigits: d });
+  n == null || !Number.isFinite(+n) ? '—' : (+n).toLocaleString('en-IN', { maximumFractionDigits: d });
 
 /**
  * WMO weather codes -> [label, icon name].
