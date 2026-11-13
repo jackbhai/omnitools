@@ -25,6 +25,8 @@
 // Vite inlines this JSON at build time. (The Node verification script uses a
 // small loader shim so the same module works in both environments.)
 import DATA from '../data/metro-delhi.json';
+import { fmtTime, fmtDur } from './timefmt.js';
+export { fmtTime, fmtDur };
 
 const R = 6371;
 const rad = (d) => (d * Math.PI) / 180;
@@ -165,18 +167,10 @@ const FIXED_HOLIDAYS = new Set([           // Republic Day, Independence Day, Ga
 ]);
 
 /* ------------------------------------------------------------------ status */
-const pad = (n) => String(n).padStart(2, '0');
 export function minutesOfDay(d = new Date()) {
   const ist = new Date(d.getTime() + (330 + d.getTimezoneOffset()) * 60000);
   return ist.getHours() * 60 + ist.getMinutes();
 }
-export const fmtTime = (m) => {
-  if (m == null) return '—';
-  const x = ((Math.round(m) % 1440) + 1440) % 1440;
-  const h = Math.floor(x / 60), mi = x % 60, ap = h >= 12 ? 'PM' : 'AM';
-  return `${h % 12 || 12}:${pad(mi)} ${ap}`;
-};
-export const fmtDur = (m) => (m >= 60 ? `${Math.floor(m / 60)}h ${pad(m % 60)}m` : `${m} min`);
 
 /** "every 3-6 min" / "10 min" when the page published a single figure. */
 export const headwayText = (h) => (!h ? null : h[0] === h[1] ? `${h[0]} min` : `${h[0]}-${h[1]} min`);

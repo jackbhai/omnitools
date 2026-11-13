@@ -209,20 +209,11 @@ export function routeSpeed(r) {
 }
 
 /* -------------------------------------------------------------- timetable */
-const pad = (n) => String(n).padStart(2, '0');
 /** minutes since midnight for a Date, in *Delhi* time (the data is Delhi-only) */
 export function minutesOfDay(d = new Date()) {
   const ist = new Date(d.getTime() + (330 + d.getTimezoneOffset()) * 60000);
   return ist.getHours() * 60 + ist.getMinutes();
 }
-export const fmtTime = (m) => {
-  if (m == null) return '—';
-  const x = ((m % 1440) + 1440) % 1440;
-  const h = Math.floor(x / 60), mi = x % 60;
-  const ap = h >= 12 ? 'PM' : 'AM', h12 = h % 12 || 12;
-  return `${h12}:${pad(mi)} ${ap}`;
-};
-export const fmtDur = (m) => (m >= 60 ? `${Math.floor(m / 60)}h ${pad(m % 60)}m` : `${m} min`);
 
 /** Every published departure time of one direction, minutes since midnight. */
 export function departures(r) {
@@ -598,3 +589,7 @@ export const routeMeta = (r) => ({
   stopCount: r.s.length,
   shape: r.sm !== 0,
 });
+
+/* fmtTime/fmtDur live in timefmt.js (shared with metro-route); re-exported for existing import sites. */
+import { fmtTime, fmtDur } from './timefmt.js';
+export { fmtTime, fmtDur };

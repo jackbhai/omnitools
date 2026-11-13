@@ -7,7 +7,7 @@ import * as T from '../core/trains';
 import { useData, Spin, Err, Empty, Src, Search, Card, Chips, fmt } from '../ui/kit';
 import { Icon } from '../ui/icons';
 
-const { fmtTime, delayLabel } = T;
+const { fmtIsoTime: fmtTime, delayLabel } = T;
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 /* ------------------------------------------------------------- LIVE STATUS */

@@ -43,6 +43,7 @@
  */
 
 import { proxyBase } from './settings';
+import { JAMENDO_IDS, JAMENDO_TRACKS_API, LASTFM_KEY, LASTFM_API } from './music-engines.js';
 
 const enc = encodeURIComponent;
 
@@ -889,8 +890,7 @@ export async function jamendoFullSearch(q, { limit = 8 } = {}) {
   return [];
 }
 
-const JAMENDO_IDS = ['2c9a11b9', '709fa152'];
-const JAMENDO_BASE = 'https://api.jamendo.com/v3.0/tracks/';
+const JAMENDO_BASE = JAMENDO_TRACKS_API;
 
 export async function jamendoEnhancedSearch(q, { limit = 8 } = {}) {
   const query = String(q || '').trim();
@@ -928,7 +928,7 @@ export async function jamendoEnhancedSearch(q, { limit = 8 } = {}) {
  * No audio stream, but rich metadata + YouTube linkage via title+artist
  * Use as metadata enrichment + query generator for other tiers
  */
-const LASTFM_BASE = 'https://ws.audioscrobbler.com/2.0/';
+const LASTFM_BASE = LASTFM_API;
 // Public demo key pattern - many open-source projects use this approach with fallback
 // We try without key via proxy first, then with common public pattern, all CORS via relay
 
@@ -942,8 +942,8 @@ export async function lastFmSearch(q, { limit = 8 } = {}) {
     // First try API with no key via proxy - some endpoints work with limited data
     // Use the search page JSON that Last.fm embeds
     const urls = [
-      `${LASTFM_BASE}?method=track.search&track=${enc(query)}&api_key=b25b959554ed76058ac220b7b2e0a026&format=json&limit=${limit}`,
-      `${LASTFM_BASE}?method=artist.search&artist=${enc(query)}&api_key=b25b959554ed76058ac220b7b2e0a026&format=json&limit=${limit}`,
+      `${LASTFM_BASE}?method=track.search&track=${enc(query)}&api_key=${LASTFM_KEY}&format=json&limit=${limit}`,
+      `${LASTFM_BASE}?method=artist.search&artist=${enc(query)}&api_key=${LASTFM_KEY}&format=json&limit=${limit}`,
     ];
     for (const url of urls) {
       try {
@@ -979,7 +979,7 @@ export async function lastFmSimilar(artist, track, { limit = 6 } = {}) {
   if (!sourceReady('lastfm-similar')) return [];
   try {
     const b = proxyBase();
-    const url = `${LASTFM_BASE}?method=track.getSimilar&artist=${enc(artist)}&track=${enc(track)}&api_key=b25b959554ed76058ac220b7b2e0a026&format=json&limit=${limit}`;
+    const url = `${LASTFM_BASE}?method=track.getSimilar&artist=${enc(artist)}&track=${enc(track)}&api_key=${LASTFM_KEY}&format=json&limit=${limit}`;
     const fetchUrl = b ? `${b}/?url=${enc(url)}` : url;
     const d = await getJson(fetchUrl, 10000);
     const tracks = d.similartracks?.track || [];

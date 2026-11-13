@@ -18,6 +18,7 @@
 
 import { proxyBase } from './settings';
 import { getJson, sourceReady, restSource } from './sources';
+import { JAMENDO_IDS, JAMENDO_API, LASTFM_KEY } from './music-engines.js';
 
 const enc = encodeURIComponent;
 const clean = (s) => String(s || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#0?39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
@@ -28,8 +29,8 @@ const clean = (s) => String(s || '').replace(/&quot;/g, '"').replace(/&amp;/g, '
  * Endpoints: /tracks/, /albums/, /artists/, /radios/, /playlists/, /tags/, /feeds/
  */
 
-const JAMENDO_ID = '2c9a11b9';
-const JAMENDO_BASE = 'https://api.jamendo.com/v3.0';
+const JAMENDO_ID = JAMENDO_IDS[0];
+const JAMENDO_BASE = JAMENDO_API;
 
 export async function jamendoTracks(q, { limit = 10, order = 'popularity_total' } = {}) {
   if (!sourceReady('jamendo-tracks')) return [];
@@ -126,7 +127,7 @@ export async function jamendoPlaylists(q, { limit = 6 } = {}) {
  * Use as query generator + metadata enrichment
  */
 
-const LASTFM_KEY = 'b25b959554ed76058ac220b7b2e0a026'; // public demo key used by many OSS projects, fallback via relay
+// LASTFM_KEY comes from music-engines.js (public demo key, fallback via relay)
 
 export async function lastFmTrackSearch(q, { limit = 10 } = {}) {
   if (!sourceReady('lastfm-track')) return [];

@@ -142,7 +142,8 @@ export function searchStations(q, limit = 10) {
   return [...code, ...rank(starts), ...rank(has)].slice(0, limit);
 }
 
-export const fmtTime = (iso) => {
+/** ISO timestamp → HH:MM (IST). Named apart from timefmt's fmtTime on purpose: different input, different job. */
+export const fmtIsoTime = (iso) => {
   if (!iso) return '—';
   try {
     return new Date(iso).toLocaleTimeString('en-IN',

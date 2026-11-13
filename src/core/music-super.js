@@ -16,6 +16,7 @@
  */
 
 import { proxyBase } from './settings';
+import { JAMENDO_IDS, JAMENDO_TRACKS_API, LASTFM_KEY, LASTFM_API } from './music-engines.js';
 
 const enc = encodeURIComponent;
 
@@ -291,8 +292,7 @@ export async function itunesPreviewSearch(q, { limit = 8 } = {}) {
  * Extra: FreeSound for sound effects (if user wants), but for music we use Jamendo
  */
 
-const JAMENDO_IDS = ['2c9a11b9', '709fa152'];
-const JAMENDO_BASE = 'https://api.jamendo.com/v3.0/tracks/';
+const JAMENDO_BASE = JAMENDO_TRACKS_API;
 
 export async function jamendoEnhancedSearch(q, { limit = 8 } = {}) {
   const query = String(q || '').trim();
@@ -347,7 +347,7 @@ export async function lastFmSearch(q, { limit = 8 } = {}) {
   if (!usable('lastfm')) return [];
   try {
     const b = proxyBase();
-    const url = `https://ws.audioscrobbler.com/2.0/?method=track.search&track=${enc(query)}&api_key=b25b959554ed76058ac220b7b2e0a026&format=json&limit=${limit}`;
+    const url = `${LASTFM_API}?method=track.search&track=${enc(query)}&api_key=${LASTFM_KEY}&format=json&limit=${limit}`;
     const fetchUrl = b ? `${b}/?url=${enc(url)}` : url;
     const d = await fetchJson(fetchUrl, 12000);
     const tracks = d.results?.trackmatches?.track || [];
