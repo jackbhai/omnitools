@@ -69,6 +69,10 @@ const VerseOfDay = lazyTool(() => import('./tools/votd'), 'VerseOfDay');
 const PathReminders = lazyTool(() => import('./tools/reminders'), 'Reminders');
 const SleepSounds = lazyTool(() => import('./tools/sleepsounds'), 'SleepSounds');
 const Saraiki = lazyTool(() => import('./tools/saraiki'), 'Saraiki');
+const Languages = lazyTool(() => import('./tools/languages'), 'Languages');
+const Urdu = lazyTool(() => import('./tools/languages'), 'Urdu');
+const Punjabi = lazyTool(() => import('./tools/languages'), 'Punjabi');
+const Gurmukhi = lazyTool(() => import('./tools/languages'), 'Gurmukhi');
 const PincodeFull = lazyTool(() => import('./tools/directories'), 'PincodeFull');
 const IfscFull = lazyTool(() => import('./tools/directories'), 'IfscFull');
 const BloodBanks = lazyTool(() => import('./tools/directories'), 'BloodBanks');
@@ -212,6 +216,10 @@ const TOOLS = [
   { id:'country',   n:'Countries',     i:'earth',    c:'Learn', t:'live', d:'250 countries, full detail', C:W.Countries },
   { id:'names',     n:'Names & Surnames', i:'smile', c:'Learn', t:'live', d:'5,695 names · caste, region',C:Names },
   { id:'saraiki',   n:'Saraiki Seekhna', i:'book',   c:'Learn', t:'off',  d:'Sabaq course · Shahmukhi + Roman', C:Saraiki },
+  { id:'languages', n:'Languages',     i:'book',   c:'Learn', t:'off',  d:'Saraiki · Urdu · Punjabi · Gurmukhi', C:Languages },
+  { id:'urdu',      n:'Urdu Sikho',    i:'book',   c:'Learn', t:'off',  d:'Script first · 38 haroof · 10 Sabaq', C:Urdu },
+  { id:'punjabi',   n:'Punjabi Sikho', i:'book',   c:'Learn', t:'off',  d:'Spoken Punjabi · Shahmukhi · 10 Sabaq', C:Punjabi },
+  { id:'gurmukhi',  n:'Gurmukhi Sikho', i:'type',  c:'Learn', t:'off',  d:'35 akhar · read Gurbani line by line', C:Gurmukhi },
   { id:'worlddata', n:'World Data',    i:'chart',    c:'Learn', t:'live', d:'16 indicators, 25 years',   C:WorldData },
 
   // ---------- Media ----------

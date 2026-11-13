@@ -41,6 +41,12 @@
  *                                           streak/total are computed, never stored)
  * omni:saraiki:drill   tools/saraiki.jsx   Saraiki practice progress
  *                                           ({ quiz: { poolKey: best }, seen: { sabaq: count } })
+ * omni:langs:drill:urdu     tools/languages.jsx  Urdu Sikho practice progress
+ * omni:langs:drill:punjabi  tools/languages.jsx  Punjabi Sikho practice progress
+ * omni:langs:drill:gurmukhi tools/languages.jsx  Gurmukhi Sikho practice progress
+ *                                           (same shape as omni:saraiki:drill;
+ *                                            Gurmukhi also stores quiz.letters
+ *                                            for the letter-recognition drill)
  * omni:news:ed         tools/news.jsx      news edition (country) choice
  * omni:quran:listen    tools/devotional.jsx Quran listen position
  * omni:sid             core/presence.js    anonymous presence session id
