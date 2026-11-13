@@ -13,6 +13,7 @@
  * avoid.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { sessTake, SESS_OPEN_TV } from '../core/keys';
 import * as TV from '../core/iptv';
 import { Icon } from '../ui/icons';
 import { Card, Empty, fmt } from '../ui/kit';
@@ -257,9 +258,8 @@ export function LiveTV() {
   /* "Continue" from the home shelf: open the channel it named. */
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem('omni:tv:open');
+      const raw = sessTake(SESS_OPEN_TV);
       if (!raw) return;
-      sessionStorage.removeItem('omni:tv:open');
       const ch = JSON.parse(raw);
       if (ch?.url) setPlaying(ch);
     } catch {}

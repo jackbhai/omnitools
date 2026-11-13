@@ -38,6 +38,7 @@ import { favourites, isFav, toggleFav, history, topPlayed, playlists,
          encodePlaylistShare, decodePlaylistShare, importSharedPlaylist } from '../core/library';
 import { getSettings, setSetting, testProxy, usingBuiltin, BUILTIN_PROXY } from '../core/settings';
 import * as SRC from '../core/sources';
+import { sessTake, SESS_RESUME_MUSIC } from '../core/keys';
 import { HomeTab } from './music-home';
 
 const mmss = (s) => (!s ? '' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
@@ -86,9 +87,8 @@ export function Music() {
      here, through the normal resolving play path. */
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem('omni:music:resume');
+      const raw = sessTake(SESS_RESUME_MUSIC);
       if (!raw) return;
-      sessionStorage.removeItem('omni:music:resume');
       const t = JSON.parse(raw);
       if (t?.id) setTimeout(() => player.play(t, [t]), 400);
     } catch {}

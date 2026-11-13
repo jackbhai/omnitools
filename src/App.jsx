@@ -67,6 +67,7 @@ import { Spin, Section, SkelRows, Empty, Toaster, toast } from './ui/kit';
 import * as W from './tools/world';
 import { providerStats } from './core/engine';
 import { loadBusData } from './core/bus-route';
+import { sessSet, SESS_RESUME_MUSIC, SESS_OPEN_TV } from './core/keys';
 import { searchMusic } from './core/music';
 import { history as libHistory } from './core/library';
 import { recent as tvRecent } from './core/iptv';
@@ -759,7 +760,7 @@ function Shelf({ fav, recentTools, go }) {
               </button>)}
             {lastSong && (
               <button className="cont-card" onClick={() => {
-                try { sessionStorage.setItem('omni:music:resume', JSON.stringify(lastSong)); } catch {}
+                try { sessSet(SESS_RESUME_MUSIC, JSON.stringify(lastSong)); } catch {}
                 go('music');
               }}>
                 {lastSong.art && !ld
@@ -771,7 +772,7 @@ function Shelf({ fav, recentTools, go }) {
               </button>)}
             {lastChan && (
               <button className="cont-card" onClick={() => {
-                try { sessionStorage.setItem('omni:tv:open', JSON.stringify(lastChan)); } catch {}
+                try { sessSet(SESS_OPEN_TV, JSON.stringify(lastChan)); } catch {}
                 go('tv');
               }}>
                 {lastChan.logo && !ld
@@ -802,7 +803,7 @@ function UniResults({ uni, go }) {
   const p = usePlayer();
   const { songs, chans, loading } = uni;
   const openChan = (c) => {
-    try { sessionStorage.setItem('omni:tv:open', JSON.stringify(c)); } catch {}
+    try { sessSet(SESS_OPEN_TV, JSON.stringify(c)); } catch {}
     go('tv');
   };
   return (<>
