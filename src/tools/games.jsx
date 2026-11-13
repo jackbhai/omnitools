@@ -1,21 +1,27 @@
 /**
- * Games — three small, polished, fully offline games in one tool.
+ * Games — a 50-game offline arcade in one tool.
  *
- * 2048 (swipe or arrows), Snake (canvas, swipe or pad) and Memory Match.
- * No network, no assets: tiles are styled divs, the snake is one canvas,
- * and the sounds are the app's own synthesized set. Best scores live on
- * this device only.
+ * The hub below is a registry, not a hard-coded count: fifty entries
+ * across Reflex, Puzzle, Brain, Arcade and Cards & Luck, each rendered
+ * from its group module (lazy-loaded per group so the hub stays light).
+ * The original three games — 2048, Snake, Memory Match — predate the
+ * arcade and live in this file; everything else sits in
+ * tools/games-{reflex,puzzle,brain,arcade,cards}.jsx over the pure
+ * logic in core/games.js + core/games2.js + core/games-canvas.js,
+ * all proven by scripts/verify_games.mjs. Best scores live on-device
+ * in omni:games:best; no network, no assets, no ads.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useMemo, useRef, useState } from 'react';
 import { gNewBoard, gMove, gCanMove, gWon } from '../core/games';
 import { S_COLS, S_ROWS, sNewState, sStep, sTurn } from '../core/games';
 import { mDeal } from '../core/games';
-import { Card } from '../ui/kit';
+import { Card, Spin } from '../ui/kit';
 import { Icon } from '../ui/icons';
 import { play as sfxPlay } from '../core/sfx.js';
+import { loadBest } from './games-kit.jsx';
+import { useCallback, useEffect } from 'react';
 
 const BKEY = 'omni:games:best';
-const loadBest = () => { try { return JSON.parse(localStorage.getItem(BKEY) || '{}'); } catch { return {}; } };
 const saveBest = (patch) => {
   try { localStorage.setItem(BKEY, JSON.stringify({ ...loadBest(), ...patch })); } catch { /* storage off */ }
 };
@@ -272,21 +278,145 @@ function GameMemory() {
   </>);
 }
 
+/* ------------------------------------------------------- arcade registry */
+const lazyGame = (load, name) => lazy(() => load().then((m) => ({ default: m[name] })));
+const R = () => import('./games-reflex.jsx');
+const P = () => import('./games-puzzle.jsx');
+const B = () => import('./games-brain.jsx');
+const A = () => import('./games-arcade.jsx');
+const K = () => import('./games-cards.jsx');
+
+/* id, name, group, icon, best key (+unit), component */
+export const GAMES = [
+  /* Reflex */
+  { id: 'flappy', n: 'Pipe Dodge', g: 'Reflex', i: 'film', k: 'flappy', C: lazyGame(R, 'PipeDodge') },
+  { id: 'dino', n: 'Dino Runner', g: 'Reflex', i: 'train', k: 'dino', C: lazyGame(R, 'DinoRunner') },
+  { id: 'whack', n: 'Whack-a-Mole', g: 'Reflex', i: 'smile', k: 'whack', C: lazyGame(R, 'WhackAMole') },
+  { id: 'reaction', n: 'Reaction Time', g: 'Reflex', i: 'timer', k: 'reaction', u: ' ms', C: lazyGame(R, 'ReactionTime') },
+  { id: 'aim', n: 'Aim Trainer', g: 'Reflex', i: 'signal', k: 'aim', C: lazyGame(R, 'AimTrainer') },
+  { id: 'stroop', n: 'Color Match', g: 'Reflex', i: 'palette', k: 'stroop', C: lazyGame(R, 'ColorMatch') },
+  { id: 'quickdraw', n: 'Quick Draw', g: 'Reflex', i: 'star', k: 'quickdraw', u: ' ms', C: lazyGame(R, 'QuickDraw') },
+  { id: 'bubbles', n: 'Bubble Pop', g: 'Reflex', i: 'disc', k: 'bubbles', C: lazyGame(R, 'BubblePop') },
+  { id: 'catch', n: 'Catch the Basket', g: 'Reflex', i: 'box', k: 'catch', C: lazyGame(R, 'CatchBasket') },
+  { id: 'cardodge', n: 'Car Dodge', g: 'Reflex', i: 'route', k: 'cardodge', C: lazyGame(R, 'CarDodge') },
+  { id: 'heli', n: 'Helicopter Hold', g: 'Reflex', i: 'wind', k: 'heli', C: lazyGame(R, 'HelicopterHold') },
+  { id: 'hopper', n: 'Vertical Hopper', g: 'Reflex', i: 'up', k: 'hopper', C: lazyGame(R, 'VerticalHopper') },
+  { id: 'roadcross', n: 'Road Cross', g: 'Reflex', i: 'walk', k: 'roadcross', C: lazyGame(R, 'RoadCross') },
+  { id: 'stack', n: 'Stack Tower', g: 'Reflex', i: 'list', k: 'stack', C: lazyGame(R, 'StackTower') },
+  { id: 'fruit', n: 'Fruit Slice', g: 'Reflex', i: 'wheat', k: 'fruit', C: lazyGame(R, 'FruitSlice') },
+  { id: 'gravflip', n: 'Gravity Flip', g: 'Reflex', i: 'swap', k: 'gravflip', C: lazyGame(R, 'GravityFlip') },
+  { id: 'tapstar', n: 'Tap the Star', g: 'Reflex', i: 'staron', k: 'tapstar', C: lazyGame(R, 'TapTheStar') },
+  /* Puzzle */
+  { id: 'mines', n: 'Minesweeper', g: 'Puzzle', i: 'grid', k: 'mines', u: 's', C: lazyGame(P, 'Minesweeper') },
+  { id: 'blockfall', n: 'Block Fall', g: 'Puzzle', i: 'box', k: 'blockfall', C: lazyGame(P, 'BlockFall') },
+  { id: 'slide15', n: 'Sliding Puzzle', g: 'Puzzle', i: 'numbers', k: 'slide15', u: ' moves', C: lazyGame(P, 'SlidePuzzle') },
+  { id: 'lightsout', n: 'Lights Out', g: 'Puzzle', i: 'sun', k: 'lightsout', u: ' moves', C: lazyGame(P, 'LightsOut') },
+  { id: 'floodit', n: 'Flood It', g: 'Puzzle', i: 'drop', k: 'floodit', u: ' moves', C: lazyGame(P, 'FloodIt') },
+  { id: 'maze', n: 'Maze Runner', g: 'Puzzle', i: 'map', k: 'maze', u: 's', C: lazyGame(P, 'MazeRunner') },
+  { id: 'hanoi', n: 'Tower of Hanoi', g: 'Puzzle', i: 'list', k: 'hanoi', u: ' moves', C: lazyGame(P, 'TowerOfHanoi') },
+  { id: 'dotsboxes', n: 'Dots & Boxes', g: 'Puzzle', i: 'grid', k: 'dotsboxes', C: lazyGame(P, 'DotsAndBoxes') },
+  { id: 'simon', n: 'Simon Sequence', g: 'Puzzle', i: 'disc', k: 'simon', C: lazyGame(P, 'Simon') },
+  { id: 'gridseq', n: 'Grid Sequence', g: 'Puzzle', i: 'sparkle', k: 'gridseq', C: lazyGame(P, 'GridSequence') },
+  { id: 'g2048', n: '2048', g: 'Puzzle', i: 'numbers', k: 'g2048', C: Game2048 },
+  /* Brain */
+  { id: 'sudoku', n: 'Sudoku', g: 'Brain', i: 'grid', k: 'sudoku-easy', u: 's', C: lazyGame(B, 'Sudoku') },
+  { id: 'mathsprint', n: 'Math Sprint', g: 'Brain', i: 'percent', k: 'mathsprint', C: lazyGame(B, 'MathSprint') },
+  { id: 'typing', n: 'Typing Speed', g: 'Brain', i: 'type', k: 'typing', u: ' wpm', C: lazyGame(B, 'TypingSpeed') },
+  { id: 'wordguess', n: 'Word Guess', g: 'Brain', i: 'pen', k: 'wordguess', C: lazyGame(B, 'WordGuess') },
+  { id: 'numguess', n: 'Number Guess', g: 'Brain', i: 'hash', k: 'numguess', u: ' guesses', C: lazyGame(B, 'NumberGuess') },
+  { id: 'mastermind', n: 'Mastermind', g: 'Brain', i: 'key', k: 'mastermind', u: ' guesses', C: lazyGame(B, 'Mastermind') },
+  { id: 'memory', n: 'Memory Match', g: 'Brain', i: 'sparkle', k: 'memory', u: ' moves', C: GameMemory },
+  /* Arcade */
+  { id: 'breakout', n: 'Breakout', g: 'Arcade', i: 'box', k: 'breakout', C: lazyGame(A, 'Breakout') },
+  { id: 'pong', n: 'Pong', g: 'Arcade', i: 'swap', k: 'pong', C: lazyGame(A, 'Pong') },
+  { id: 'space', n: 'Space Dodge', g: 'Arcade', i: 'satellite', k: 'space', C: lazyGame(A, 'SpaceDodge') },
+  { id: 'wallball', n: 'Wall Ball', g: 'Arcade', i: 'disc', k: 'wallball', C: lazyGame(A, 'WallBall') },
+  { id: 'pinball', n: 'Pinball Lite', g: 'Arcade', i: 'bolt', k: 'pinball', C: lazyGame(A, 'PinballLite') },
+  { id: 'snake', n: 'Snake', g: 'Arcade', i: 'route', k: 'snake', C: GameSnake },
+  /* Cards & Luck */
+  { id: 'ttt', n: 'Tic-Tac-Toe', g: 'Cards & Luck', i: 'grid', k: 'ttt', C: lazyGame(K, 'TicTacToe') },
+  { id: 'connect4', n: 'Connect Four', g: 'Cards & Luck', i: 'disc', k: 'connect4', C: lazyGame(K, 'ConnectFour') },
+  { id: 'reversi', n: 'Reversi', g: 'Cards & Luck', i: 'repeat', k: 'reversi', C: lazyGame(K, 'Reversi') },
+  { id: 'highlow', n: 'Higher or Lower', g: 'Cards & Luck', i: 'swap', k: 'highlow', C: lazyGame(K, 'HigherLower') },
+  { id: 'twentyone', n: 'Twenty-One', g: 'Cards & Luck', i: 'coin', k: 'twentyone', C: lazyGame(K, 'TwentyOne') },
+  { id: 'rps', n: 'Rock Paper Scissors', g: 'Cards & Luck', i: 'shuffle', k: 'rps', C: lazyGame(K, 'RockPaperScissors') },
+  { id: 'dice', n: 'Dice Duel', g: 'Cards & Luck', i: 'dice', k: 'dice', C: lazyGame(K, 'DiceDuel') },
+  { id: 'wheel', n: 'Spin Wheel', g: 'Cards & Luck', i: 'refresh', k: 'wheel', C: lazyGame(K, 'SpinWheel') },
+  { id: 'coin', n: 'Coin Toss', g: 'Cards & Luck', i: 'coin', k: 'coin', C: lazyGame(K, 'CoinToss') },
+];
+export const GAME_GROUPS = ['Reflex', 'Puzzle', 'Brain', 'Arcade', 'Cards & Luck'];
+export { Game2048, GameSnake, GameMemory };
+const ALIASES = {
+  flappy: 'bird chidiya', snake: 'saanp samp', mines: 'bomb surang', sudoku: 'ank ganit',
+  ttt: 'zero kata', rps: 'pathar kagaz kainchi', dice: 'pasa ludo', coin: 'sikka toss',
+  wordguess: 'shabd akshar hangman', typing: 'keyboard type', maze: 'bhul bhulaiya rasta',
+  car: 'gaadi', cardodge: 'gaadi car traffic', pong: 'table tennis', fruit: 'phal',
+};
+
 /* ------------------------------------------------------------------- shell */
 export function Games() {
-  const [tab, setTab] = useState('2048');
+  const [openId, setOpenId] = useState(null);
+  const [group, setGroup] = useState('All');
+  const [q, setQ] = useState('');
+  const [bests, setBests] = useState(() => loadBest());
+  const topRef = useRef(null);
+  const open = GAMES.find((g) => g.id === openId) || null;
+
+  const shown = useMemo(() => GAMES.filter((g) => {
+    if (group !== 'All' && g.g !== group) return false;
+    if (!q) return true;
+    const hay = (g.n + ' ' + g.g + ' ' + (ALIASES[g.id] || '')).toLowerCase();
+    return hay.includes(q.toLowerCase());
+  }), [group, q]);
+
+  const pick = (g) => {
+    setOpenId(g.id);
+    sfxPlay('open');
+    requestAnimationFrame(() => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+  const close = () => { setOpenId(null); setBests(loadBest()); sfxPlay('back'); };
+
   return (<>
-    <div className="cats">
-      <button className={`cat ${tab === '2048' ? 'on' : ''}`} onClick={() => setTab('2048')}>2048</button>
-      <button className={`cat ${tab === 'snake' ? 'on' : ''}`} onClick={() => setTab('snake')}>Snake</button>
-      <button className={`cat ${tab === 'memory' ? 'on' : ''}`} onClick={() => setTab('memory')}>Memory Match</button>
-    </div>
-    <div style={{ marginTop: 12 }}>
-      {tab === '2048' && <Game2048 />}
-      {tab === 'snake' && <GameSnake />}
-      {tab === 'memory' && <GameMemory />}
-    </div>
-    <div className="src"><span className="dot" /><span>Fully offline — no downloads, no ads, scores stay on this device</span></div>
+    <div ref={topRef} />
+    {open ? (<>
+      <button className="btn ghost sm" onClick={close}><Icon n="back" size={15} /> All games</button>
+      <h3 style={{ margin: '10px 0 2px' }}>{open.n}</h3>
+      <span className="pill">{open.g}</span>
+      <div style={{ marginTop: 12 }}>
+        <Suspense fallback={<Spin t="Loading game" />}>
+          <open.C key={open.id} />
+        </Suspense>
+      </div>
+    </>) : (<>
+      <div className="search">
+        <Icon n="search" size={17} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${GAMES.length} games…`}
+          aria-label="Search games" autoComplete="off" spellCheck="false" />
+        {q && <button onClick={() => setQ('')} aria-label="Clear search"><Icon n="x" size={15} /></button>}
+      </div>
+      <div className="cats" style={{ marginTop: 10 }}>
+        {['All', ...GAME_GROUPS].map((g) => (
+          <button key={g} className={`cat ${group === g ? 'on' : ''}`} onClick={() => setGroup(g)}>
+            {g}{g !== 'All' ? ` · ${GAMES.filter((x) => x.g === g).length}` : ` · ${GAMES.length}`}
+          </button>))}
+      </div>
+      {shown.length === 0
+        ? <p className="dim sm" style={{ marginTop: 14 }}>No game matches that search.</p>
+        : (
+          <div className="arc-grid">
+            {shown.map((g) => {
+              const b = bests[g.k];
+              return (
+                <button key={g.id} className="arc-card" onClick={() => pick(g)}>
+                  <span className="arc-ic"><Icon n={g.i} size={22} /></span>
+                  <b>{g.n}</b>
+                  <small>{g.g}</small>
+                  {b !== undefined && b !== null && <span className="arc-best">Best {b}{g.u || ''}</span>}
+                </button>);
+            })}
+          </div>)}
+    </>)}
+    <div className="src"><span className="dot" /><span>{GAMES.length} games, all original and fully offline — scores stay on this device</span></div>
   </>);
 }
 
