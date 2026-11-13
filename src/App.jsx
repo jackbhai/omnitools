@@ -62,6 +62,11 @@ const Gurbani = lazyTool(() => import('./tools/devotional'), 'Gurbani');
 const Devotional = lazyTool(() => import('./tools/devotional'), 'Devotional');
 const RecipesDeep = lazyTool(() => import('./tools/devotional'), 'RecipesDeep');
 const Rashifal = lazyTool(() => import('./tools/devotional'), 'Rashifal');
+const Panchang = lazyTool(() => import('./tools/panchang'), 'Panchang');
+const VerseOfDay = lazyTool(() => import('./tools/votd'), 'VerseOfDay');
+const PathReminders = lazyTool(() => import('./tools/reminders'), 'Reminders');
+const SleepSounds = lazyTool(() => import('./tools/sleepsounds'), 'SleepSounds');
+const Saraiki = lazyTool(() => import('./tools/saraiki'), 'Saraiki');
 const PincodeFull = lazyTool(() => import('./tools/directories'), 'PincodeFull');
 const IfscFull = lazyTool(() => import('./tools/directories'), 'IfscFull');
 const BloodBanks = lazyTool(() => import('./tools/directories'), 'BloodBanks');
@@ -88,6 +93,8 @@ import { getLiveStatus } from './core/live-status';
 import { startPresence, usePresence } from './core/presence';
 import { onInstallPrompt, triggerInstall, isStandalone } from './core/pwa';
 import { lastRead, lowDataOn, useLowData } from './ui/readerkit';
+import { votdKind } from './core/votd';
+import { loadReminders, saveReminders, dueReminders, markFired, openTarget, targetById } from './core/reminders';
 import { Icon } from './ui/icons';
 
 /* ------------------------------------------------------ universal search
@@ -202,6 +209,7 @@ const TOOLS = [
   { id:'cricket',   n:'Cricket Archive', i:'chart',  c:'Media', t:'live', d:'1,243 IPL matches · full scorecards', C:CricketArchive },
   { id:'country',   n:'Countries',     i:'earth',    c:'Learn', t:'live', d:'250 countries, full detail', C:W.Countries },
   { id:'names',     n:'Names & Surnames', i:'smile', c:'Learn', t:'live', d:'5,695 names · caste, region',C:Names },
+  { id:'saraiki',   n:'Saraiki Seekhna', i:'book',   c:'Learn', t:'off',  d:'Sabaq course · Shahmukhi + Roman', C:Saraiki },
   { id:'worlddata', n:'World Data',    i:'chart',    c:'Learn', t:'live', d:'16 indicators, 25 years',   C:WorldData },
 
   // ---------- Media ----------
@@ -218,7 +226,7 @@ const TOOLS = [
   { id:'cats',      n:'Cat Explorer',  i:'smile',    c:'Everyday', t:'live', d:'Facts & cute photos',        C:Cats },
   { id:'riddles',   n:'Riddles',       i:'quote',    c:'Everyday', t:'live', d:'Brain teasers with answer',  C:Riddles },
   { id:'trivia',    n:'Trivia Quiz',   i:'star',     c:'Everyday', t:'live', d:'Multiple choice quiz',       C:Trivia },
-  { id:'games',     n:'Games',         i:'dice',     c:'Everyday', t:'off', d:'2048 · Snake · Memory',      C:Games },
+  { id:'games',     n:'Games',         i:'dice',     c:'Everyday', t:'off', d:'50 mini games — reflex · puzzle · brain · arcade · cards',      C:Games },
   { id:'recorder',  n:'Voice Recorder',i:'mic',      c:'Everyday', t:'off', d:'Record, save & play notes',  C:VoiceRecorder },
   { id:'horoscope', n:'Horoscope',     i:'star',     c:'Everyday', t:'live', d:'Daily zodiac predictions',   C:Horoscope },
   { id:'food',      n:'Food Scanner',  i:'flask',    c:'Everyday', t:'live', d:'Products & nutrition',       C:Food },
@@ -230,6 +238,10 @@ const TOOLS = [
   { id:'bible',     n:'Holy Bible',    i:'books',    c:'Bhakti', t:'live', d:'66 books 31102 verses real',  C:Bible },
   { id:'gurbani',   n:'Gurbani',       i:'books',    c:'Bhakti', t:'live', d:'1430 Angs Hukamnama real',    C:Gurbani },
   { id:'devotional',n:'Aarti & Mantra',i:'star',     c:'Bhakti', t:'off',  d:'Aarti Chalisa Bhajan Mantra + Audio',   C:Devotional },
+  { id:'panchang',  n:'Daily Panchang', i:'sun',     c:'Bhakti', t:'off',  d:'Tithi nakshatra yoga karana · Rahu Kaal · on device', C:Panchang },
+  { id:'votd',      n:'Verse of the Day', i:'sparkle', c:'Bhakti', t:'off',  d:'One verse a day · shareable card', C:VerseOfDay },
+  { id:'reminders', n:'Path Reminders', i:'bell',    c:'Bhakti', t:'off',  d:'Daily path & aarti reminders', C:PathReminders },
+  { id:'sleep',     n:'Sleep & Focus Sounds', i:'moon', c:'Health', t:'off', d:'Rain river wind bells · sleep timer', C:SleepSounds },
   { id:'recipesdeep',n:'Recipes Deep', i:'flask',    c:'Everyday', t:'live', d:'Ingredients video deep',   C:RecipesDeep },
   { id:'rashifal',  n:'Rashifal',      i:'star',     c:'India',  t:'live', d:'Hinglish Mesh-Vrishabh etc',  C:Rashifal },
   { id:'kundli',    n:'Kundli Pro v3', i:'star',     c:'India',  t:'off',  d:'3-Layer Verified - No Fake Data - Professional', C:KundliPro },
@@ -684,6 +696,7 @@ export default function App() {
       <MiniPlayer />
       <FullPlayer />
       <InstallPrompt />
+      <ReminderWatcher />
       <Toaster />
       <ScrollTopBtn />
       {ghost && <ToolGhost key={ghost.k} g={ghost}
@@ -881,6 +894,78 @@ function StatusPanel({ onClose, offCount, total }) {
    the last song or channel, then pinned tools, then recently used ones.
    Everything reads the same stores the features themselves write, so the
    shelf can never promise something the app does not have. */
+/* ------------------------------------------------- Wave A home pieces
+   ReminderWatcher: while the app is open it checks every 30 seconds
+   for a due path/aarti reminder and surfaces it as a banner + chime +
+   a system notification where permission was granted. A web app
+   cannot ring at an exact minute while fully closed — the Reminders
+   tool says so in plain words; a missed reminder still fires on the
+   next open the same day.
+   VotdShelfCard: today's verse source on the home shelf; the label
+   comes from the pool-free rotation core, the verse itself loads
+   inside the tool. */
+function ReminderWatcher() {
+  const [queue, setQueue] = useState([]);
+  useEffect(() => {
+    let dead = false;
+    const check = () => {
+      try {
+        const list = loadReminders();
+        const due = dueReminders(list);
+        if (!due.length) return;
+        let next = list;
+        for (const r of due) next = markFired(next, r.id);
+        saveReminders(next);
+        if (!dead) setQueue((cur) => [...cur, ...due.filter((d) => !cur.some((c) => c.id === d.id))]);
+        try { sfxPlay('chime'); } catch { /* silent */ }
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
+          navigator.serviceWorker.ready.then((reg) => {
+            for (const r of due) {
+              const t = targetById(r.targetId);
+              reg.showNotification('Path reminder', {
+                body: t ? `${t.n} · set for ${r.time}` : `Reminder · ${r.time}`,
+                tag: `omni-rem-${r.id}`,
+              });
+            }
+          }).catch(() => {});
+        }
+      } catch { /* reminders never break the shell */ }
+    };
+    check();
+    const iv = setInterval(check, 30000);
+    return () => { dead = true; clearInterval(iv); };
+  }, []);
+  if (!queue.length) return null;
+  const r = queue[0];
+  const t = targetById(r.targetId);
+  return (
+    <div className="rembanner" role="alert">
+      <Icon n="bell" size={18} />
+      <div className="main"><b>Time for {t ? t.n : 'your path'}</b>
+        <span className="dim sm">Your {r.time} reminder — tap Open to read it now</span></div>
+      <button className="btn sm" onClick={() => { setQueue((q) => q.slice(1)); openTarget(t); }}>Open</button>
+      <button className="iconbtn" aria-label="Dismiss reminder"
+        onClick={() => setQueue((q) => q.slice(1))}><Icon n="x" size={16} /></button>
+    </div>);
+}
+
+function VotdShelfCard({ go, open }) {
+  const kind = votdKind();
+  const fly = (e) => {
+    const t = TOOLS.find((x) => x.id === 'votd');
+    if (t && open) open(t, e); else go('votd');
+  };
+  return (
+    <Section id="shelf-votd" title="Verse of the Day" icon="sparkle">
+      <button className="cont-card" onClick={fly}>
+        <span className="cont-ic"><Icon n="sparkle" size={18} /></span>
+        <span className="cont-tx"><b>Today · {kind.label}</b>
+          <small>{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })} · tap to read it and share the card</small></span>
+        <Icon n="chevron" size={18} style={{ color: 'var(--green)', flex: '0 0 auto' }} />
+      </button>
+    </Section>);
+}
+
 function Shelf({ fav, recentTools, go, open }) {
   /* Shelf taps open tools through the same flight as the tiles, so the
      ceremony is identical wherever a tool is opened from. */
@@ -922,6 +1007,7 @@ function Shelf({ fav, recentTools, go, open }) {
             </p>
           </div>
         </Section>
+        <VotdShelfCard go={go} open={open} />
       </div>);
   }
 
@@ -931,6 +1017,7 @@ function Shelf({ fav, recentTools, go, open }) {
 
   return (
     <div className="shelf">
+      <VotdShelfCard go={go} open={open} />
       {(lastSong || lastChan || lastBook) && (
         <Section id="shelf-continue" title="Continue" icon="play">
           <div className="shelf-col">

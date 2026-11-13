@@ -16,6 +16,7 @@
  * omni:recent          App.jsx             recently opened tools
  * omni:visits          App.jsx             tool open counts (shelf ordering)
  * omni:searches        App.jsx             recent universal-search queries
+ * omni:reminders       core/reminders.js   path/aarti reminder list (Wave A)
  * omni:install:dismissed App.jsx           install banner dismissed flag
  * omni:lib:fav         core/library.js     favourite tracks
  * omni:lib:hist        core/library.js     play history
@@ -28,7 +29,9 @@
  * omni:fm:live         core/sources.js     cached radio-station health
  * omni:radio:fav       core/webradio.js    favourite internet-radio stations
  * omni:pod:pos         tools/podcasts.jsx  podcast episode resume positions
- * omni:games:best      tools/games.jsx     best scores (2048 / snake / memory)
+ * omni:games:best      tools/games*.jsx    best scores for the whole 50-game arcade
+ *                                           (one key per game id inside the object;
+ *                                           sudoku keeps one per difficulty)
  * omni:news:ed         tools/news.jsx      news edition (country) choice
  * omni:quran:listen    tools/devotional.jsx Quran listen position
  * omni:sid             core/presence.js    anonymous presence session id
