@@ -31,6 +31,8 @@ import { Icon } from '../ui/icons';
 import { OfflineBtn } from '../ui/PlayerUI';
 import { play as sfxPlay } from '../core/sfx.js';
 import { offlineAll, offlineDelete } from '../core/offline-store';
+import { autoCacheList, autoCacheAll, autoCacheDelete, autoCacheClear,
+         AUTO_CACHE_CAP } from '../core/auto-cache';
 import { qrDataUrl } from '../core/qr';
 import { favourites, isFav, toggleFav, history, topPlayed, playlists,
          createPlaylist, deletePlaylist, addToPlaylist, removeFromPlaylist,
@@ -818,11 +820,14 @@ const fmtBytes = (b) => (!b ? '0 KB'
 
 function OfflineView({ player }) {
   const [recs, setRecs] = useState(null);
+  const [autoRecs, setAutoRecs] = useState([]);
   const [est, setEst] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmAutoClear, setConfirmAutoClear] = useState(false);
   const urlsRef = useRef([]);
   const load = useCallback(async () => {
     setRecs(await offlineAll());
+    setAutoRecs(await autoCacheList());
     try { setEst(await navigator.storage?.estimate?.()); } catch { setEst(null); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -857,7 +862,36 @@ function OfflineView({ player }) {
     load();
   };
 
-  return (
+  /* ------------------------------------------------ auto-cache section */
+  const autoTotal = autoRecs.reduce((a, r) => a + (r.size || 0), 0);
+  const playAutoAt = async (i) => {
+    const all = await autoCacheAll();
+    urlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+    urlsRef.current = [];
+    const list = all.map((r) => {
+      const u = URL.createObjectURL(r.blob);
+      urlsRef.current.push(u);
+      return { id: r.id || r.key, title: r.title, artist: r.artist, art: r.art,
+               dur: r.dur, stream: u, src: 'offline' };
+    });
+    if (list[i]) player.play(list[i], list);
+  };
+  const removeAuto = async (r) => {
+    await autoCacheDelete(r.key);
+    sfxPlay('remove');
+    toast('Removed from the auto-cache', 'info');
+    load();
+  };
+  const clearAuto = async () => {
+    if (!confirmAutoClear) { setConfirmAutoClear(true); return; }
+    await autoCacheClear();
+    setConfirmAutoClear(false);
+    sfxPlay('remove');
+    toast('Auto-cache cleared', 'info');
+    load();
+  };
+
+  return (<>
     <Section id="music-offline" title="Offline songs"
       badge={recs.length ? `${recs.length} songs · ${fmtBytes(total)}` : ''}>
       {recs.length === 0
@@ -903,7 +937,60 @@ function OfflineView({ player }) {
             })}
           </div>
         </>)}
-    </Section>);
+    </Section>
+
+    <Section id="music-autocache" title="Recent — offline ready"
+      badge={autoRecs.length ? `${autoRecs.length} songs · ${fmtBytes(autoTotal)}` : ''}>
+      <div className="dim sm" style={{ margin: '2px 0 8px' }}>
+        Songs you play are kept for offline listening (last {AUTO_CACHE_CAP}) — automatically,
+        while you listen. The oldest fall away as new ones arrive; songs you saved yourself
+        above are never touched. A song whose source will not share its audio cannot be kept,
+        and is never listed here as if it were.
+      </div>
+      {autoRecs.length === 0
+        ? <Empty t="Nothing kept yet — play a song and it will be kept here, ready to play without internet" />
+        : (<>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0 8px' }}>
+            <span className="dim sm" style={{ flex: 1 }}>
+              {autoRecs.length} songs · {fmtBytes(autoTotal)} kept automatically
+            </span>
+            <button className="btn ghost sm" onClick={clearAuto}
+              style={{ color: confirmAutoClear ? 'var(--bad)' : '' }}>
+              <Icon n="trash" size={13} /> {confirmAutoClear ? 'Tap again to confirm' : 'Clear auto-cache'}</button>
+          </div>
+          <div className="list">
+            {autoRecs.map((r, i) => {
+              const active = player.track && (player.track.id ?? player.track.url) === (r.id || r.key);
+              return (
+                <div className="row" key={r.key} onClick={() => playAutoAt(i)}
+                  style={{ cursor: 'pointer', background: active ? 'rgba(0,255,156,.07)' : '' }}>
+                  {r.art
+                    ? <img src={r.art} alt="" loading="lazy"
+                        style={{ width: 46, height: 46, borderRadius: 9, objectFit: 'cover', flex: '0 0 auto', background: 'var(--s3)' }}
+                        onError={(e) => { e.target.style.visibility = 'hidden'; }} />
+                    : <div style={{ width: 46, height: 46, borderRadius: 9, background: 'var(--s3)',
+                        display: 'grid', placeItems: 'center', flex: '0 0 auto' }}>
+                        <Icon n="music" size={20} style={{ opacity: .55 }} /></div>}
+                  <div className="main">
+                    <b style={{ fontSize: 13.5, color: active ? 'var(--green)' : '' }}>{(r.title || '').slice(0, 54)}</b>
+                    <span className="dim sm">{r.artist || ''}{r.dur ? ` · ${mmss(r.dur)}` : ''} · {fmtBytes(r.size)}</span>
+                    <span className="dim sm">
+                      last played {r.playedAt ? new Date(r.playedAt).toLocaleDateString([], { day: 'numeric', month: 'short' }) : ''}
+                    </span>
+                  </div>
+                  <span className="dim" style={{ fontSize: 10, border: '1px solid var(--line)', borderRadius: 20, padding: '2px 7px', flex: '0 0 auto' }}>Auto</span>
+                  <button className="rowbtn" aria-label="Remove from auto-cache"
+                    onClick={(e) => { e.stopPropagation(); removeAuto(r); }}>
+                    <Icon n="trash" size={16} style={{ color: 'var(--fg3)' }} /></button>
+                  <span style={{ color: active && player.playing ? 'var(--green)' : 'var(--fg2)',
+                                 display: 'grid', placeItems: 'center', paddingLeft: 3 }}>
+                    <Icon n={active && player.playing ? 'pause' : 'play'} size={18} /></span>
+                </div>);
+            })}
+          </div>
+        </>)}
+    </Section>
+  </>);
 }
 
 /* -------------------------------------------------------------- library tab */

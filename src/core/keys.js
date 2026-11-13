@@ -17,6 +17,10 @@
  * omni:visits          App.jsx             tool open counts (shelf ordering)
  * omni:searches        App.jsx             recent universal-search queries
  * omni:reminders       core/reminders.js   path/aarti reminder list (Wave A)
+ * omni:app:home        core/app-bridge.js  app-mode home layout config —
+ *                                           category order/hidden, section
+ *                                           toggles, My Tools, bottom-bar
+ *                                           slots (Android app shell only)
  * omni:install:dismissed App.jsx           install banner dismissed flag
  * omni:lib:fav         core/library.js     favourite tracks
  * omni:lib:hist        core/library.js     play history
@@ -62,7 +66,11 @@
  *                          rewrite, not piecemeal — it has no legacy readers)
  *
  * ------------------------------------------------------------ elsewhere
- * IndexedDB `omnitools-offline` — downloaded songs (core/offline-store.js).
+ * IndexedDB `omni-offline` — downloaded songs (core/offline-store.js).
+ * IndexedDB `omni-autocache` — auto-cache: the last 50 played songs kept
+ *                              for offline listening, LRU by last play
+ *                              (core/auto-cache.js). The autoCache on/off
+ *                              switch itself lives in omni:settings.
  * IndexedDB `omni-recordings` — voice recorder clips (tools/recorder.jsx).
  * Service-worker caches: omni-shell-v7 / omni-data-v1 / omni-med-v1 (public/sw.js).
  * The dead key omni:eq:music (old player page) was removed with that page;

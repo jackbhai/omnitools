@@ -4,6 +4,7 @@ import App from './App';
 import './styles/theme.css';
 import { initTheme } from './core/theme.js';
 import { initPWA } from './core/pwa.js';
+import { initAppBridge } from './core/app-bridge.js';
 import { ErrorBoundary } from './ErrorBoundary';
 
 // Init theme before render - apply saved theme immediately to avoid flash
@@ -11,6 +12,10 @@ initTheme();
 
 // Init PWA - setup install prompt handling
 initPWA();
+
+// Android app shell (window.OmniApp) — app-mode flag + widget pushes.
+// Inert in a browser: the bridge object only exists inside the app.
+initAppBridge();
 
 // Global error handler for uncaught errors. Only for the one case the
 // React boundary cannot reach: the app never rendered at all. It shows

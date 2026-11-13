@@ -29,6 +29,7 @@ const DEFAULTS = {
   proxyUrl: '',          // user's own relay; blank means use BUILTIN_PROXY
   useBuiltin: true,      // fall back to the bundled relay
   autoRadio: true,       // keep the queue topped up so playback never ends
+  autoCache: true,       // keep the last 50 played songs on-device (core/auto-cache.js)
   sfx: true,             // travel-panel sounds, synthesised locally (core/sfx.js)
   /* UI-audit additions (consumed by src/ui/readerkit.jsx + Settings >
      Reading): one text size shared by every book reader, a paper reading

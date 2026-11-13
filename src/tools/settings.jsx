@@ -31,6 +31,7 @@ import { THEMES, getCurrentThemeId, getCustomTheme, saveCustomTheme, applyTheme,
 import { getPWAInfo, triggerInstall, onInstallPrompt, getCacheStatus, clearAllCaches, getOfflineStatus } from '../core/pwa.js';
 import { runLiveCheck, getFeatureCategories } from '../core/live-check.js';
 import { getSettings, setSetting, onSettings } from '../core/settings.js';
+import { resetHomeCfg } from '../core/app-bridge.js';
 /* The switch is a checkbox; these are the sounds it switches. Both come from the
    one module the app itself listens through, so what is heard here is exactly
    what is heard in a tool — no separate demo audio. */
@@ -38,6 +39,7 @@ import { play as sfxPlay, soundLog as sfxLog, SOUNDS as SFX, supported as sfxSup
 import { TextSizeCtl } from '../ui/readerkit';
 
 export function Settings() {
+  const [appReset, setAppReset] = useState(false);
   const [currentTheme, setCurrentTheme] = useState(getCurrentThemeId());
   const [customTheme, setCustomTheme] = useState(getCustomTheme());
   const [showCustomMaker, setShowCustomMaker] = useState(false);
@@ -375,6 +377,10 @@ export function Settings() {
               <span>Auto radio — when a queue ends, keep the music going with similar songs (Music player)</span>
             </label>
             <label className="chk">
+              <input type="checkbox" checked={settings.autoCache !== false} onChange={e => { const s = setSetting('autoCache', e.target.checked); setSettingsState(s); }} />
+              <span>Auto-cache for offline — songs you play are kept on this device, so the last 50 you heard play without internet. Save-Data mode pauses it. Kept songs live under Music → Library → Offline; turning this off stops new keeps, it does not delete ones already kept.</span>
+            </label>
+            <label className="chk">
               <input type="checkbox" checked={settings.sfx} onChange={e => { const s = setSetting('sfx', e.target.checked); setSettingsState(s); }} />
               <span>Sound effects — small sounds for taps, switches, saves and errors, made in your browser. Nothing is downloaded.</span>
             </label>
@@ -496,6 +502,23 @@ export function Settings() {
           </div>
         </Fold>
       </Card>
+
+      {typeof window !== 'undefined' && window.OmniApp && (
+        <Card style={{ marginTop: 12 }}>
+          <div className="chead"><Icon n="home" size={16} /> Android app</div>
+          <div className="sm" style={{ lineHeight: 1.6 }}>
+            You are using the OmniTools Android app. Its home screen is customisable —
+            long-press the home screen, or tap Customise on it, to rearrange the
+            categories, pin your tools and choose the bottom-bar shortcuts.
+          </div>
+          <button className="btn ghost sm" style={{ marginTop: 10 }}
+            onClick={() => { resetHomeCfg(); setAppReset(true); }}>
+            Reset home layout</button>
+          {appReset && (
+            <div className="sm" style={{ marginTop: 8, color: 'var(--green)' }}>
+              Layout reset — go Home to see the default arrangement.
+            </div>)}
+        </Card>)}
 
       <Card style={{ marginTop: 12 }}>
         <div className="chead"><Icon n="box" size={16} /> About OmniTools</div>

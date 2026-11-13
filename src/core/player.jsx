@@ -9,6 +9,7 @@ import { resolveAudio, prefetchAudio, prefetchNext, forgetAudio, isCached,
          pauseWarming, resumeWarming, rememberTrack } from './audio-resolve';
 import { resolve } from './engine';
 import { notePlay } from './library';
+import { notePlayed as queueAutoCache, localObjectUrl } from './auto-cache';
 import { play as sfxPlay } from './sfx.js';
 import { noteStation } from './sources';
 
@@ -546,6 +547,25 @@ export function PlayerProvider({ children }) {
     bands: eq, bass, treb, comp, power: eqPower,
     vocal: vocalLevels(vocalMode, vocalAmt, width),
   };
+
+  /* Android app shell: keep the home-screen music widget in sync and
+     take its commands (window.__omniMusicCmd). Inert on the web — the
+     OmniApp bridge object only exists inside the app. */
+  useEffect(() => {
+    window.__omniMusicCmd = (cmd) => {
+      if (cmd === 'toggle') toggle();
+      else if (cmd === 'next') step(1);
+      else if (cmd === 'prev') step(-1);
+    };
+    try {
+      window.OmniApp?.musicState?.(JSON.stringify({
+        title: track?.title || '',
+        artist: track?.artist || track?.subtitle || '',
+        playing: !!playing,
+        hasTrack: !!track,
+      }));
+    } catch { /* the bridge is best-effort */ }
+  }, [track, playing, toggle, step]);
   const [rate, setRate] = useState(1);
   /* Sleep timer, two shapes: stop after N minutes (with a live countdown),
      or stop at the end of the current track. `sleep` stays the chosen
@@ -644,6 +664,21 @@ export function PlayerProvider({ children }) {
     }
 
     setErr(''); setLyrics(null);
+
+    /* Saved copies play first. A song the user downloaded, or one the
+       auto-cache kept from an earlier play, starts instantly from its own
+       bytes — no resolving, and it works with no network at all. The track
+       is re-pointed at the local bytes and the ordinary direct path below
+       does the rest. A storage hiccup must never block playback, so any
+       failure here just falls through to the network paths. */
+    if (t.kind !== 'station' && t.src !== 'offline') {
+      try {
+        const local = await localObjectUrl(t);
+        if (stale()) return;
+        if (local) t = { ...t, stream: local.url, needsResolve: false, src: 'offline' };
+      } catch { /* play it from the network instead */ }
+    }
+
     if (list) { setQueue(list); setIdx(list.findIndex((x) => (x.id ?? x.url) === (t.id ?? t.url))); }
     setTrack(t); setLoading(true);
     // Do not let background resolves steal bandwidth from the track the user
@@ -741,6 +776,7 @@ export function PlayerProvider({ children }) {
         setPlaying(true); setStage(''); setLoading(false); setErr('');
         resumeWarming();
         notePlay(meta);   // recently-played list in the Library tab
+        queueAutoCache(meta, r.audio);   // keep the bytes for offline (auto-cache)
         if ('mediaSession' in navigator) {
           try {
             navigator.mediaSession.metadata = new MediaMetadata({
@@ -785,6 +821,7 @@ export function PlayerProvider({ children }) {
             setCanViz(await playWithFallback(el, r.audio, rate));
             setPlaying(true); setStage(''); setLoading(false); setErr('');
             resumeWarming();
+            queueAutoCache(t, r.audio);
             return;
           } catch { /* fall through to the honest error */ }
           finally { recoveringRef.current = false; }
@@ -805,6 +842,7 @@ export function PlayerProvider({ children }) {
           setTrack({ ...t, art: t.art || r2.art, artist: t.artist || r2.artist, dlUrl: r2.audio });
           setPlaying(true); setStage(''); setLoading(false); setErr('');
           resumeWarming(); notePlay(t);
+          queueAutoCache(t, r2.audio);
           return;
         } catch { /* genuinely unavailable */ }
 
@@ -849,6 +887,7 @@ export function PlayerProvider({ children }) {
         : t.src === 'open-network' ? 'open music network'
         : t.src === 'station' ? 'live radio' : (t.src || ''));
       setPlaying(true);
+      queueAutoCache(meta, url);   // no-op for radio and for local/offline plays
       if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: meta.title || meta.name || 'Unknown',

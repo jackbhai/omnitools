@@ -67,6 +67,10 @@ async function offlineList() {
 }
 
 /** One saved song WITH its bytes — for playback. */
+export async function offlineGet(key) {
+  if (!key) return null;
+  try { return (await getOne(key)) || null; } catch { return null; }
+}
 
 /** Every saved song WITH bytes, newest first — builds the offline queue. */
 export async function offlineAll() {

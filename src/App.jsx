@@ -9,6 +9,8 @@ import { LocProvider } from './core/geo';
    data file and no audio file — every sound is synthesised in the browser. */
 import { attach as sfxAttach, enabled as sfxEnabled, setEnabled as sfxSet, play as sfxPlay } from './core/sfx';
 import { PlayerProvider, usePlayer } from './core/player';
+import { APP_MODE } from './core/app-bridge';
+import { AppHomeTop, AppHomeCats, AppTabBar } from './ui/apphome';
 import { MiniPlayer, FullPlayer } from './ui/PlayerUI';
 /* The bus and metro tools carry the transit datasets (2.4 MB of JSON) behind a
    lazy boundary, so the app shell paints at its original size and a traveller
@@ -614,7 +616,7 @@ export default function App() {
           </div>)}
 
         {!tool && !openCat && (<>
-          <div className="hero">
+          {!APP_MODE && (<div className="hero">
             <h1 className="gradtext">EVERYTHING<br />IN ONE APP</h1>
             <p>{TOOLS.length} tools. Multi-source fallback on every live feature.
               No login, no signup, no API keys.</p>
@@ -625,9 +627,10 @@ export default function App() {
               <span className="pill"><Icon n="shield" size={13} /> No tracking</span>
               <span className="pill" title="deployed build"><Icon n="box" size={13} /> {__BUILD__}</span>
             </div>
-          </div>
+          </div>)}
 
-          {!q.trim() && <Shelf fav={fav} recentTools={recentTools} go={go} open={openTool} />}
+          {!APP_MODE && !q.trim() && <Shelf fav={fav} recentTools={recentTools} go={go} open={openTool} />}
+          {APP_MODE && !q.trim() && <AppHomeTop tools={TOOLS} go={go} open={openTool} />}
 
           <div className="search">
             <Icon n="search" size={18} />
@@ -666,7 +669,9 @@ export default function App() {
               ? <div className="state">No tool matched — songs and channels are below.</div>
               : <div className="grid">{shown.map(tileBtn)}</div>}
             <UniResults uni={uni} go={go} open={openTool} />
-          </>) : (<>
+          </>) : APP_MODE ? (
+            <AppHomeCats tools={TOOLS} catList={catList} favTools={favTools} go={go} />
+          ) : (<>
             <div className="seclabel" style={{ marginTop: 18 }}>Browse by category</div>
             <div className="catgrid">
               {fav.length > 0 && catCard('__fav', favTools, 0)}
@@ -686,16 +691,19 @@ export default function App() {
         {tool && <div className="view" style={{ paddingTop: 14 }}><Suspense fallback={<Spin />}><tool.C /></Suspense></div>}
       </div>
 
+      {APP_MODE ? (
+        <AppTabBar tools={TOOLS} route={route} go={go} />
+      ) : (
       <nav className="nav">
         {[['', 'grid', 'Tools'], ['music', 'music', 'Music'], ['bus', 'bus', 'Travel'],
           ['med', 'pill', 'Medicine'], ['weather', 'sun', 'Weather']].map(([id, ic, label]) => (
           <button key={id} className={route === id ? 'on' : ''} onClick={() => go(id)}>
             <Icon n={ic} size={21} /><small>{label}</small>
           </button>))}
-      </nav>
+      </nav>)}
       <MiniPlayer />
       <FullPlayer />
-      <InstallPrompt />
+      {!APP_MODE && <InstallPrompt />}
       <ReminderWatcher />
       <Toaster />
       <ScrollTopBtn />
