@@ -1,6 +1,7 @@
 /** Live tools — every one backed by a multi-provider pool. */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import * as P from '../core/providers';
+import { builtinHolidays } from '../core/festivals';
 import { useLoc, LocBar } from '../core/geo';
 import { useData, useDebounced, Spin, Err, Empty, Src, Search, Card, Stat, Chips, Field, Copy, fmt, wmo } from '../ui/kit';
 import { Icon } from '../ui/icons';
@@ -221,6 +222,7 @@ export function Festivals() {
   const upcoming = (h.data || []).filter((x) => x.date >= today);
   const next = upcoming[0];
   return (<><div className="cats">{CCS.map(([c, l]) =><button key={c} className={`cat ${cc===c?'on':''}`} onClick={() => setCc(c)}>{l}</button>)}</div><div className="btnrow">{[year-1, year, year+1].map((y) =><button key={y} className={`cat ${year===y?'on':''}`} onClick={() => setYear(y)}>{y}</button>)}</div>
+    {cc === 'IN' ? <IndiaFestivals year={year} /> : (<>
     {h.loading && <Spin t="Loading festivals" />}
     {h.error && <Err error={h.error} retry={() => h.run()} />}
     {h.data && (<>
@@ -238,6 +240,104 @@ export function Festivals() {
                   {d.toLocaleDateString('en', { month: 'short' })}</span></div><div className="main"><b>{x.name}</b><span className="dim sm">{d.toLocaleDateString('en', { weekday: 'long' })}</span></div></div>);
         })}
       </div><Src meta={h.meta} /></>)}
+    </>)}
+  </>);
+}
+
+/* India gets the rich view: the built-in table carries a tradition for
+   every entry, so it can be filtered, counted down and laid out as a
+   month — none of which the pooled holiday APIs can offer. The table is
+   local, so this view never loads and never fails. */
+function IndiaFestivals({ year }) {
+  const [trad, setTrad] = useState('All');
+  const [view, setView] = useState('list');           // list | month
+  const nowD = new Date();
+  const [cursor, setCursor] = useState({ y: nowD.getFullYear(), m: nowD.getMonth() });
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    let dead = false;
+    builtinHolidays.run({ cc: 'IN', year }).then((r) => { if (!dead) setRows(r); })
+      .catch(() => { if (!dead) setRows([]); });
+    setCursor({ y: year, m: year === nowD.getFullYear() ? nowD.getMonth() : 0 });
+    return () => { dead = true; };
+  }, [year]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const todayStr = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}-${String(nowD.getDate()).padStart(2, '0')}`;
+  const traditions = useMemo(() => ['All', ...new Set((rows || []).map((r) => r.tradition).filter(Boolean))], [rows]);
+  const shown = useMemo(() => (rows || []).filter((r) => trad === 'All' || r.tradition === trad), [rows, trad]);
+  const next = useMemo(() => (rows || []).find((r) => r.date >= todayStr), [rows, todayStr]);
+  const daysTo = (ds) => Math.round((new Date(ds + 'T00:00:00') - new Date(todayStr + 'T00:00:00')) / 864e5);
+  const when = (ds) => { const n = daysTo(ds); return n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n > 1 ? `in ${n} days` : ''; };
+  const row = (x, i) => {
+    const past = x.date < todayStr;
+    const d = new Date(x.date + 'T00:00:00');
+    return (
+      <div className="row" key={x.date + x.name} style={{ opacity: past ? .38 : 1 }}>
+        <div style={{ width: 46, textAlign: 'center', background: 'var(--s2)', borderRadius: 10, padding: '6px 0', flex: '0 0 auto' }}>
+          <b style={{ display: 'block', fontSize: 16, lineHeight: 1 }}>{d.getDate()}</b>
+          <span style={{ fontSize: 9, color: 'var(--fg3)', textTransform: 'uppercase' }}>{d.toLocaleDateString('en', { month: 'short' })}</span></div>
+        <div className="main"><b>{x.name}</b>
+          <span className="dim sm">{d.toLocaleDateString('en', { weekday: 'long' })}
+            {x.tradition ? ` · ${x.tradition}` : ''}{x.expected ? ' · expected date' : ''}</span></div>
+        {!past && <div className="end"><span className="chip">{when(x.date)}</span></div>}
+      </div>);
+  };
+
+  if (!rows) return <Spin t="Loading festivals" />;
+  const monthRows = shown.filter((r) => r.date.startsWith(`${cursor.y}-${String(cursor.m + 1).padStart(2, '0')}`));
+  const firstDow = (new Date(cursor.y, cursor.m, 1).getDay() + 6) % 7; // Monday first
+  const daysInMonth = new Date(cursor.y, cursor.m + 1, 0).getDate();
+  const festDays = new Set(monthRows.map((r) => +r.date.slice(8, 10)));
+  const shiftMonth = (n) => { const d = new Date(cursor.y, cursor.m + n, 1); setCursor({ y: d.getFullYear(), m: d.getMonth() }); };
+
+  return (<>
+    {next && (
+      <Card style={{ marginTop: 12 }}><div className="chead">Next festival{next.tradition ? ` · ${next.tradition}` : ''}</div>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 30, letterSpacing: 1 }} className="gradtext">{next.name}</div>
+        <div className="dim sm" style={{ marginTop: 4 }}>
+          {new Date(next.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
+          {' · '}{when(next.date) === 'Today' ? 'today' : when(next.date).toLowerCase()}
+          {next.expected ? ' · expected date — fixed by the sighting of the moon, may move a day' : ''}
+        </div></Card>)}
+    <div className="cats" style={{ marginTop: 12 }}>
+      {traditions.map((t) => <button key={t} className={`cat ${trad === t ? 'on' : ''}`} onClick={() => setTrad(t)}>{t}</button>)}
+    </div>
+    <div className="btnrow">
+      <button className={`cat ${view === 'list' ? 'on' : ''}`} onClick={() => setView('list')}>Upcoming list</button>
+      <button className={`cat ${view === 'month' ? 'on' : ''}`} onClick={() => setView('month')}>Month view</button>
+    </div>
+    {view === 'list' && (<>
+      <div className="dim sm" style={{ margin: '4px 0 8px' }}>Showing {shown.length} of {rows.length} festivals in {year}{trad !== 'All' ? ` · ${trad}` : ''}</div>
+      {shown.length === 0 ? <Empty t="No festivals in this filter" icon="calendar" />
+        : <div className="list">{shown.map(row)}</div>}
+    </>)}
+    {view === 'month' && (<>
+      <div className="btnrow" style={{ alignItems: 'center', marginTop: 4 }}>
+        <button className="btn ghost sm" onClick={() => shiftMonth(-1)} aria-label="Previous month"><Icon n="back" size={14} /></button>
+        <b style={{ flex: 1, textAlign: 'center' }}>{new Date(cursor.y, cursor.m, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</b>
+        <button className="btn ghost sm" onClick={() => shiftMonth(1)} aria-label="Next month"><Icon n="chevron" size={14} /></button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginTop: 6 }}>
+        {['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((d) => <div key={d} className="dim sm" style={{ textAlign: 'center' }}>{d}</div>)}
+        {Array.from({ length: firstDow }, (_, i) => <div key={'b' + i} />)}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const dn = i + 1;
+          const ds = `${cursor.y}-${String(cursor.m + 1).padStart(2, '0')}-${String(dn).padStart(2, '0')}`;
+          const fest = festDays.has(dn);
+          return (<div key={dn} style={{
+            textAlign: 'center', padding: '7px 0 5px', borderRadius: 9, fontWeight: fest ? 800 : 400,
+            background: ds === todayStr ? 'var(--grad)' : fest ? 'var(--s2)' : 'transparent',
+            color: ds === todayStr ? '#04160c' : 'var(--fg)',
+          }}>{dn}<div style={{ height: 4 }}>{fest && <span style={{ display: 'inline-block', width: 5, height: 5, borderRadius: 3, background: ds === todayStr ? '#04160c' : 'var(--green)' }} />}</div></div>);
+        })}
+      </div>
+      <div style={{ marginTop: 10 }}>
+        {monthRows.length === 0 ? <Empty t="No festivals this month" icon="calendar" />
+          : <div className="list">{monthRows.map(row)}</div>}
+      </div>
+    </>)}
+    <div className="src"><span className="dot" />
+      <span>Built-in calendar · Hindu dates follow the published New Delhi panchang; Muslim dates are expected and follow the moon sighting; Sikh dates follow the SGPC Nanakshahi calendar</span></div>
   </>);
 }
 
@@ -263,22 +363,41 @@ export function OnThisDay() {
 }
 
 /* ---------------------------------------------------------------- CURRENCY */
+const FX_LIST = ['INR','USD','EUR','GBP','AED','SAR','QAR','KWD','PKR','BDT','NPR','LKR',
+  'CNY','JPY','KRW','SGD','HKD','AUD','NZD','CAD','CHF','SEK','NOK','DKK','PLN','CZK','HUF',
+  'THB','MYR','IDR','PHP','ZAR','BRL','MXN','TRY','ILS','ISK','RON'];
 export function Currency() {
-  const [base, setBase] = useState('USD'), [amt, setAmt] = useState('100');
+  const [base, setBase] = useState('INR'), [to, setTo] = useState('USD'), [amt, setAmt] = useState('1000');
   const c = useData('fx', P.currency, { base }, { ttl: 36e5, deps: [base] });
   const FAV = ['INR','PKR','USD','EUR','GBP','AED','SAR','CAD','AUD','SGD','JPY','CNY'];
   const n = parseFloat(amt) || 0;
+  const rate = c.data?.rates?.[to];
+  const swap = () => { setBase(to); setTo(base); };
   return (<><div className="g2"><Field label="Amount" type="number" inputMode="decimal" value={amt} onChange={(e)=>setAmt(e.target.value)} /><Field label="From" as="select" value={base} onChange={(e)=>setBase(e.target.value)}>
-        {['USD','INR','PKR','EUR','GBP','AED','SAR','JPY','AUD','CAD','CHF','CNY','SGD'].map((x)=><option key={x}>{x}</option>)}
+        {FX_LIST.map((x)=><option key={x}>{x}</option>)}
       </Field></div>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+      <div style={{ flex: 1 }}><Field label="To" as="select" value={to} onChange={(e)=>setTo(e.target.value)}>
+        {FX_LIST.map((x)=><option key={x}>{x}</option>)}
+      </Field></div>
+      <button className="btn ghost" style={{ marginBottom: 10 }} onClick={swap} aria-label="Swap currencies">
+        <Icon n="swap" size={16} /> Swap</button>
+    </div>
     {c.loading && <Spin t="Fetching rates" />}
     {c.error && <Err error={c.error} retry={()=>c.run()} />}
-    {c.data && (
-      <Card><div className="chead">{fmt(n,2)} {c.data.base} equals</div>
+    {c.data && (<>
+      {rate != null && (
+        <Card style={{ marginBottom: 12 }}><div className="chead">{fmt(n,2)} {base} equals</div>
+          <div className="big">{fmt(n * rate, 2)}<span style={{ fontSize: 17 }}> {to}</span></div>
+          <div className="dim sm" style={{ marginTop: 4 }}>
+            1 {base} = {fmt(rate, rate < 0.01 ? 6 : 4)} {to} · 1 {to} = {fmt(1 / rate, 4)} {base}</div>
+          <div className="dim sm" style={{ marginTop: 4 }}>Rate date: {c.data.date}
+            {c.meta?.stale ? ' · saved rates (you appear to be offline)' : ''}</div><Src meta={c.meta} /></Card>)}
+      <Card><div className="chead">{fmt(n,2)} {c.data.base} in other currencies</div>
         {FAV.filter((x)=>x!==base && c.data.rates[x]).map((x)=>(
           <div className="kv" key={x}><span style={{fontWeight:700,color:'var(--fg)'}}>{x}</span><b style={{fontSize:16}}>{fmt(n*c.data.rates[x],2)}
               <span className="dim sm" style={{fontWeight:400,marginLeft:8}}>@{fmt(c.data.rates[x],4)}</span></b></div>))}
-        <div className="dim sm" style={{marginTop:8}}>Rate date: {c.data.date}</div><Src meta={c.meta} /></Card>)}
+        <div className="dim sm" style={{marginTop:8}}>Rate date: {c.data.date}</div><Src meta={c.meta} /></Card></>)}
   </>);
 }
 

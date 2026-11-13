@@ -26,6 +26,9 @@
  * omni:tv:live         core/iptv.js        cached live-channel health
  * omni:proxy           core/iptv.js        stream relay preference
  * omni:fm:live         core/sources.js     cached radio-station health
+ * omni:radio:fav       core/webradio.js    favourite internet-radio stations
+ * omni:pod:pos         tools/podcasts.jsx  podcast episode resume positions
+ * omni:games:best      tools/games.jsx     best scores (2048 / snake / memory)
  * omni:news:ed         tools/news.jsx      news edition (country) choice
  * omni:quran:listen    tools/devotional.jsx Quran listen position
  * omni:sid             core/presence.js    anonymous presence session id
@@ -52,6 +55,7 @@
  *
  * ------------------------------------------------------------ elsewhere
  * IndexedDB `omnitools-offline` — downloaded songs (core/offline-store.js).
+ * IndexedDB `omni-recordings` — voice recorder clips (tools/recorder.jsx).
  * Service-worker caches: omni-shell-v7 / omni-data-v1 / omni-med-v1 (public/sw.js).
  * The dead key omni:eq:music (old player page) was removed with that page;
  * nothing reads it and nothing should resurrect it.
