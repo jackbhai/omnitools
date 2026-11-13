@@ -45,7 +45,7 @@ export const slug = (s) => String(s || '').toLowerCase()
 export const railIndex = () => jget('rail-index.json');
 export const railStations = () => jget('rail-stations.json');
 export async function railRoute(no) {
-  const all = await jget(`rail-r${String(no).slice(0, 2)}.json`);
+  const all = await jget(`rail-r${String(no).slice(0, 3)}.json`);
   return all[no] || null;
 }
 export async function railByStation(code) {
@@ -75,7 +75,7 @@ export const pinByName = (letter) => jget(`pin-nm-${letter.toLowerCase()}.json`)
 export const ifscMeta = () => jget('ifsc-meta.json');
 export const ifscBanks = () => jget('ifsc-banks.json');
 export async function ifscDetail(ifsc) {
-  const all = await jget(`ifsc-d-${ifsc.slice(0, 2).toLowerCase()}.json`);
+  const all = await jget(`ifsc-d-${ifsc.slice(0, 4).toLowerCase()}${ifsc.slice(5, 8).toLowerCase()}.json`);
   const rec = all[ifsc];
   if (!rec) return null;
   const banks = await ifscBanks();
