@@ -1,7 +1,6 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import * as O from './tools/offline';
 import * as L from './tools/live';
-import { Music } from './tools/music2';
 import * as T from './tools/transit';
 import * as C from './tools/convert';
 import { LocProvider } from './core/geo';
@@ -11,31 +10,56 @@ import { LocProvider } from './core/geo';
 import { attach as sfxAttach, enabled as sfxEnabled, setEnabled as sfxSet, play as sfxPlay } from './core/sfx';
 import { PlayerProvider, usePlayer } from './core/player';
 import { MiniPlayer, FullPlayer } from './ui/PlayerUI';
-import { Downloader } from './tools/downloader';
-import * as U from './tools/utils';
-import * as R from './tools/reader';
 /* The bus and metro tools carry the transit datasets (2.4 MB of JSON) behind a
    lazy boundary, so the app shell paints at its original size and a traveller
    who never opens Travel never downloads them. */
 const BusHub = lazy(() => import('./tools/travel-hubs').then((m) => ({ default: m.BusHub })));
 const MetroHub = lazy(() => import('./tools/travel-hubs').then((m) => ({ default: m.MetroHub })));
 const MultiModal = lazy(() => import('./tools/multimodal').then((m) => ({ default: m.MultiModal })));
-import * as TR from './tools/trains2';
-import { TrainJourney } from './tools/train-journey';
-import { Medicine as MedicineDeep } from './tools/medicine';
-import { Handwriting } from './tools/handwriting';
+
+/* Heavy tool families load on first open instead of with the shell.
+   The registry points at these wrappers; the tool view already renders
+   inside a Suspense boundary, so nothing else had to change. */
+const lazyTool = (load, name) => lazy(() => load().then((m) => ({ default: m[name] })));
+const Music = lazyTool(() => import('./tools/music2'), 'Music');
+const Downloader = lazyTool(() => import('./tools/downloader'), 'Downloader');
+const LiveTV = lazyTool(() => import('./tools/tv'), 'LiveTV');
+const KundliPro = lazyTool(() => import('./tools/kundli'), 'Kundli');
+const MedicineDeep = lazyTool(() => import('./tools/medicine'), 'Medicine');
+const Handwriting = lazyTool(() => import('./tools/handwriting'), 'Handwriting');
+const News = lazyTool(() => import('./tools/news'), 'News');
+const Screen = lazyTool(() => import('./tools/screen'), 'Screen');
+const Names = lazyTool(() => import('./tools/names'), 'Names');
+const Settings = lazyTool(() => import('./tools/settings'), 'Settings');
+const Launches = lazyTool(() => import('./tools/extra'), 'Launches');
+const Recipes = lazyTool(() => import('./tools/extra'), 'Recipes');
+const WorldData = lazyTool(() => import('./tools/extra'), 'WorldData');
+const Dogs = lazyTool(() => import('./tools/newtools'), 'Dogs');
+const SunTimes = lazyTool(() => import('./tools/newtools'), 'SunTimes');
+const Riddles = lazyTool(() => import('./tools/newtools'), 'Riddles');
+const Horoscope = lazyTool(() => import('./tools/newtools'), 'Horoscope');
+const Trivia = lazyTool(() => import('./tools/newtools'), 'Trivia');
+const Cats = lazyTool(() => import('./tools/newtools'), 'Cats');
+const Universities = lazyTool(() => import('./tools/newtools'), 'Universities');
+const Food = lazyTool(() => import('./tools/newtools'), 'Food');
+const Manga = lazyTool(() => import('./tools/reader'), 'Manga');
+const Novels = lazyTool(() => import('./tools/reader'), 'Novels');
+const Courses = lazyTool(() => import('./tools/utils'), 'Courses');
+const TempMail = lazyTool(() => import('./tools/utils'), 'TempMail');
+const WikiPdf = lazyTool(() => import('./tools/utils'), 'WikiPdf');
+const WebSnap = lazyTool(() => import('./tools/utils'), 'WebSnap');
+const Certificates = lazyTool(() => import('./tools/utils'), 'Certificates');
+const Telenor = lazyTool(() => import('./tools/utils'), 'Telenor');
+const Gita = lazyTool(() => import('./tools/devotional'), 'Gita');
+const Quran = lazyTool(() => import('./tools/devotional'), 'Quran');
+const Bible = lazyTool(() => import('./tools/devotional'), 'Bible');
+const Gurbani = lazyTool(() => import('./tools/devotional'), 'Gurbani');
+const Devotional = lazyTool(() => import('./tools/devotional'), 'Devotional');
+const RecipesDeep = lazyTool(() => import('./tools/devotional'), 'RecipesDeep');
+const Rashifal = lazyTool(() => import('./tools/devotional'), 'Rashifal');
 import { Hub } from './tools/travel-hub';
 import { Spin, Section, SkelRows, Empty, Toaster, toast } from './ui/kit';
 import * as W from './tools/world';
-import { News } from './tools/news';
-import { Screen } from './tools/screen';
-import { Names } from './tools/names';
-import { Launches, Recipes, WorldData } from './tools/extra';
-import { LiveTV } from './tools/tv';
-import { Dogs, SunTimes, Riddles, Horoscope, Trivia, Cats, Universities, Food } from './tools/newtools';
-import * as D from './tools/devotional';
-import { Kundli as KundliPro } from './tools/kundli';
-import { Settings } from './tools/settings';
 import { providerStats } from './core/engine';
 import { searchMusic } from './core/music';
 import { history as libHistory } from './core/library';
@@ -85,14 +109,17 @@ function loadChanIndex() {
 /* ------------------------------------------------------------ travel hubs
    Eleven separate Travel tiles were impossible to tell apart. They are now
    three mode hubs — Bus, Train, Metro — each keeping every feature as a tab. */
-const TrainHub = () => (
-  <Hub icon="train" title="Indian Railways" sub="Live status · schedule · trains between stations"
-    tabs={[
-      { id: 'between', n: 'Find trains', i: 'search',  C: TR.TrainsBetween },
-      { id: 'live',    n: 'Live status', i: 'signal',  C: TR.TrainLive },
-      { id: 'sched',   n: 'Schedule',    i: 'list',    C: TR.TrainSchedule },
-      { id: 'journey', n: 'Long journey',i: 'luggage', C: TrainJourney },
-    ]} />);
+const TrainHub = lazy(async () => {
+  const [TR, TJ] = await Promise.all([import('./tools/trains2'), import('./tools/train-journey')]);
+  return { default: () => (
+    <Hub icon="train" title="Indian Railways" sub="Live status · schedule · trains between stations"
+      tabs={[
+        { id: 'between', n: 'Find trains', i: 'search',  C: TR.TrainsBetween },
+        { id: 'live',    n: 'Live status', i: 'signal',  C: TR.TrainLive },
+        { id: 'sched',   n: 'Schedule',    i: 'list',    C: TR.TrainSchedule },
+        { id: 'journey', n: 'Long journey',i: 'luggage', C: TJ.TrainJourney },
+      ]} />) };
+});
 
 /* ------------------------------------------------------------------ registry
    type: 'off' = pure browser (never fails) · 'live' = pooled network tool
@@ -163,26 +190,26 @@ const TOOLS = [
   { id:'uni',       n:'Universities',  i:'cap',      c:'Learn',    t:'live', d:'Find universities worldwide',C:Universities },
 
   // ---------- Bhakti / Holy books ----------
-  { id:'gita',      n:'Bhagavad Gita', i:'book',     c:'Bhakti', t:'live', d:'18 chapters 700 verses real', C:D.Gita },
-  { id:'quran',     n:'Quran',         i:'book',     c:'Bhakti', t:'live', d:'114 surahs 6236 ayahs real',  C:D.Quran },
-  { id:'bible',     n:'Holy Bible',    i:'books',    c:'Bhakti', t:'live', d:'66 books 31102 verses real',  C:D.Bible },
-  { id:'gurbani',   n:'Gurbani',       i:'books',    c:'Bhakti', t:'live', d:'1430 Angs Hukamnama real',    C:D.Gurbani },
-  { id:'devotional',n:'Aarti & Mantra',i:'star',     c:'Bhakti', t:'off',  d:'Aarti Chalisa Bhajan Mantra + Audio',   C:D.Devotional },
-  { id:'recipesdeep',n:'Recipes Deep', i:'flask',    c:'Everyday', t:'live', d:'Ingredients video deep',   C:D.RecipesDeep },
-  { id:'rashifal',  n:'Rashifal',      i:'star',     c:'India',  t:'live', d:'Hinglish Mesh-Vrishabh etc',  C:D.Rashifal },
+  { id:'gita',      n:'Bhagavad Gita', i:'book',     c:'Bhakti', t:'live', d:'18 chapters 700 verses real', C:Gita },
+  { id:'quran',     n:'Quran',         i:'book',     c:'Bhakti', t:'live', d:'114 surahs 6236 ayahs real',  C:Quran },
+  { id:'bible',     n:'Holy Bible',    i:'books',    c:'Bhakti', t:'live', d:'66 books 31102 verses real',  C:Bible },
+  { id:'gurbani',   n:'Gurbani',       i:'books',    c:'Bhakti', t:'live', d:'1430 Angs Hukamnama real',    C:Gurbani },
+  { id:'devotional',n:'Aarti & Mantra',i:'star',     c:'Bhakti', t:'off',  d:'Aarti Chalisa Bhajan Mantra + Audio',   C:Devotional },
+  { id:'recipesdeep',n:'Recipes Deep', i:'flask',    c:'Everyday', t:'live', d:'Ingredients video deep',   C:RecipesDeep },
+  { id:'rashifal',  n:'Rashifal',      i:'star',     c:'India',  t:'live', d:'Hinglish Mesh-Vrishabh etc',  C:Rashifal },
   { id:'kundli',    n:'Kundli Pro v3', i:'star',     c:'India',  t:'off',  d:'3-Layer Verified - No Fake Data - Professional', C:KundliPro },
   { id:'settings',  n:'Settings',      i:'cog',      c:'Everyday', t:'off', d:'PWA App-like + Themes + Live Check - Standard Settings', C:Settings },
 
   // ---------- the resolver ----------
-  { id:'manga',     n:'Manga',         i:'book',     c:'Everyday', t:'live', d:'Read chapters + pages',      C:R.Manga },
-  { id:'novels',    n:'Novels',        i:'books',    c:'Everyday', t:'live', d:'Read full chapters',         C:R.Novels },
-  { id:'courses',   n:'Courses',       i:'cap',      c:'Everyday', t:'live', d:'1000+ free courses',         C:U.Courses },
-  { id:'tempmail',  n:'Temp Mail',     i:'mail',     c:'Everyday', t:'live', d:'Disposable inbox',           C:U.TempMail },
-  { id:'wikipdf',   n:'Wiki → PDF',    i:'doc',      c:'Everyday', t:'live', d:'Article as PDF',             C:U.WikiPdf },
+  { id:'manga',     n:'Manga',         i:'book',     c:'Everyday', t:'live', d:'Read chapters + pages',      C:Manga },
+  { id:'novels',    n:'Novels',        i:'books',    c:'Everyday', t:'live', d:'Read full chapters',         C:Novels },
+  { id:'courses',   n:'Courses',       i:'cap',      c:'Everyday', t:'live', d:'1000+ free courses',         C:Courses },
+  { id:'tempmail',  n:'Temp Mail',     i:'mail',     c:'Everyday', t:'live', d:'Disposable inbox',           C:TempMail },
+  { id:'wikipdf',   n:'Wiki → PDF',    i:'doc',      c:'Everyday', t:'live', d:'Article as PDF',             C:WikiPdf },
   { id:'hand',      n:'Handwriting',   i:'pen',      c:'Everyday', t:'live', d:'Neat page, ready to print', C:Handwriting },
-  { id:'websnap',   n:'Screenshot',    i:'camera',   c:'Everyday', t:'live', d:'Capture any site',           C:U.WebSnap },
-  { id:'certs',     n:'Certificates',  i:'badge',    c:'Everyday', t:'live', d:'Templates',                  C:U.Certificates },
-  { id:'telenor',   n:'My Telenor Quiz', i:'check',  c:'Everyday', t:'live', d:'Today’s quiz answers',       C:U.Telenor },
+  { id:'websnap',   n:'Screenshot',    i:'camera',   c:'Everyday', t:'live', d:'Capture any site',           C:WebSnap },
+  { id:'certs',     n:'Certificates',  i:'badge',    c:'Everyday', t:'live', d:'Templates',                  C:Certificates },
+  { id:'telenor',   n:'My Telenor Quiz', i:'check',  c:'Everyday', t:'live', d:'Today’s quiz answers',       C:Telenor },
 
   // ---------- Space ----------
   { id:'iss',       n:'ISS Tracker',   i:'satellite',c:'Space', t:'live', d:'Live position',             C:L.Space },
