@@ -62,6 +62,12 @@ const Gurbani = lazyTool(() => import('./tools/devotional'), 'Gurbani');
 const Devotional = lazyTool(() => import('./tools/devotional'), 'Devotional');
 const RecipesDeep = lazyTool(() => import('./tools/devotional'), 'RecipesDeep');
 const Rashifal = lazyTool(() => import('./tools/devotional'), 'Rashifal');
+const PincodeFull = lazyTool(() => import('./tools/directories'), 'PincodeFull');
+const IfscFull = lazyTool(() => import('./tools/directories'), 'IfscFull');
+const BloodBanks = lazyTool(() => import('./tools/directories'), 'BloodBanks');
+const CricketArchive = lazyTool(() => import('./tools/cricket'), 'CricketArchive');
+const Kanoon = lazyTool(() => import('./tools/kanoon'), 'Kanoon');
+const ClassicBooks = lazyTool(() => import('./tools/classics'), 'ClassicBooks');
 const Radio = lazyTool(() => import('./tools/radio'), 'Radio');
 const Podcasts = lazyTool(() => import('./tools/podcasts'), 'Podcasts');
 const PayLinks = lazyTool(() => import('./tools/paylinks'), 'PayLinks');
@@ -128,13 +134,14 @@ function loadChanIndex() {
    Eleven separate Travel tiles were impossible to tell apart. They are now
    three mode hubs — Bus, Train, Metro — each keeping every feature as a tab. */
 const TrainHub = lazy(async () => {
-  const [TR, TJ] = await Promise.all([import('./tools/trains2'), import('./tools/train-journey')]);
+  const [TR, TJ, TT] = await Promise.all([import('./tools/trains2'), import('./tools/train-journey'), import('./tools/traintable')]);
   return { default: () => (
     <Hub icon="train" title="Indian Railways" sub="Live status · schedule · trains between stations"
       tabs={[
         { id: 'between', n: 'Find trains', i: 'search',  C: TR.TrainsBetween },
         { id: 'live',    n: 'Live status', i: 'signal',  C: TR.TrainLive },
         { id: 'sched',   n: 'Schedule',    i: 'list',    C: TR.TrainSchedule },
+        { id: 'tt',      n: 'Time table',  i: 'clock',   C: TT.TrainTimeTable },
         { id: 'journey', n: 'Long journey',i: 'luggage', C: TJ.TrainJourney },
       ]} />) };
 });
@@ -156,8 +163,9 @@ const TOOLS = [
   // ---------- India ----------
   { id:'weather',   n:'Weather + AQI', i:'sun',      c:'India', t:'live', d:'Forecast & air quality',    C:L.Weather },
   { id:'festivals', n:'Festivals',     i:'calendar', c:'India', t:'live', d:'Holidays calendar',         C:L.Festivals },
-  { id:'pincode',   n:'PIN Code',      i:'mail',     c:'India', t:'live', d:'Post offices',              C:L.Pincode },
-  { id:'ifsc',      n:'IFSC Finder',   i:'bank',     c:'India', t:'live', d:'Bank branches',             C:L.Ifsc },
+  { id:'pincode',   n:'PIN Code',      i:'mail',     c:'India', t:'live', d:'157,126 post offices · full directory', C:PincodeFull },
+  { id:'ifsc',      n:'IFSC Finder',   i:'bank',     c:'India', t:'live', d:'183,214 branches · full directory', C:IfscFull },
+  { id:'kanoon',    n:'Kanoon',        i:'scale',    c:'India', t:'live', d:'BNS + IPC · every section',   C:Kanoon },
   { id:'mandi',     n:'Mandi Prices',  i:'wheat',    c:'India', t:'live', d:'Daily commodity rates',     C:T.Mandi },
   { id:'gst',       n:'GST Calc',      i:'receipt',  c:'India', t:'off',  d:'CGST + SGST',               C:O.GstCalc },
   { id:'tax',       n:'Income Tax',    i:'rupee',    c:'India', t:'off',  d:'FY 2025-26',                C:O.TaxCalc },
@@ -167,6 +175,7 @@ const TOOLS = [
 
   // ---------- Health ----------
   { id:'med',       n:'Medicine',      i:'pill',     c:'Health', t:'live', d:'253,802 medicines · uses & price', C:MedicineDeep },
+  { id:'blood',     n:'Blood Banks',   i:'heart',    c:'Health', t:'live', d:'2,820 banks · address & phone', C:BloodBanks },
   { id:'bmi',       n:'BMI',           i:'scale',    c:'Health', t:'off',  d:'Health index',             C:O.BmiCalc },
 
   // ---------- Time ----------
@@ -189,6 +198,8 @@ const TOOLS = [
   { id:'wiki',      n:'Wikipedia',     i:'globe',    c:'Learn', t:'live', d:'Encyclopedia',              C:L.Wikipedia },
   { id:'dict',      n:'Dictionary',    i:'book',     c:'Learn', t:'live', d:'Definitions + audio',       C:L.Dictionary },
   { id:'books',     n:'Books',         i:'books',    c:'Learn', t:'live', d:'Open Library',              C:L.Books },
+  { id:'classics',  n:'Classic Books', i:'book',     c:'Learn', t:'live', d:'70,000+ free books · read here', C:ClassicBooks },
+  { id:'cricket',   n:'Cricket Archive', i:'chart',  c:'Media', t:'live', d:'1,243 IPL matches · full scorecards', C:CricketArchive },
   { id:'country',   n:'Countries',     i:'earth',    c:'Learn', t:'live', d:'250 countries, full detail', C:W.Countries },
   { id:'names',     n:'Names & Surnames', i:'smile', c:'Learn', t:'live', d:'5,695 names · caste, region',C:Names },
   { id:'worlddata', n:'World Data',    i:'chart',    c:'Learn', t:'live', d:'16 indicators, 25 years',   C:WorldData },
