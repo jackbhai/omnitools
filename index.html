@@ -96,30 +96,20 @@
     return !!(root && root.children.length);
   }
 
-  function report(title, detail) {
+  function report() {
     if (reported) return;
     reported = true;
     setTimeout(function () {
       if (rendered()) return;          // it recovered - stay out of the way
       var display = document.getElementById('error-display');
       if (!display) return;
-      display.style.display = 'block';
-      document.getElementById('error-message').textContent = title;
-      document.getElementById('error-stack').textContent = detail || '';
+      display.style.display = 'block'; // the box carries friendly copy only — no error text, no stack
     }, 4000);
   }
 
-  window.onerror = function (msg, url, line, col, error) {
-    report(String(msg),
-           error && error.stack ? error.stack : url + ':' + line + ':' + col);
-    return false;
-  };
+  window.onerror = function () { report(); return false; };
 
-  window.onunhandledrejection = function (event) {
-    var reason = event.reason;
-    report('Could not finish loading',
-           reason ? (reason.stack || String(reason)) : '');
-  };
+  window.onunhandledrejection = function () { report(); };
 })();
 </script>
 <script type="module" src="/src/main.jsx"></script>

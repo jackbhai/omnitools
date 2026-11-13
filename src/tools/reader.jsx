@@ -13,10 +13,11 @@
  *            chapter.fileUrl is a plain .txt that we fetch and render
  */
 import { MEDIA_API, mediaAsset } from '../core/endpoints';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { jget } from '../core/engine';
 import { useData, Spin, Err, Empty, Src, Search, Card, Copy, fmt } from '../ui/kit';
 import { Icon } from '../ui/icons';
+import { readPos, savePos, useTextScale, useReaderPaper, TextSizeCtl, readerCls } from '../ui/readerkit';
 
 
 /* ================================================================= MANGA */
@@ -49,7 +50,30 @@ export function Manga() {
   const chs = useData('manga-ch', mangaChapters, { id: book?.id }, { auto: false });
   const pgs = useData('manga-pg', mangaPages, { id: chapter?.chapterId }, { auto: false });
 
-  useEffect(() => { if (book?.id) { setChapter(null); chs.run({ id: book.id }); } }, [book?.id]); // eslint-disable-line
+  /* Resume: the last book (and chapter, once its list lands) reopens. */
+  const restoreRef = useRef(null);
+  useEffect(() => {
+    const sv = readPos('manga');
+    if (sv?.book?.id) { restoreRef.current = sv; setBook(sv.book); }
+  }, []);
+  useEffect(() => {
+    if (book?.id) {
+      if (!restoreRef.current) setChapter(null);
+      chs.run({ id: book.id });
+    }
+  }, [book?.id]); // eslint-disable-line
+  useEffect(() => {
+    const sv = restoreRef.current;
+    if (sv?.chapter?.chapterId && chs.data?.chapters) {
+      const c = chs.data.chapters.find((x) => x.chapterId === sv.chapter.chapterId);
+      restoreRef.current = null;
+      if (c) setChapter(c);
+    }
+  }, [chs.data]); // eslint-disable-line
+  useEffect(() => {
+    if (book) savePos('manga', { book, chapter },
+      { t: book.name, s: chapter ? chapter.name : 'Chapter list' });
+  }, [book, chapter]); // eslint-disable-line
   useEffect(() => { if (chapter?.chapterId) pgs.run({ id: chapter.chapterId }); }, [chapter?.chapterId]); // eslint-disable-line
 
   /* -------- reading a chapter -------- */
@@ -174,25 +198,48 @@ export function Novels() {
   const [q, setQ] = useState('love');
   const [novel, setNovel] = useState(null);
   const [chapter, setChapter] = useState(null);
-  const [size, setSize] = useState(16);
+  /* Text size is the one shared reader setting (Settings > Reading) —
+     this reader used to keep a private, unpersisted copy. */
+  const scale = useTextScale();
+  const paper = useReaderPaper();
+  const size = Math.round(16 * scale);
   const list = useData('novel', novelSearch, { q }, { ttl: 6e5 });
   const chs = useData('novel-ch', novelChapters, { id: novel?.novelId }, { auto: false });
   const txt = useData('novel-txt', novelText, { fileUrl: chapter?.fileUrl }, { auto: false });
 
-  useEffect(() => { if (novel?.novelId) { setChapter(null); chs.run({ id: novel.novelId }); } }, [novel?.novelId]); // eslint-disable-line
+  /* Resume the novel and chapter exactly where they were left. */
+  const restoreRef = useRef(false);
+  useEffect(() => {
+    const sv = readPos('novels');
+    if (sv?.novel?.novelId) {
+      restoreRef.current = true;
+      setNovel(sv.novel);
+      if (sv.chapter?.fileUrl) setChapter(sv.chapter);
+    }
+  }, []);
+  useEffect(() => {
+    if (novel?.novelId) {
+      if (!restoreRef.current) setChapter(null);
+      restoreRef.current = false;
+      chs.run({ id: novel.novelId });
+    }
+  }, [novel?.novelId]); // eslint-disable-line
+  useEffect(() => {
+    if (novel) savePos('novels', { novel, chapter },
+      { t: novel.title, s: chapter ? chapter.chapterName : 'Chapter list' });
+  }, [novel, chapter]); // eslint-disable-line
   useEffect(() => { if (chapter?.fileUrl) txt.run({ fileUrl: chapter.fileUrl }); }, [chapter?.fileUrl]); // eslint-disable-line
 
   if (chapter) {
     const all = chs.data || [];
     const idx = all.findIndex((c) => c.chapterId === chapter.chapterId);
-    return (<>
+    return (<div className={readerCls(paper)}>
       <div className="btnrow">
         <button className="btn ghost sm" onClick={() => setChapter(null)}>‹ Chapters</button>
         <button className="btn ghost sm" disabled={idx <= 0} onClick={() => setChapter(all[idx - 1])}>‹‹</button>
         <button className="btn ghost sm" disabled={idx < 0 || idx >= all.length - 1}
           onClick={() => setChapter(all[idx + 1])}>››</button>
-        <button className="btn ghost sm" onClick={() => setSize((s) => Math.max(13, s - 1))}>A−</button>
-        <button className="btn ghost sm" onClick={() => setSize((s) => Math.min(24, s + 1))}>A+</button>
+        <TextSizeCtl />
       </div>
       <div className="chead" style={{ marginTop: 10 }}>{chapter.chapterName}</div>
       <div className="dim sm">{fmt(chapter.totalWords)} words</div>
@@ -208,7 +255,7 @@ export function Novels() {
             onClick={() => { setChapter(all[idx + 1]); window.scrollTo(0, 0); }}>Next chapter ››</button>
         </div>
       </>)}
-    </>);
+    </div>);
   }
 
   if (novel) {

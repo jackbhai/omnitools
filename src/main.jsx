@@ -12,16 +12,22 @@ initTheme();
 // Init PWA - setup install prompt handling
 initPWA();
 
-// Global error handler for uncaught errors
+// Global error handler for uncaught errors. Only for the one case the
+// React boundary cannot reach: the app never rendered at all. It shows
+// the same friendly recovery screen as ErrorBoundary (plain words,
+// reload, data reset) — never a stack trace. Theme variables may not be
+// applied yet at this point, so the colours are literals on purpose.
 window.addEventListener('error', (e) => {
   console.error('Uncaught error:', e.error);
   const root = document.getElementById('root');
   if (root && !root.innerHTML) {
-    root.innerHTML = `<div style="padding:20px;margin:20px;background:#1a1a1a;color:#ff6b6b;font-family:monospace;font-size:14px;border-radius:8px;border:2px solid #ff6b6b">
-      <h2 style="color:#ff6b6b;margin-top:0">JavaScript Error</h2>
-      <p style="color:#fff">${e.message}</p>
-      <pre style="background:#000;padding:15px;border-radius:4px;overflow:auto;color:#fff">${e.error?.stack || ''}</pre>
-      <button onclick="location.reload()" style="margin-top:20px;padding:10px 20px;background:#4ecdc4;color:#000;border:none;border-radius:4px;cursor:pointer;font-size:16px;font-weight:bold">Reload Page</button>
+    root.innerHTML = `<div style="min-height:100dvh;display:grid;place-items:center;padding:24px;background:#000;color:#E8FFF4;font-family:'DM Sans',system-ui,sans-serif">
+      <div style="max-width:420px;width:100%;background:#0E1412;border:1px solid #1C2724;border-radius:18px;padding:22px">
+        <h2 style="margin:0 0 8px;font-size:19px">Something went wrong</h2>
+        <p style="color:#9DB5AC;line-height:1.55;margin:0 0 16px;font-size:14.5px">The app could not start. Reloading usually fixes it. If it keeps happening, reset the app data — your settings and saved reading places will be cleared, nothing else on your phone is touched.</p>
+        <button onclick="location.reload()" style="display:block;width:100%;padding:12px 18px;background:linear-gradient(135deg,#00FF9C,#00E5FF);color:#00110A;border:none;border-radius:12px;cursor:pointer;font-size:15px;font-weight:700">Reload</button>
+        <button onclick="try{Object.keys(localStorage).filter(function(k){return k.indexOf('omni')===0}).forEach(function(k){localStorage.removeItem(k)});if(window.caches){caches.keys().then(function(ks){return Promise.all(ks.map(function(k){return caches.delete(k)}))}).then(function(){location.reload()})}else{location.reload()}}catch(err){location.reload()}" style="display:block;width:100%;margin-top:10px;padding:12px 18px;background:#141C19;color:#E8FFF4;border:1px solid #26332F;border-radius:12px;cursor:pointer;font-size:15px">Reset app data &amp; reload</button>
+      </div>
     </div>`;
   }
 });

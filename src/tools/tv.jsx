@@ -16,10 +16,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as TV from '../core/iptv';
 import { Icon } from '../ui/icons';
 import { Card, Empty, fmt } from '../ui/kit';
+import { lowDataOn } from '../ui/readerkit';
 
 /* ------------------------------------------------------------------ player */
-function Screen({ ch, onClose, onNext }) {
+function Screen({ ch, onClose, onNext, onSize }) {
   const vid = useRef(null);
+  const rootRef = useRef(null);
   const hlsRef = useRef(null);
   const [state, setState] = useState('starting');   // starting | live | failed
   const [why, setWhy] = useState('');
@@ -95,9 +97,24 @@ function Screen({ ch, onClose, onNext }) {
     };
   }, [ch?.id, ch?.url, retries]);   // eslint-disable-line
 
+  /* The player is position:fixed, so the page underneath needs a spacer
+     of exactly its height or the first channel rows hide behind it.
+     Measured, not guessed — the bar grows when the PiP note shows. */
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || !onSize) return undefined;
+    const report = () => onSize(el.offsetHeight);
+    report();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(report) : null;
+    ro?.observe(el);
+    addEventListener('resize', report);
+    return () => { ro?.disconnect(); removeEventListener('resize', report); };
+  }, [onSize]);
+
   const [fav, setFav] = useState(() => TV.isTvFav(ch?.id));
   const [logoBad, setLogoBad] = useState(false);
   useEffect(() => { setFav(TV.isTvFav(ch?.id)); setLogoBad(false); }, [ch?.id]);
+  const lowData = lowDataOn();
   const initials = (ch?.name || '').trim().split(/\s+/).slice(0, 2)
     .map((w) => w[0]).join('').toUpperCase();
 
@@ -122,7 +139,7 @@ function Screen({ ch, onClose, onNext }) {
   };
 
   return (
-    <div className="tv-screen">
+    <div className="tv-screen" ref={rootRef}>
       <div className="tv-video">
         <video ref={vid} playsInline controls autoPlay
           style={{ width: '100%', height: '100%', background: '#000', display: 'block' }} />
@@ -146,7 +163,7 @@ function Screen({ ch, onClose, onNext }) {
       </div>
 
       <div className="tv-bar">
-        {ch.logo && !logoBad
+        {ch.logo && !logoBad && !lowData
           ? <img src={ch.logo} alt="" referrerPolicy="no-referrer"
               onError={() => setLogoBad(true)}
               style={{ width: 34, height: 34, borderRadius: 8, objectFit: 'contain', background: 'var(--s2)' }} />
@@ -187,13 +204,14 @@ function Screen({ ch, onClose, onNext }) {
 const Tile = ({ c, onOpen }) => {
   const score = TV.channelScore(c.url);
   const [imgBad, setImgBad] = useState(false);
+  const lowData = lowDataOn();
   const initials = (c.name || '').trim().split(/\s+/).slice(0, 2)
     .map((w) => w[0]).join('').toUpperCase();
   return (
   <button className="tile tv-tile" onClick={() => onOpen(c)}>
     {score > 0 && <span className="live" title="Responded recently" />}
     <div className="tv-logo">
-      {c.logo && !imgBad
+      {c.logo && !imgBad && !lowData
         ? <img src={c.logo} alt="" loading="lazy" referrerPolicy="no-referrer"
             onError={() => setImgBad(true)} />
         : initials
@@ -220,6 +238,7 @@ export function LiveTV() {
   const [hideFlaky, setHideFlaky] = useState(false);
   const [showGroups, setShowGroups] = useState(false);
   const [playing, setPlaying] = useState(null);
+  const [screenH, setScreenH] = useState(0);   // measured height of the fixed player
   const [tab, setTab] = useState('all');            // all | fav | recent
   const [reload, setReload] = useState(0);          // bump = really refetch
   const [limit, setLimit] = useState(60);
@@ -329,7 +348,8 @@ export function LiveTV() {
   };
 
   return (<>
-    {playing && <Screen ch={playing} onClose={() => setPlaying(null)} onNext={nextChannel} />}
+    {playing && <Screen ch={playing} onClose={() => setPlaying(null)} onNext={nextChannel} onSize={setScreenH} />}
+    {playing && screenH > 0 && <div aria-hidden="true" style={{ height: screenH }} />}
 
     <div className="cats">
       <button className={`cat ${tab === 'fav' ? 'on' : ''}`} onClick={() => setTab(tab === 'fav' ? 'all' : 'fav')}>

@@ -97,8 +97,9 @@ export function Search({ value, onChange, onSubmit, ph, auto }) {
     <form className="search" onSubmit={(e) => { e.preventDefault(); onSubmit?.(); e.target.querySelector('input')?.blur(); }}>
       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
       <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={ph}
+        aria-label={ph || 'Search'}
         autoFocus={auto} enterKeyHint="search" autoComplete="off" autoCorrect="off" spellCheck="false" />
-      {value && <button type="button" onClick={() => onChange('')}
+      {value && <button type="button" onClick={() => onChange('')} aria-label="Clear search"
         style={{ background: 'none', border: 0, color: 'var(--fg3)', fontSize: 20, cursor: 'pointer' }}>×</button>}
     </form>
   );
