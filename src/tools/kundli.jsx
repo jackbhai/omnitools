@@ -241,7 +241,7 @@ export function Kundli() {
   const [time, setTime] = useState('13:20');
   const [lat, setLat] = useState('28.61');
   const [lon, setLon] = useState('77.20');
-  const [place, setPlace] = useState('Delhi, India - Karol Bagh 28.65,77.19 for accurate');
+  const [place, setPlace] = useState('Delhi, India');
   const [timezoneId, setTimezoneId] = useState('Asia/Kolkata');
   const [ayanamsaId, setAyanamsaId] = useState('lahiri');
   const [houseSystem, setHouseSystem] = useState('equal');
@@ -621,12 +621,12 @@ export function Kundli() {
 
         <div className="g2" style={{ marginTop: 12 }}>
           <div className="fld"><label>Name / नाम</label><input value={name} onChange={e => setName(e.target.value)} placeholder="Your name" /></div>
-          <div className="fld"><label>Date of Birth - Test 1975-02-03 for Vrishabh verification</label><input type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
+          <div className="fld"><label>Date of Birth</label><input type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
         </div>
         <div className="g2" style={{ marginTop: 8 }}>
-          <div className="fld"><label>Time (24h) - Exact for D60 0.5° - Test 13:20</label><input type="time" value={time} onChange={e => setTime(e.target.value)} /></div>
-          <div className="fld"><label>Place - Search offline DB (Karol Bagh exact 28.65,77.19)</label>
-            <input value={place} onChange={e => handleLocationSearch(e.target.value)} placeholder="Delhi, Karol Bagh, Mumbai..." />
+          <div className="fld"><label>Time of Birth (24h)</label><input type="time" value={time} onChange={e => setTime(e.target.value)} /></div>
+          <div className="fld"><label>Place of Birth — search the offline city list</label>
+            <input value={place} onChange={e => handleLocationSearch(e.target.value)} placeholder="Start typing a city — e.g. Delhi, Mumbai, Jaipur" />
             {locationResults.length > 0 && (
               <div style={{ background: 'var(--s2)', border: '1px solid var(--s3)', borderRadius: 8, marginTop: 4, maxHeight: 150, overflow: 'auto' }}>
                 {locationResults.map((loc, i) => (
@@ -639,11 +639,11 @@ export function Kundli() {
           </div>
         </div>
         <div className="g2" style={{ marginTop: 8 }}>
-          <div className="fld"><label>Latitude - Accurate for Lagna - Karol Bagh 28.65</label><input value={lat} onChange={e => setLat(e.target.value)} placeholder="28.61 Delhi generic, 28.65 Karol Bagh" /></div>
-          <div className="fld"><label>Longitude - Accurate - 77.19 Karol Bagh</label><input value={lon} onChange={e => setLon(e.target.value)} placeholder="77.20 Delhi generic, 77.19 Karol Bagh" /></div>
+          <div className="fld"><label>Latitude</label><input value={lat} onChange={e => setLat(e.target.value)} placeholder="e.g. 28.61" /></div>
+          <div className="fld"><label>Longitude</label><input value={lon} onChange={e => setLon(e.target.value)} placeholder="e.g. 77.20" /></div>
         </div>
         <div className="g2" style={{ marginTop: 8 }}>
-          <div className="fld"><label>Timezone - IANA ID - Historical validation</label>
+          <div className="fld"><label>Timezone</label>
             <select value={timezoneId} onChange={e => setTimezoneId(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, background: 'var(--s2)', color: 'var(--fg)', border: '1px solid var(--s3)' }}>
               <option value="Asia/Kolkata">Asia/Kolkata - IST UTC+5:30 - India</option>
               <option value="Asia/Dhaka">Asia/Dhaka - BDT UTC+6 - Bangladesh</option>
@@ -653,7 +653,7 @@ export function Kundli() {
               <option value="UTC">UTC - UTC+0</option>
             </select>
           </div>
-          <div className="fld"><label>Ayanamsa - Multiple selectable - Lahiri default</label>
+          <div className="fld"><label>Ayanamsa (Lahiri is the usual choice)</label>
             <select value={ayanamsaId} onChange={e => setAyanamsaId(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, background: 'var(--s2)', color: 'var(--fg)', border: '1px solid var(--s3)' }}>
               {Object.entries(AYANAMSAS).map(([id, info]) => (
                 <option key={id} value={id}>{info.name} - {info.baseJ2000}° at J2000 - {info.default ? 'Default' : ''}</option>

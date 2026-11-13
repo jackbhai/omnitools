@@ -35,6 +35,7 @@ import { getSettings, setSetting, onSettings } from '../core/settings.js';
    one module the app itself listens through, so what is heard here is exactly
    what is heard in a tool — no separate demo audio. */
 import { play as sfxPlay, soundLog as sfxLog, SOUNDS as SFX, supported as sfxSupported } from '../core/sfx.js';
+import { TextSizeCtl } from '../ui/readerkit';
 
 export function Settings() {
   const [currentTheme, setCurrentTheme] = useState(getCurrentThemeId());
@@ -51,7 +52,7 @@ export function Settings() {
     '--cyan': '#00E5FF',
     '--fg': '#E8FFF4',
     '--fg2': '#9DB5AC',
-    '--fg3': '#5E736C',
+    '--fg3': '#6E857C',
   });
   const [customName, setCustomName] = useState('My Custom Theme');
   const [pwaInfo, setPwaInfo] = useState(null);
@@ -199,8 +200,8 @@ export function Settings() {
   return (
     <>
       <Card>
-        <div className="chead"><Icon n="cog" size={18} /> Settings - Standard - PWA + Themes + Live Check</div>
-        <div className="dim sm">App-like PWA experience + Custom themes + Live feature health check with real-time logs - Professional settings page</div>
+        <div className="chead"><Icon n="cog" size={18} /> Settings</div>
+        <div className="dim sm">Appearance, reading, sounds, connection — and a one-tap check that everything still works.</div>
         
         {installStatus && (
           <div style={{ marginTop: 12, padding: 10, background: 'var(--s2)', borderRadius: 10, borderLeft: '3px solid var(--green)', fontSize: 12 }}>
@@ -208,23 +209,23 @@ export function Settings() {
           </div>
         )}
 
-        {/* PWA Section */}
+        {/* App & offline */}
         <Fold id="set-pwa" defaultOpen={false} style={{ marginTop: 16, background: 'var(--s2)' }}
-          head={<><Icon n="box" size={16} /> PWA - App-like Experience - Install as App</>}>
-          <div className="dim sm">Progressive Web App - Use like native app, works offline, install to home screen</div>
-          
+          head={<><Icon n="box" size={16} /> App &amp; offline</>}>
+          <div className="dim sm">Install OmniTools on your home screen and it opens like a normal app — no browser bar — and keeps working without internet.</div>
+
           <div className="g2" style={{ marginTop: 12 }}>
-            <Stat l="Display Mode" v={pwaInfo?.displayMode || 'Checking...'} />
-            <Stat l="Installed" v={pwaInfo?.isInstalled ? 'Yes - App-like' : 'No - Browser'} />
-            <Stat l="Service Worker" v={pwaInfo?.serviceWorker?.status || 'Checking...'} />
-            <Stat l="Online" v={pwaInfo?.offline?.online ? 'Online' : 'Offline'} />
-            <Stat l="Can Install" v={canInstall ? 'Yes - Prompt ready' : pwaInfo?.isStandalone ? 'Already installed' : 'Use browser menu'} />
-            <Stat l="Cache Count" v={cacheInfo?.totalCaches ? `${cacheInfo.totalCaches} caches` : 'Checking...'} />
+            <Stat l="How it opens" v={pwaInfo?.isStandalone ? 'As an app' : 'In the browser'} />
+            <Stat l="Installed" v={pwaInfo?.isInstalled ? 'Yes' : 'Not yet'} />
+            <Stat l="Offline ready" v={pwaInfo?.serviceWorker?.status === 'active' ? 'Yes' : 'Setting up…'} />
+            <Stat l="Connection" v={pwaInfo?.offline?.online ? 'Online' : 'Offline'} />
+            <Stat l="Can install" v={canInstall ? 'Yes — one tap below' : pwaInfo?.isStandalone ? 'Already installed' : 'From the browser menu'} />
+            <Stat l="Saved for offline" v={cacheInfo?.totalCaches ? `${cacheInfo.totalCaches} stores` : 'Checking…'} />
           </div>
 
           {pwaInfo?.offline?.connection && (
             <div style={{ marginTop: 10, padding: 8, background: 'var(--s1)', borderRadius: 8, fontSize: 11 }}>
-              <b>Connection:</b> {pwaInfo.offline.connection.effectiveType} | Downlink {pwaInfo.offline.connection.downlink}Mbps | RTT {pwaInfo.offline.connection.rtt}ms | SaveData {pwaInfo.offline.connection.saveData ? 'Yes' : 'No'}
+              <b>Connection:</b> {pwaInfo.offline.connection.effectiveType} · about {pwaInfo.offline.connection.downlink} Mbps · your device asks sites to save data: {pwaInfo.offline.connection.saveData ? 'yes' : 'no'}
             </div>
           )}
 
@@ -238,31 +239,26 @@ export function Settings() {
 
           <div className="btnrow" style={{ marginTop: 12 }}>
             <button className="btn" onClick={handleInstall} disabled={!canInstall && !pwaInfo?.isStandalone}>
-              <Icon n="download" size={14} /> {pwaInfo?.isStandalone ? 'Already Installed as App' : canInstall ? 'Install as App - One Click' : 'Install via Browser Menu'}
+              <Icon n="download" size={14} /> {pwaInfo?.isStandalone ? 'Already installed' : canInstall ? 'Install the app' : 'Install from the browser menu'}
             </button>
             <button className="btn ghost" onClick={handleClearCache}>
-              <Icon n="refresh" size={14} /> Clear All Caches
+              <Icon n="refresh" size={14} /> Clear offline storage
             </button>
             <button className="btn ghost" onClick={() => { setPwaInfo(getPWAInfo()); getCacheStatus().then(setCacheInfo); }}>
-              <Icon n="search" size={14} /> Refresh PWA Status
+              <Icon n="search" size={14} /> Refresh
             </button>
           </div>
 
-          <div className="dim sm" style={{ marginTop: 10, fontSize: 11, lineHeight: 1.4 }}>
-            <b>How to install as app:</b><br/>
-            • Chrome/Edge: Menu (⋮) → "Install app" or "Add to Home Screen" or address bar install icon<br/>
-            • Safari iOS: Share (⎙) → "Add to Home Screen"<br/>
-            • Firefox: Menu → "Install"<br/>
-            • Once installed, opens in standalone mode - no browser UI, app-like, works offline<br/>
-            • Service worker caches app shell (network-first for index.html, cache-first for hashed assets)<br/>
-            • Medicine shards cached on first use (40 most recent kept) - offline after first search
+          <div className="dim sm" style={{ marginTop: 10, lineHeight: 1.5 }}>
+            <b>Installing:</b> Chrome or Edge — menu (⋮) → “Install app”. iPhone Safari — Share → “Add to Home Screen”.
+            Things you open are saved on this device as you go, so they reopen offline later.
           </div>
         </Fold>
 
-        {/* Themes Section */}
+        {/* Appearance */}
         <Fold id="set-themes" style={{ marginTop: 16, background: 'var(--s2)' }}
-          head={<><Icon n="palette" size={16} /> Themes - Standard + Make Your Own</>}>
-          <div className="dim sm">Choose theme or create your own custom theme - All themes use real SVG icons, no emoji - AMOLED battery saving</div>
+          head={<><Icon n="palette" size={16} /> Appearance</>}>
+          <div className="dim sm">Pick a theme — buttons, headings and highlights all follow it — or build your own from colours.</div>
 
           <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
             {Object.entries(allThemes).map(([id, theme]) => (
@@ -297,7 +293,7 @@ export function Settings() {
 
           <div className="btnrow" style={{ marginTop: 12 }}>
             <button className="btn" onClick={() => setShowCustomMaker(!showCustomMaker)}>
-              <Icon n="pen" size={14} /> {showCustomMaker ? 'Close Custom Maker' : 'Make Your Own Theme - Custom Colors'}
+              <Icon n="pen" size={14} /> {showCustomMaker ? 'Close the theme maker' : 'Make your own theme'}
             </button>
             {customTheme && (
               <button className="btn ghost" onClick={() => { localStorage.removeItem('omni:custom-theme'); setCustomTheme(null); if (currentTheme === 'custom') handleThemeChange('dark'); }}>
@@ -308,8 +304,8 @@ export function Settings() {
 
           {showCustomMaker && (
             <Card style={{ marginTop: 12, background: 'var(--s1)', border: '1px solid var(--line2)' }}>
-              <div className="chead"><Icon n="palette" size={14} /> Make Your Own Theme - Custom Color Picker</div>
-              <div className="dim sm">Pick colors for each variable - Preview live - Save as custom theme - Professional theming system</div>
+              <div className="chead"><Icon n="palette" size={14} /> Make your own theme</div>
+              <div className="dim sm">Pick a colour for each part of the app, watch the preview, then save. It applies everywhere, straight away.</div>
               
               <div className="fld" style={{ marginTop: 10 }}>
                 <label>Theme Name</label>
@@ -342,7 +338,7 @@ export function Settings() {
                 <button className="btn" onClick={handleSaveCustomTheme}>
                   <Icon n="save" size={14} /> Save Custom Theme "{customName}"
                 </button>
-                <button className="btn ghost" onClick={() => { setCustomColors({ '--bg': '#000000', '--s1': '#080B0A', '--s2': '#0E1412', '--s3': '#141C19', '--line': '#1C2724', '--line2': '#26332F', '--green': '#00FF9C', '--cyan': '#00E5FF', '--fg': '#E8FFF4', '--fg2': '#9DB5AC', '--fg3': '#5E736C' }); }}>
+                <button className="btn ghost" onClick={() => { setCustomColors({ '--bg': '#000000', '--s1': '#080B0A', '--s2': '#0E1412', '--s3': '#141C19', '--line': '#1C2724', '--line2': '#26332F', '--green': '#00FF9C', '--cyan': '#00E5FF', '--fg': '#E8FFF4', '--fg2': '#9DB5AC', '--fg3': '#6E857C' }); }}>
                   Reset to Default
                 </button>
               </div>
@@ -350,51 +346,68 @@ export function Settings() {
           )}
         </Fold>
 
-        {/* Features Toggle */}
+        {/* Reading & data */}
+        <Fold id="set-reading" defaultOpen={false} style={{ marginTop: 16, background: 'var(--s2)' }}
+          head={<><Icon n="book" size={16} /> Reading &amp; data</>}>
+          <div className="dim sm">One text size for every book reader — Gita, Quran, Bible, Gurbani, Aarti &amp; Mantra and Novels all use it, and each reader keeps your place.</div>
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span className="sm" style={{ fontWeight: 600 }}>Text size</span>
+            <TextSizeCtl />
+          </div>
+          <label className="chk" style={{ marginTop: 12 }}>
+            <input type="checkbox" checked={!!settings.readerPaper} onChange={e => { const s = setSetting('readerPaper', e.target.checked); setSettingsState(s); }} />
+            <span>Paper page — a warm, light reading surface inside the book readers, easier on the eyes than a dark screen for long reading</span>
+          </label>
+          <label className="chk">
+            <input type="checkbox" checked={!!settings.lowData} onChange={e => { const s = setSetting('lowData', e.target.checked); setSettingsState(s); }} />
+            <span>Save data — fewer images: TV channel logos are skipped and home search does not fetch the channel list. {pwaInfo?.offline?.connection?.saveData ? 'Your device is also asking sites to save data, so this is already partly on.' : ''}</span>
+          </label>
+        </Fold>
+
+        {/* Playback, sounds & connection */}
         <Fold id="set-features" defaultOpen={false} style={{ marginTop: 16, background: 'var(--s2)' }}
-          head={<><Icon n="cog" size={16} /> Features - Standard Settings</>}>
-          <div className="dim sm">Enable/disable features, proxy settings, and more</div>
-          
+          head={<><Icon n="cog" size={16} /> Playback, sounds &amp; connection</>}>
+          <div className="dim sm">How music behaves, whether the app makes sounds, and how it reaches the internet.</div>
+
           <div style={{ marginTop: 12 }}>
             <label className="chk">
               <input type="checkbox" checked={settings.autoRadio} onChange={e => { const s = setSetting('autoRadio', e.target.checked); setSettingsState(s); }} />
-              <span>Auto Radio - Keep queue topped up so playback never ends (Music player)</span>
+              <span>Auto radio — when a queue ends, keep the music going with similar songs (Music player)</span>
             </label>
             <label className="chk">
               <input type="checkbox" checked={settings.sfx} onChange={e => { const s = setSetting('sfx', e.target.checked); setSettingsState(s); }} />
-              <span>Sound effects - the whole app: a soft pop on taps and switches, a gentle whoosh when a panel opens, two warm notes when something saves, a low thud when something fails, quiet blips for play and pause. The travel tools keep their own family too - a train going past, a bell when a get-off alert arms. Every one is synthesised in your browser - no audio file is downloaded, nothing is cached</span>
+              <span>Sound effects — small sounds for taps, switches, saves and errors, made in your browser. Nothing is downloaded.</span>
             </label>
             <div className="btnrow" style={{ marginTop: 8 }}>
               {[['pop', 'Hear a tap'], ['open', 'Hear a panel open'], ['toggleon', 'Hear a switch on'], ['success', 'Hear a save'], ['error', 'Hear a failure'], ['play', 'Hear play'], ['pause', 'Hear pause'], ['copy', 'Hear a copy'], ['whoosh', 'Hear a train pass'], ['chime', 'Hear an answer'], ['ding', 'Hear an alert armed']].map(([n, l]) => (
                 <button key={n} className="btn ghost" data-sfx="none" onClick={() => hear(n)}>{l}</button>
               ))}
             </div>
-            <div className="dim sm" style={{ fontSize: 10, marginTop: 6 }}>
-              {!sfxSupported() ? 'This browser has no Web Audio - nothing can play and nothing is fetched.'
-                : settings.sfx === false ? 'Switched off above, so these buttons answer with the reason, not a sound.'
-                : sfxLast ? `Last: ${sfxLast}` : `${Object.keys(SFX).length} sounds in all; a backgrounded tab keeps only the get-off bell.`}
-              <br />The same switch sits at the top right of every screen, and each travel panel keeps its own copy of it - one preference, three places to reach it, never out of step.
+            <div className="dim sm" style={{ marginTop: 6 }}>
+              {!sfxSupported() ? 'This browser cannot play these sounds — nothing is downloaded either way.'
+                : settings.sfx === false ? 'Sounds are off above, so these buttons explain instead of playing.'
+                : sfxLast ? `Last played: ${sfxLast}` : `${Object.keys(SFX).length} sounds in all. The same on/off switch sits at the top of every screen.`}
             </div>
             <label className="chk">
               <input type="checkbox" checked={settings.useBuiltin} onChange={e => { const s = setSetting('useBuiltin', e.target.checked); setSettingsState(s); }} />
-              <span>Use Built-in Proxy - Fall back to bundled relay (omni-proxy.omni-jackbhai.workers.dev) - 0.06-0.1s warm vs 6.9s public</span>
+              <span>Built-in connection relay — some music and book sources cannot be reached directly from a browser, so the app goes through a small relay it ships with. Fast and on by default; turn it off only if you use your own below</span>
             </label>
             <div className="fld" style={{ marginTop: 10 }}>
-              <label>Custom Proxy URL (optional) - Your own Cloudflare Worker - Takes priority over built-in</label>
-              <input value={settings.proxyUrl} onChange={e => { const s = setSetting('proxyUrl', e.target.value); setSettingsState(s); }} placeholder="https://your-worker.workers.dev" />
-              <div className="dim sm" style={{ fontSize: 10, marginTop: 4 }}>Free tier 100k req/day - worker/omni-proxy.js - Host allow-list so cannot be repurposed as open proxy</div>
+              <label>Your own relay address (optional)</label>
+              <input value={settings.proxyUrl} onChange={e => { const s = setSetting('proxyUrl', e.target.value); setSettingsState(s); }} placeholder="https://your-relay.example.com" />
+              <div className="dim sm" style={{ marginTop: 4 }}>Only for people who run their own relay — it is used instead of the built-in one. Most people never need this.</div>
             </div>
           </div>
         </Fold>
 
-        {/* Live Check System */}
+        {/* Health check */}
         <Fold id="set-livecheck" style={{ marginTop: 16, border: '2px solid var(--green)', background: 'var(--s2)' }}
-          head={<><Icon n="signal" size={18} /> Live Check System - Feature Health + % Working + Live Logs</>}>
-          <div className="dim sm">One button checks all features - Which working, which not, % working per category, live logs show what is being checked in real-time - Professional QA system</div>
+          head={<><Icon n="signal" size={18} /> Check that everything works</>}>
+          <div className="dim sm">One tap tests the app's features and sources for real, and shows what passed, what is struggling and what is down — with a live log of each check as it happens.</div>
 
           <div className="btnrow" style={{ marginTop: 12 }}>
             <button className="btn" style={{ flex: 1 }} onClick={handleLiveCheck} disabled={isChecking}>
-              <Icon n={isChecking ? "refresh" : "search"} size={16} /> {isChecking ? `Checking... ${liveProgress?.percent || 0}% - ${liveProgress?.checkName || ''}` : 'Run Live Check - Check All Features Health'}
+              <Icon n={isChecking ? "refresh" : "search"} size={16} /> {isChecking ? `Checking… ${liveProgress?.percent || 0}% — ${liveProgress?.checkName || ''}` : 'Run the check'}
             </button>
             <button className="btn ghost" onClick={() => { setLiveCheckResult(null); setLiveLogs([]); setLiveProgress(null); }}>
               <Icon n="x" size={14} /> Clear
@@ -463,34 +476,34 @@ export function Settings() {
           )}
 
           <div style={{ marginTop: 12 }}>
-            <div className="chead" style={{ fontSize: 11 }}><Icon n="code" size={12} /> Live Logs - Real-time - What is being checked</div>
-            <div ref={logRef} style={{ background: '#000', color: '#0f0', fontFamily: 'monospace', fontSize: 10, padding: 10, borderRadius: 8, maxHeight: 250, overflow: 'auto', border: '1px solid var(--line2)' }}>
+            <div className="chead" style={{ fontSize: 11 }}><Icon n="code" size={12} /> Live log</div>
+            <div ref={logRef} className="live-log">
               {liveLogs.length === 0 ? (
-                <div style={{ color: '#666' }}>No logs yet - Click "Run Live Check" to see real-time logs of what is being checked...</div>
+                <div className="log-dim">Nothing yet — run the check and each step appears here as it happens.</div>
               ) : (
                 liveLogs.map((log, i) => (
-                  <div key={i} style={{ color: log.type === 'pass' ? '#0f0' : log.type === 'fail' ? '#f00' : log.type === 'warn' ? '#ff0' : '#0ff', marginBottom: 2 }}>
+                  <div key={i} className={`log-${log.type === 'pass' ? 'pass' : log.type === 'fail' ? 'fail' : log.type === 'warn' ? 'warn' : 'info'}`} style={{ marginBottom: 2 }}>
                     [{log.time}] {log.type.toUpperCase()}: {log.message}
                   </div>
                 ))
               )}
-              {isChecking && <div style={{ color: '#0ff' }}>▶ Checking in progress... {liveProgress?.checkName} {liveProgress?.percent}%</div>}
+              {isChecking && <div className="log-info">Checking… {liveProgress?.checkName} {liveProgress?.percent}%</div>}
             </div>
           </div>
 
-          <div className="dim sm" style={{ marginTop: 10, fontSize: 11, lineHeight: 1.4 }}>
-            <b>Live Check System Features:</b><br/>
-            • Checks 15+ categories: Offline tools, Live tools health (via provider stats), PWA (SW, Cache, Standalone, Manifest), Theme system (7 themes + custom), Storage (LocalStorage, Cache API, IndexedDB), Kundli 3-Layer Engine, Devotional, Music 22-tier best-to-best (Jamendo full v3.0 + Last.fm + Deezer + Discogs + Freesound + Mixcloud + Genrenator + GaanaAPI + JioSaavnAPI + multi-engine 5-in-1 + Spotify + iTunes + Audius + Archive + hearthis + Openverse + Radio), Travel, Health, Convert, News, Weather, Currency, TV, Books<br/>
-            • Shows % working per feature and per category, overall % health<br/>
-            • Live logs with timestamp, type (info/pass/warn/fail), real-time what is being checked<br/>
-            • Progress bar with current/total/percent/check name<br/>
-            • Provider stats integration - shows which providers healthy/failing<br/>
-            • Professional QA - same system used for pre-commit checks
+          <div className="dim sm" style={{ marginTop: 10, lineHeight: 1.5 }}>
+            The check covers the offline tools, the live sources behind music, TV, travel, books and the rest, offline storage, and the theme system — the same results the status panel at the top of the app summarises.
           </div>
         </Fold>
       </Card>
 
-      <div className="src"><span className="dot" /><span>Settings v1.0 - PWA App-like + Themes 7 + Custom Theme Maker + Live Check System - PWA: standalone display, SW network-first shell cache-first hashed assets, offline ready, install prompt, cache management - Themes: dark default AMOLED black + light + amoled pure black + ocean + forest + sunset + midnight purple + custom maker with color pickers for --bg --s1 --s2 --s3 --line --green --cyan --fg etc live preview save to localStorage - Features: proxy settings autoRadio useBuiltin sfx (app-wide sound effects, synthesised locally, with audible test buttons) - Live Check: button checks all features health % working per feature/category overall % with live logs timestamp type real-time progress - Professional settings page - No fake data - Verified</span></div>
+      <Card style={{ marginTop: 12 }}>
+        <div className="chead"><Icon n="box" size={16} /> About OmniTools</div>
+        <div className="sm" style={{ lineHeight: 1.6 }}>
+          {typeof __BUILD__ !== 'undefined' ? <>Build {__BUILD__} · </> : ''}Every setting on this page lives only on this device.
+          Nothing here needs an account, and clearing the app data above removes all of it.
+        </div>
+      </Card>
     </>
   );
 }

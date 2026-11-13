@@ -222,14 +222,31 @@ function TrackList({ tracks, player, onPlay, loading, more, onMore, onRemove }) 
   </>);
 }
 
-/** Small sheet: pick a playlist to add a track to, or make a new one. */
+/** Small sheet: pick a playlist to add a track to, or make a new one.
+   It is a real dialog: announced as one, Escape closes it, focus lands
+   inside on open and returns to whatever opened it on close. */
 function AddToPlaylist({ track, onClose }) {
   const [name, setName] = useState('');
+  const sheetRef = useRef(null);
   const pls = playlists();
   const add = (id) => { addToPlaylist(id, track); onClose(); };
+  useEffect(() => {
+    const prevFocus = document.activeElement;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    addEventListener('keydown', onKey);
+    // The name input autofocuses when present; with no playlists the
+    // sheet itself takes focus so keyboard/AT users land inside it.
+    if (!pls.length) sheetRef.current?.focus();
+    return () => {
+      removeEventListener('keydown', onKey);
+      try { prevFocus?.focus?.(); } catch { /* opener may be gone */ }
+    };
+  }, []); // eslint-disable-line
   return (
     <div className="sheet-bg" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+      <div className="sheet" ref={sheetRef} tabIndex={-1} role="dialog" aria-modal="true"
+        aria-label={`Add ${track.title || 'song'} to a playlist`}
+        onClick={(e) => e.stopPropagation()}>
         <div className="chead">Add &ldquo;{(track.title || '').slice(0, 30)}&rdquo; to…</div>
         {pls.length > 0 && (
           <div className="list" style={{ maxHeight: 220, overflowY: 'auto' }}>

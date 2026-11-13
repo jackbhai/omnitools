@@ -130,6 +130,8 @@ export function FullPlayer() {
   const [fav, setFav] = useState(false);
   const cv = useRef(null);
   const lyrRef = useRef(null);
+  const fullRef = useRef(null);
+  const dragRef = useRef(null);
 
   /* Volume is remembered across sessions, and mute remembers the level it
      came from so unmuting does not jump to full blast. */
@@ -454,9 +456,29 @@ export function FullPlayer() {
   if (!p?.full || !p.track) return null;
   const t = p.track;
 
+  /* Swipe down to collapse: the gesture starts on the top bar or the
+     artwork (neither scrolls), the panel follows the finger, and past
+     ~110px it lets go into the mini player. A plain tap is untouched —
+     the transform only ever moves downward and resets on release. */
+  const swipe = {
+    onTouchStart: (e) => { dragRef.current = { y: e.touches[0].clientY, dy: 0 }; },
+    onTouchMove: (e) => {
+      const d = dragRef.current;
+      if (!d) return;
+      d.dy = Math.max(0, e.touches[0].clientY - d.y);
+      if (fullRef.current) fullRef.current.style.transform = d.dy ? `translateY(${d.dy}px)` : '';
+    },
+    onTouchEnd: () => {
+      const d = dragRef.current;
+      dragRef.current = null;
+      if (fullRef.current) fullRef.current.style.transform = '';
+      if (d && d.dy > 110) p.setFull(false);
+    },
+  };
+
   return (
-    <div className="full">
-      <div className="full-top">
+    <div className="full" ref={fullRef}>
+      <div className="full-top" {...swipe}>
         <button className="iconbtn" onClick={() => p.setFull(false)} title="Minimize to bar">⌄</button>
         <div className="full-ttl"><b>Now playing</b><span>{t.src || 'OmniTools'}</span></div>
         <button className="iconbtn" aria-label="Minimize to hidden" title="Hide player (keep playing)"
@@ -485,7 +507,7 @@ export function FullPlayer() {
                 src={`https://www.youtube-nocookie.com/embed/${p.yt}?autoplay=1&enablejsapi=1&playsinline=1&rel=0&modestbranding=1`} />
             </div>
           ) : (
-            <div className="art-wrap">
+            <div className="art-wrap" {...swipe}>
               {/* A record, not a rounded square.
                   The disc keeps turning while the track plays and COASTS to a
                   stop when paused rather than freezing mid-rotation — the old
