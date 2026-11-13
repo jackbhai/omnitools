@@ -11,7 +11,7 @@ import {
   bfNew, bfStep, bfShift, bfRotate, bfDrop, BF_C, BF_R,
   s15New, s15Tap, s15Solved, loNew, loPressIdx, loSolved,
   fiNew, fiFlood, FI_COLORS, FI_MAX,
-  mazeGen, mazeCanMove, hnNew, hnMove, hnWon, hnMin,
+  mazeGen, mazeCanMove, mulberry32, hnNew, hnMove, hnWon, hnMin,
   dbNew, dbApply, dbAiMove, dbScore, dbEdgeId, DB_N, seqNext,
 } from '../core/games2.js';
 import { Icon } from '../ui/icons';
@@ -195,15 +195,16 @@ export function FloodIt() {
 }
 
 /* ------------------------------------------------------------- maze runner */
-export function MazeRunner() {
+export function MazeRunner({ seed, onComplete } = {}) {
+  const daily = seed != null;
   const [level, setLevel] = useState(1);
-  const [maze, setMaze] = useState(() => mazeGen(11, 11));
+  const [maze, setMaze] = useState(() => (daily ? mazeGen(13, 13, mulberry32(seed)) : mazeGen(11, 11)));
   const [pos, setPos] = useState(0);
   const [secs, setSecs] = useState(0);
-  const [run, setRun] = useState(false);
+  const [run, setRun] = useState(daily);
   const [total, setTotal] = useState(0);
   const [best, report] = useBest('maze', true);
-  const size = 9 + level * 2;
+  const size = daily ? 13 : 9 + level * 2;
   const goal = size * size - 1;
   useEffect(() => {
     if (!run) return undefined;
@@ -211,6 +212,11 @@ export function MazeRunner() {
     return () => clearInterval(t);
   }, [run]);
   const start = (lvl) => {
+    if (daily) {
+      setMaze(mazeGen(13, 13, mulberry32(seed)));
+      setPos(0); setSecs(0); setRun(true);
+      return;
+    }
     const sz = 9 + lvl * 2;
     setMaze(mazeGen(sz, sz));
     setPos(0); setSecs(0); setRun(true);
@@ -226,6 +232,7 @@ export function MazeRunner() {
       setTotal(t);
       setRun(false);
       sfxPlay('success');
+      if (daily) { onComplete?.(); return; }
       report(t + 1);
       setLevel((l) => l + 1);
     }
@@ -243,7 +250,9 @@ export function MazeRunner() {
     <GameShell score={`${secs}s`} scoreLabel="Level time" best={best} bestLabel="Best total (sec)"
       onRestart={() => { setLevel(1); setTotal(0); start(1); }}
       extra={<div className="stat" style={{ flex: 1 }}><div className="v">{level}</div><div className="l">Level</div></div>}
-      how="Reach the far corner. Every level grows the maze — your best is the running total of seconds across levels, so keep moving." />
+      how={daily
+        ? 'Reach the far corner of today’s maze — the same maze for everyone today. Restart rebuilds the identical maze.'
+        : 'Reach the far corner. Every level grows the maze — your best is the running total of seconds across levels, so keep moving.'} />
     <div className="cvwrap" style={{ marginTop: 10 }}>
       <svg viewBox="0 0 340 340" className="maze-svg" role="img" aria-label="Maze">
         <rect x="0" y="0" width="340" height="340" fill="var(--s2)" />
@@ -262,8 +271,8 @@ export function MazeRunner() {
       </svg>
       {!run && (
         <div className="g2048-over" style={{ borderRadius: 16 }}>
-          <b>{level > 1 ? `Level ${level - 1} cleared` : 'Maze Runner'}</b>
-          <span className="dim sm">{level > 1 ? `Total ${total}s — mazes keep growing` : 'A fresh maze every level'}</span>
+          <b>{daily ? 'Maze cleared' : level > 1 ? `Level ${level - 1} cleared` : 'Maze Runner'}</b>
+          <span className="dim sm">{daily ? `Solved in ${secs}s` : level > 1 ? `Total ${total}s — mazes keep growing` : 'A fresh maze every level'}</span>
           <button className="btn" onClick={() => start(level)}>{level > 1 ? 'Next maze' : 'Start'}</button>
         </div>)}
     </div>

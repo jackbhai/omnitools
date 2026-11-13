@@ -4,6 +4,9 @@
  * The hub below is a registry, not a hard-coded count: fifty entries
  * across Reflex, Puzzle, Brain, Arcade and Cards & Luck, each rendered
  * from its group module (lazy-loaded per group so the hub stays light).
+ * A Daily Challenge card sits on top of the hub: one seeded game per
+ * calendar day (core/games-daily.js), rotating over the six games whose
+ * generators take an rng, with a local streak calendar.
  * The original three games — 2048, Snake, Memory Match — predate the
  * arcade and live in this file; everything else sits in
  * tools/games-{reflex,puzzle,brain,arcade,cards}.jsx over the pure
@@ -15,9 +18,11 @@ import React, { Suspense, lazy, useMemo, useRef, useState } from 'react';
 import { gNewBoard, gMove, gCanMove, gWon } from '../core/games';
 import { S_COLS, S_ROWS, sNewState, sStep, sTurn } from '../core/games';
 import { mDeal } from '../core/games';
-import { Card, Spin } from '../ui/kit';
+import { Card, Spin, toast } from '../ui/kit';
 import { Icon } from '../ui/icons';
 import { play as sfxPlay } from '../core/sfx.js';
+import { mulberry32 } from '../core/games2.js';
+import { dateStr, dailyPick, dailyStats, stampDaily } from '../core/games-daily.js';
 import { loadBest } from './games-kit.jsx';
 import { useCallback, useEffect } from 'react';
 
@@ -27,22 +32,35 @@ const saveBest = (patch) => {
 };
 
 /* ------------------------------------------------------------------- 2048 */
-function Game2048() {
-  const [board, setBoard] = useState(() => gNewBoard());
+function Game2048({ seed, onComplete } = {}) {
+  const daily = seed != null;
+  const rngRef = useRef(null);
+  const doneRef = useRef(false);
+  const [board, setBoard] = useState(() => {
+    if (daily) rngRef.current = mulberry32(seed);
+    return gNewBoard(rngRef.current || undefined);
+  });
   const [score, setScore] = useState(0);
   const [best, setBest] = useState(() => loadBest().g2048 || 0);
   const [over, setOver] = useState(false);
   const [won, setWon] = useState(false);
   const touch = useRef(null);
 
-  const restart = () => { setBoard(gNewBoard()); setScore(0); setOver(false); setWon(false); };
+  const restart = () => {
+    if (daily) { rngRef.current = mulberry32(seed); doneRef.current = false; }
+    setBoard(gNewBoard(rngRef.current || undefined)); setScore(0); setOver(false); setWon(false);
+  };
 
   const move = useCallback((dir) => {
     if (over) return;
     setBoard((b) => {
-      const r = gMove(b, dir);
+      const r = gMove(b, dir, rngRef.current || undefined);
       if (!r.moved) return b;
       sfxPlay(r.gained ? 'add' : 'pop');
+      if (daily && !doneRef.current && (r.board.some((v) => v >= 512) || !gCanMove(r.board))) {
+        doneRef.current = true;
+        onComplete?.();
+      }
       setScore((s) => {
         const ns = s + r.gained;
         if (ns > best) { setBest(ns); saveBest({ g2048: ns }); }
@@ -212,8 +230,10 @@ function GameSnake() {
 }
 
 /* ----------------------------------------------------------------- memory */
-function GameMemory() {
-  const [deck, setDeck] = useState(() => mDeal(6));
+function GameMemory({ seed, onComplete } = {}) {
+  const daily = seed != null;
+  const deal = () => (daily ? mDeal(6, mulberry32(seed)) : mDeal(6));
+  const [deck, setDeck] = useState(deal);
   const [picked, setPicked] = useState([]);
   const [moves, setMoves] = useState(0);
   const [matched, setMatched] = useState(0);
@@ -221,7 +241,7 @@ function GameMemory() {
   const [best, setBest] = useState(() => loadBest().memory || 0);
   const done = matched === 6;
 
-  const restart = () => { setDeck(mDeal(6)); setPicked([]); setMoves(0); setMatched(0); setLock(false); };
+  const restart = () => { setDeck(deal()); setPicked([]); setMoves(0); setMatched(0); setLock(false); };
 
   const flip = (card) => {
     if (lock || card.up || card.done || picked.length === 2) return;
@@ -238,6 +258,7 @@ function GameMemory() {
       const nm = matched + 1;
       setMatched(nm);
       sfxPlay('success');
+      if (nm === 6 && daily) onComplete?.();
       if (nm === 6) {
         setMoves((m) => {
           if (!best || m < best) { setBest(m); saveBest({ memory: m }); }
@@ -356,11 +377,14 @@ const ALIASES = {
 /* ------------------------------------------------------------------- shell */
 export function Games() {
   const [openId, setOpenId] = useState(null);
+  const [dailyMode, setDailyMode] = useState(false);
   const [group, setGroup] = useState('All');
   const [q, setQ] = useState('');
   const [bests, setBests] = useState(() => loadBest());
+  const [stats, setStats] = useState(() => dailyStats(dateStr()));
   const topRef = useRef(null);
   const open = GAMES.find((g) => g.id === openId) || null;
+  const pick = dailyPick(dateStr());
 
   const shown = useMemo(() => GAMES.filter((g) => {
     if (group !== 'All' && g.g !== group) return false;
@@ -369,12 +393,26 @@ export function Games() {
     return hay.includes(q.toLowerCase());
   }), [group, q]);
 
-  const pick = (g) => {
+  const pickGame = (g) => {
     setOpenId(g.id);
     sfxPlay('open');
     requestAnimationFrame(() => topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
-  const close = () => { setOpenId(null); setBests(loadBest()); sfxPlay('back'); };
+  const pickDaily = () => {
+    setDailyMode(true);
+    pickGame(GAMES.find((g) => g.id === pick.id));
+  };
+  const completeDaily = () => {
+    stampDaily(dateStr(), pick.id);
+    const s = dailyStats(dateStr());
+    setStats(s);
+    toast(`Daily challenge complete — ${s.streak}-day streak, ${s.total} day${s.total === 1 ? '' : 's'} in all`, 'ok');
+  };
+  const close = () => {
+    setOpenId(null); setDailyMode(false);
+    setBests(loadBest()); setStats(dailyStats(dateStr()));
+    sfxPlay('back');
+  };
 
   return (<>
     <div ref={topRef} />
@@ -382,12 +420,33 @@ export function Games() {
       <button className="btn ghost sm" onClick={close}><Icon n="back" size={15} /> All games</button>
       <h3 style={{ margin: '10px 0 2px' }}>{open.n}</h3>
       <span className="pill">{open.g}</span>
+      {dailyMode && (
+        <div className="src" style={{ marginTop: 8 }}>
+          <span className="dot" />
+          <span>Daily Challenge — {pick.goal}. The same setup for everyone today
+            {stats.doneToday ? ' · already stamped today, replaying is just for fun' : ''}.</span>
+        </div>)}
       <div style={{ marginTop: 12 }}>
         <Suspense fallback={<Spin t="Loading game" />}>
-          <open.C key={open.id} />
+          <open.C key={open.id + (dailyMode ? ':daily' : '')}
+            seed={dailyMode ? pick.seed : undefined}
+            onComplete={dailyMode ? completeDaily : undefined} />
         </Suspense>
       </div>
     </>) : (<>
+      <Card style={{ marginBottom: 12 }}>
+        <div className="chead">Daily Challenge</div>
+        <div className="sm" style={{ marginTop: 4 }}>
+          {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })} — <b>{pick.n}</b>
+        </div>
+        <div className="dim sm" style={{ marginTop: 2 }}>{pick.goal}. One seeded setup, the same for everyone today.</div>
+        <div className="dim sm" style={{ marginTop: 6 }}>
+          {stats.doneToday ? 'Done today' : 'Not done yet'} · Streak {stats.streak} day{stats.streak === 1 ? '' : 's'} · {stats.total} day{stats.total === 1 ? '' : 's'} completed in all
+        </div>
+        <button className="btn" style={{ marginTop: 10 }} onClick={pickDaily}>
+          <Icon n="play" size={15} /> {stats.doneToday ? 'Play it again' : 'Play today’s challenge'}
+        </button>
+      </Card>
       <div className="search">
         <Icon n="search" size={17} />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${GAMES.length} games…`}
@@ -407,7 +466,7 @@ export function Games() {
             {shown.map((g) => {
               const b = bests[g.k];
               return (
-                <button key={g.id} className="arc-card" onClick={() => pick(g)}>
+                <button key={g.id} className="arc-card" onClick={() => pickGame(g)}>
                   <span className="arc-ic"><Icon n={g.i} size={22} /></span>
                   <b>{g.n}</b>
                   <small>{g.g}</small>

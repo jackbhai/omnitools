@@ -7,13 +7,14 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { GameShell, sfxPlay, useBest, loadBest, saveBestKey } from './games-kit.jsx';
-import { sudokuGen, mathQuestion, typingStats, TYPIING_LINES, wgNew, wgGuess, WG_WORDS_EN, WG_WORDS_HINGLISH, WG_MAX_MISS, mmSecret, mmScore, MM_COLORS } from '../core/games2.js';
+import { mulberry32, sudokuGen, mathQuestion, typingStats, TYPIING_LINES, wgNew, wgGuess, WG_WORDS_EN, WG_WORDS_HINGLISH, WG_MAX_MISS, mmSecret, mmScore, MM_COLORS } from '../core/games2.js';
 import { Icon } from '../ui/icons';
 
 /* ------------------------------------------------------------------ sudoku */
-export function Sudoku() {
-  const [level, setLevel] = useState('easy');
-  const [game, setGame] = useState(() => sudokuGen('easy'));
+export function Sudoku({ seed, onComplete } = {}) {
+  const daily = seed != null;
+  const [level, setLevel] = useState(daily ? 'medium' : 'easy');
+  const [game, setGame] = useState(() => (daily ? sudokuGen('medium', mulberry32(seed)) : sudokuGen('easy')));
   const [cells, setCells] = useState(() => game.puzzle);
   const [sel, setSel] = useState(-1);
   const [mistakes, setMistakes] = useState(0);
@@ -32,7 +33,7 @@ export function Sudoku() {
     return () => clearInterval(t);
   }, [done, game]);
   const fresh = (lv) => {
-    const g = sudokuGen(lv);
+    const g = daily ? sudokuGen('medium', mulberry32(seed)) : sudokuGen(lv);
     setGame(g); setCells(g.puzzle); setSel(-1); setMistakes(0); setSecs(0); setDone(false);
   };
   const place = (v) => {
@@ -50,6 +51,7 @@ export function Sudoku() {
       setDone(true);
       sfxPlay('success');
       report(secs);
+      if (daily) onComplete?.();
     }
   };
   return (<>
@@ -57,11 +59,12 @@ export function Sudoku() {
       onRestart={() => fresh(level)}
       extra={<div className="stat" style={{ flex: 1 }}><div className="v">{mistakes}</div><div className="l">Mistakes</div></div>}
       how="Every row, column and 3x3 box needs 1–9 exactly once. Wrong numbers are refused and counted — the puzzle always has exactly one solution." />
-    <div className="cats">
-      {['easy', 'medium', 'hard'].map((lv) => (
-        <button key={lv} className={`cat ${level === lv ? 'on' : ''}`}
-          onClick={() => { setLevel(lv); fresh(lv); }}>{lv[0].toUpperCase() + lv.slice(1)}</button>))}
-    </div>
+    {!daily && (
+      <div className="cats">
+        {['easy', 'medium', 'hard'].map((lv) => (
+          <button key={lv} className={`cat ${level === lv ? 'on' : ''}`}
+            onClick={() => { setLevel(lv); fresh(lv); }}>{lv[0].toUpperCase() + lv.slice(1)}</button>))}
+      </div>)}
     <div className="sud-grid">
       {cells.map((v, i) => {
         const given = !!game.puzzle[i];
@@ -82,7 +85,10 @@ export function Sudoku() {
   </>);
 }
 /* -------------------------------------------------------------- math sprint */
-export function MathSprint() {
+export function MathSprint({ seed, onComplete } = {}) {
+  const daily = seed != null;
+  const rngRef = useRef(null);
+  const rng = () => rngRef.current || Math.random;
   const [q, setQ] = useState(() => mathQuestion(Math.random, 1));
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
@@ -95,7 +101,7 @@ export function MathSprint() {
       setTime((t) => {
         if (t <= 0.25) {
           clearInterval(clock); setRun(false);
-          setScore((s) => { report(s); return s; });
+          setScore((s) => { report(s); if (daily && s >= 10) onComplete?.(); return s; });
           sfxPlay('timer');
           return 0;
         }
@@ -109,9 +115,12 @@ export function MathSprint() {
     const right = v === q.ans;
     if (right) { setScore((s) => s + 1); setStreak((s) => s + 1); sfxPlay('add'); }
     else { setStreak(0); sfxPlay('error'); }
-    setQ(mathQuestion(Math.random, 1 + Math.min(2, Math.floor(score / 8))));
+    setQ(mathQuestion(rng(), 1 + Math.min(2, Math.floor(score / 8))));
   };
-  const start = () => { setScore(0); setStreak(0); setTime(60); setQ(mathQuestion(Math.random, 1)); setRun(true); };
+  const start = () => {
+    rngRef.current = daily ? mulberry32(seed) : null;
+    setScore(0); setStreak(0); setTime(60); setQ(mathQuestion(rng(), 1)); setRun(true);
+  };
   return (<>
     <GameShell score={score} best={best} onRestart={start}
       extra={<div className="stat" style={{ flex: 1 }}><div className="v">{Math.ceil(time)}s</div><div className="l">Time</div></div>}
@@ -171,15 +180,18 @@ export function TypingSpeed() {
 }
 
 /* --------------------------------------------------------------- word guess */
-export function WordGuess() {
+export function WordGuess({ seed, onComplete } = {}) {
+  const daily = seed != null;
+  const dailyWord = () => WG_WORDS_EN[Math.floor(mulberry32(seed)() * WG_WORDS_EN.length)];
   const [bank, setBank] = useState('en');
-  const [st, setSt] = useState(() => wgNew(WG_WORDS_EN[Math.floor(Math.random() * WG_WORDS_EN.length)]));
+  const [st, setSt] = useState(() => wgNew(daily ? dailyWord() : WG_WORDS_EN[Math.floor(Math.random() * WG_WORDS_EN.length)]));
   const [best, report] = useBest('wordguess');
   const fresh = (b) => {
+    if (daily) { setSt(wgNew(dailyWord())); return; }
     const words = b === 'en' ? WG_WORDS_EN : WG_WORDS_HINGLISH;
     setSt(wgNew(words[Math.floor(Math.random() * words.length)]));
   };
-  useEffect(() => { if (st.won) report(WG_MAX_MISS - st.misses + 1); }, [st.won]); // eslint-disable-line
+  useEffect(() => { if (st.won) { report(WG_MAX_MISS - st.misses + 1); if (daily) onComplete?.(); } }, [st.won]); // eslint-disable-line
   const guess = (ch) => {
     const next = wgGuess(st, ch);
     setSt(next);
@@ -193,10 +205,11 @@ export function WordGuess() {
       how={bank === 'en'
         ? 'Guess the hidden word one letter at a time. Seven wrong letters end the round.'
         : 'Everyday Hinglish words written in Roman letters. Guess letter by letter — seven misses end it.'} />
-    <div className="cats">
-      <button className={`cat ${bank === 'en' ? 'on' : ''}`} onClick={() => { setBank('en'); fresh('en'); }}>English</button>
-      <button className={`cat ${bank === 'hi' ? 'on' : ''}`} onClick={() => { setBank('hi'); fresh('hi'); }}>Hinglish</button>
-    </div>
+    {!daily && (
+      <div className="cats">
+        <button className={`cat ${bank === 'en' ? 'on' : ''}`} onClick={() => { setBank('en'); fresh('en'); }}>English</button>
+        <button className={`cat ${bank === 'hi' ? 'on' : ''}`} onClick={() => { setBank('hi'); fresh('hi'); }}>Hinglish</button>
+      </div>)}
     <div className="wg-word">
       {[...st.word].map((ch, i) => (
         <span key={i} className={`wg-slot ${st.guessed.includes(ch) || st.over ? 'shown' : ''}`}>
