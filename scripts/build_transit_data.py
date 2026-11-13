@@ -8,11 +8,11 @@ Inputs  (produced by scrape/fetch_routes.py + scrape/fetch_metro.py):
   scrape/metro_lines.ndjson     9 metro line pages
   scrape/metro_stations.ndjson  244 metro station pages
   scrape/metro-timings.html     per-line first/last train + headways
-  omnitools/src/data/bus-delhi.json     previous OSM-derived build (merged in)
+  omnitools/public/data/bus-delhi.json     previous OSM-derived build (merged in)
   omnitools/src/data/metro-delhi.json   previous OSM metro build (geometry kept)
 
 Outputs:
-  omnitools/src/data/bus-delhi.json     v2: + timetable, + real road distance
+  omnitools/public/data/bus-delhi.json     v2: + timetable, + real road distance
   omnitools/src/data/metro-delhi.json   v2: + line timings/headways, + fares fix,
                                         + bus connections per station
   transit-report.json                   the numbers used to verify the build
@@ -571,7 +571,7 @@ def main():
     rep = {}
     bus, bdrop = build_bus()
     metro = build_metro()
-    bpath = f"{REPO}/src/data/bus-delhi.json"
+    bpath = f"{REPO}/public/data/bus-delhi.json"
     mpath = f"{REPO}/src/data/metro-delhi.json"
     json.dump(bus, open(bpath, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     json.dump(metro, open(mpath, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))

@@ -19,7 +19,7 @@ from collections import Counter
 REPO = "/home/user/omnitools"
 SITE = "https://www.dtcbusroutes.in"
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
-BUS = json.load(open(f"{REPO}/src/data/bus-delhi.json", encoding="utf-8"))
+BUS = json.load(open(f"{REPO}/public/data/bus-delhi.json", encoding="utf-8"))
 MET = json.load(open(f"{REPO}/src/data/metro-delhi.json", encoding="utf-8"))
 R = 6371.0
 

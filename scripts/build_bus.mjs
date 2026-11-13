@@ -2,7 +2,7 @@
  * SUPERSEDED — do not run.
  *
  * scripts/build_transit_data.py is now the single builder for BOTH datasets and
- * writes src/data/bus-delhi.json + metro-delhi.json in the v2 schema (published
+ * writes public/data/bus-delhi.json + metro-delhi.json in the v2 schema (published
  * timetables, per-stop distances along the driven polyline, metro line timings).
  * Running this older script would overwrite that with the smaller OSM-only
  * build.  It is kept only because it contains the OpenStreetMap fetch, which
@@ -231,13 +231,13 @@ const out = {
 };
 
 fs.mkdirSync('src/data', { recursive: true });
-fs.writeFileSync('src/data/bus-delhi.json', JSON.stringify(out));
+fs.writeFileSync('public/data/bus-delhi.json', JSON.stringify(out));
 
 const uniqRefs = new Set(list.map((r) => r.ref));
 console.log(`\nroutes        : ${list.length} (${uniqRefs.size} distinct numbers)`);
 console.log(`stops         : ${stops.length} physical (${byName.size} distinct names)`);
 console.log(`split names   : ${dupNames.length} names exist at 2+ locations`);
-console.log(`file size     : ${(fs.statSync('src/data/bus-delhi.json').size / 1024).toFixed(1)} KB`);
+console.log(`file size     : ${(fs.statSync('public/data/bus-delhi.json').size / 1024).toFixed(1)} KB`);
 console.log(`avg stops/rt  : ${Math.round(list.reduce((s, r) => s + r.stops.length, 0) / (list.length || 1))}`);
 console.log(`bogus hops>5km: ${big}/${hops} (${(100 * big / hops).toFixed(2)}%)   <- was 3.01% before the fix`);
 if (worst.length) {

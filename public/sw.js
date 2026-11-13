@@ -10,6 +10,7 @@
  */
 const V = 'omni-v7';
 const MED = 'omni-med-v1';        // medicine shards, cached only once used
+const DATAC = 'omni-data-v1';       // public/data datasets (bus, aarti), cached once used
 
 /* The medicine index is 253,802 brands across 752 shards (24 MB). Precaching
    that would burn a user's data for nothing, so shards are cached the first
@@ -72,6 +73,7 @@ self.addEventListener('fetch', (e) => {
      internet. */
   const isHashed = /\/assets\/.+-[A-Za-z0-9_-]{8,}\.(js|css)$/.test(url.pathname);
   const isMed = /\/med\/[^/]+\.json$/.test(url.pathname);
+  const isData = /\/data\/[^/]+\.json$/.test(url.pathname);
 
   if (isShell) {
     e.respondWith((async () => {
@@ -107,8 +109,25 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  /* Medicine shards: serve from cache instantly when we have them, otherwise
-     fetch and keep a copy so the same search works with no signal. */
+  /* Fetched datasets (medicine shards, public/data JSON): serve from cache
+     instantly when we have them, otherwise fetch and keep a copy so the
+     same surface works with no signal. */
+  if (isData) {
+    e.respondWith(
+      caches.match(req).then((hit) => {
+        const net = fetch(req).then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(DATAC).then((c) => c.put(req, copy)).catch(() => {});
+          }
+          return res;
+        });
+        return hit || net;
+      }).catch(() => fetch(req))
+    );
+    return;
+  }
+
   if (isMed) {
     e.respondWith(
       caches.match(req).then((hit) => {

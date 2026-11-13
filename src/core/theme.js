@@ -24,9 +24,10 @@ export const THEMES = {
       '--green-dim': '#00C77A',
       '--cyan': '#00E5FF',
       '--cyan-dim': '#00B4CC',
+      '--grad': 'linear-gradient(135deg,#00FF9C 0%,#00E5FF 100%)',
       '--fg': '#E8FFF4',
       '--fg2': '#9DB5AC',
-      '--fg3': '#5E736C',
+      '--fg3': '#6E857C',
       '--warn': '#FFD166',
       '--bad': '#FF5C7A',
     },
@@ -48,9 +49,10 @@ export const THEMES = {
       '--green-dim': '#008F5B',
       '--cyan': '#0096C7',
       '--cyan-dim': '#0077B6',
+      '--grad': 'linear-gradient(135deg,#00A86B 0%,#0096C7 100%)',
       '--fg': '#0A1F18',
       '--fg2': '#4A6B5E',
-      '--fg3': '#7A9B8E',
+      '--fg3': '#4E7263',
       '--warn': '#B8860B',
       '--bad': '#D32F2F',
     },
@@ -72,9 +74,10 @@ export const THEMES = {
       '--green-dim': '#00CC6A',
       '--cyan': '#00D4FF',
       '--cyan-dim': '#00A8CC',
+      '--grad': 'linear-gradient(135deg,#00FF88 0%,#00D4FF 100%)',
       '--fg': '#FFFFFF',
       '--fg2': '#A0A0A0',
-      '--fg3': '#606060',
+      '--fg3': '#7A7A7A',
       '--warn': '#FFCC00',
       '--bad': '#FF3366',
     },
@@ -96,9 +99,10 @@ export const THEMES = {
       '--green-dim': '#00CCAA',
       '--cyan': '#00CCFF',
       '--cyan-dim': '#0099CC',
+      '--grad': 'linear-gradient(135deg,#00FFCC 0%,#00CCFF 100%)',
       '--fg': '#CCEEFF',
       '--fg2': '#88BBDD',
-      '--fg3': '#557799',
+      '--fg3': '#6E93B8',
       '--warn': '#FFAA00',
       '--bad': '#FF5566',
     },
@@ -120,9 +124,10 @@ export const THEMES = {
       '--green-dim': '#44CC44',
       '--cyan': '#88FF88',
       '--cyan-dim': '#66CC66',
+      '--grad': 'linear-gradient(135deg,#66FF66 0%,#88FF88 100%)',
       '--fg': '#CCFFCC',
       '--fg2': '#88AA88',
-      '--fg3': '#557755',
+      '--fg3': '#749974',
       '--warn': '#FFCC66',
       '--bad': '#FF7777',
     },
@@ -144,9 +149,10 @@ export const THEMES = {
       '--green-dim': '#CC8800',
       '--cyan': '#FF6600',
       '--cyan-dim': '#CC5200',
+      '--grad': 'linear-gradient(135deg,#FFAA00 0%,#FF6600 100%)',
       '--fg': '#FFEECC',
       '--fg2': '#CCAA88',
-      '--fg3': '#997755',
+      '--fg3': '#A98A66',
       '--warn': '#FFCC00',
       '--bad': '#FF4444',
     },
@@ -168,9 +174,10 @@ export const THEMES = {
       '--green-dim': '#8844CC',
       '--cyan': '#FF66CC',
       '--cyan-dim': '#CC44AA',
+      '--grad': 'linear-gradient(135deg,#AA66FF 0%,#FF66CC 100%)',
       '--fg': '#EEDDFF',
       '--fg2': '#AA88CC',
-      '--fg3': '#775599',
+      '--fg3': '#9A7BC0',
       '--warn': '#FFCC66',
       '--bad': '#FF6666',
     },
@@ -218,6 +225,16 @@ export function applyTheme(themeId) {
   for (const [key, value] of Object.entries(theme.colors)) {
     root.style.setProperty(key, value);
   }
+  /* The gradient is part of the theme, not a fixed brand colour: every
+     built-in theme carries its own --grad; a custom theme derives one
+     from its green/cyan pair so buttons and headings re-skin there too. */
+  if (!theme.colors['--grad'] && theme.colors['--green'] && theme.colors['--cyan']) {
+    root.style.setProperty('--grad',
+      `linear-gradient(135deg, ${theme.colors['--green']} 0%, ${theme.colors['--cyan']} 100%)`);
+  }
+  /* The stylesheet's [data-theme] rules were dead because nothing ever
+     set the attribute. 'light' now reaches them; 'custom' gets its own. */
+  root.dataset.theme = themeId === 'custom' ? 'custom' : (theme.isDark ? 'dark' : 'light');
 
   // Set color-scheme for browser widgets
   root.style.setProperty('color-scheme', theme.isDark ? 'dark' : 'light');

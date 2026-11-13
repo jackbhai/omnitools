@@ -13,9 +13,14 @@ import { MiniPlayer, FullPlayer } from './ui/PlayerUI';
 /* The bus and metro tools carry the transit datasets (2.4 MB of JSON) behind a
    lazy boundary, so the app shell paints at its original size and a traveller
    who never opens Travel never downloads them. */
-const BusHub = lazy(() => import('./tools/travel-hubs').then((m) => ({ default: m.BusHub })));
-const MetroHub = lazy(() => import('./tools/travel-hubs').then((m) => ({ default: m.MetroHub })));
-const MultiModal = lazy(() => import('./tools/multimodal').then((m) => ({ default: m.MultiModal })));
+/* The bus dataset (2.2 MB) is fetched data now, not bundle: hub chunks and
+   the dataset load in parallel, and the hub renders only once both land.
+   A failed fetch lets the hub open on an empty dataset rather than wedging
+   the lazy loader — the next open retries. */
+const withBus = (p) => Promise.all([p, loadBusData().catch(() => null)]).then(([m]) => m);
+const BusHub = lazy(() => withBus(import('./tools/travel-hubs')).then((m) => ({ default: m.BusHub })));
+const MetroHub = lazy(() => withBus(import('./tools/travel-hubs')).then((m) => ({ default: m.MetroHub })));
+const MultiModal = lazy(() => withBus(import('./tools/multimodal')).then((m) => ({ default: m.MultiModal })));
 
 /* Heavy tool families load on first open instead of with the shell.
    The registry points at these wrappers; the tool view already renders
@@ -61,6 +66,7 @@ import { Hub } from './tools/travel-hub';
 import { Spin, Section, SkelRows, Empty, Toaster, toast } from './ui/kit';
 import * as W from './tools/world';
 import { providerStats } from './core/engine';
+import { loadBusData } from './core/bus-route';
 import { searchMusic } from './core/music';
 import { history as libHistory } from './core/library';
 import { recent as tvRecent } from './core/iptv';

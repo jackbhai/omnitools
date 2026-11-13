@@ -7,60 +7,69 @@
 <meta name="description" content="90+ free tools in one app: weather, music, travel, converters, calculators. No login, works offline." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Bangers&family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=Noto+Naskh+Arabic:wght@400;600;700&family=Noto+Nastaliq+Urdu:wght@400;600;700&family=Noto+Sans+Devanagari:wght@400;600;700&family=Noto+Sans+Gurmukhi:wght@400;600;700&display=swap" rel="stylesheet" />
 <link rel="manifest" href="./manifest.webmanifest" />
+<link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="OmniTools" />
 <title>OmniTools - 90+ tools, no login</title>
 <style>
+/* Last-resort recovery screen — same friendly face as the in-app error
+   boundary: what happened in plain words, a reload, and a reset that
+   clears this app's saved data. No stack traces, ever. */
 #error-display {
   display: none;
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: #1a1a1a;
-  color: #ff6b6b;
-  padding: 20px;
-  font-family: monospace;
-  font-size: 14px;
-  overflow: auto;
+  inset: 0;
+  background: #000;
+  color: #E8FFF4;
+  padding: 24px;
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 15px;
   z-index: 9999;
 }
-#error-display h2 {
-  color: #ff6b6b;
-  margin-top: 0;
+#error-display .box {
+  max-width: 420px;
+  margin: 12vh auto 0;
+  background: #0E1412;
+  border: 1px solid #1C2724;
+  border-radius: 18px;
+  padding: 22px;
 }
-#error-display p {
-  color: #fff;
-}
-#error-display pre {
-  background: #000;
-  padding: 15px;
-  border-radius: 4px;
-  overflow: auto;
-  color: #fff;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-}
+#error-display h2 { margin: 0 0 8px; font-size: 19px; }
+#error-display p { color: #9DB5AC; line-height: 1.55; margin: 0 0 16px; }
 #error-display button {
-  margin-top: 20px;
-  padding: 12px 24px;
-  background: #4ecdc4;
-  color: #000;
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px 18px;
+  background: linear-gradient(135deg, #00FF9C, #00E5FF);
+  color: #00110A;
   border: none;
-  border-radius: 4px;
+  border-radius: 12px;
   cursor: pointer;
-  font-size: 16px;
-  font-weight: bold;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: inherit;
+}
+#error-display button.ghost {
+  background: #141C19;
+  color: #E8FFF4;
+  border: 1px solid #26332F;
+  font-weight: 500;
 }
 </style>
 </head>
 <body>
 <div id="error-display">
-  <h2>Something went wrong</h2>
-  <p id="error-message"></p>
-  <pre id="error-stack"></pre>
-  <button onclick="location.reload()">Reload Page</button>
+  <div class="box">
+    <h2>Something went wrong</h2>
+    <p id="error-message">The app could not start. Reloading usually fixes it. If it keeps happening, reset the app data — your settings and saved reading places will be cleared, nothing else on your phone is touched.</p>
+    <button onclick="location.reload()">Reload</button>
+    <button class="ghost" onclick="try{Object.keys(localStorage).filter(function(k){return k.indexOf('omni')===0}).forEach(function(k){localStorage.removeItem(k)});if(window.caches){caches.keys().then(function(ks){return Promise.all(ks.map(function(k){return caches.delete(k)}))}).then(function(){location.reload()})}else{location.reload()}}catch(e){location.reload()}">Reset app data &amp; reload</button>
+  </div>
 </div>
 <div id="root"></div>
 <script>

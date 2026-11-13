@@ -15,6 +15,7 @@ import * as P from '../core/providers';
 import { useData, Spin, Err, Src, Card, Stat } from '../ui/kit';
 import { Icon } from '../ui/icons';
 import { jget } from '../core/engine';
+import { loadArti } from '../core/arti-data';
 import { useListen, charAtFraction } from '../core/useListen';
 import { rashifalFor } from '../core/rashifal-banks';
 import { idbGet, idbSet } from '../core/idbcache';
@@ -1910,7 +1911,7 @@ export function Devotional() {
   const [deity, setDeity] = useState('');
   const [cscript, setCscript] = useState('dev'); // corpus view: dev | roman | both
   const [ARTI, setARTI] = useState(null);
-  useEffect(() => { let on = 1; import('../data/arti.json').then((m) => { if (on) setARTI(m.default); }); return () => { on = 0; }; }, []);
+  useEffect(() => { let on = 1; loadArti().then((d) => { if (on) setARTI(d); }).catch(() => {}); return () => { on = 0; }; }, []);
   const { HA, HA_CHARS } = useMemo(() => splitSangrah(ARTI), [ARTI]);
   const N_CUR = AARTIS_FULL.length + CHALISAS_FULL.length + MANTRAS_FULL.length;
   const N_CORP = (ARTI ? ARTI.meta.n : 0) + N_CUR;

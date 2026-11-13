@@ -1,7 +1,7 @@
 /**
  * Delhi bus journey planner, route browser and timetable engine.
  *
- * Data: src/data/bus-delhi.json — every DTC / Delhi Transit route direction
+ * Data: public/data/bus-delhi.json — every DTC / Delhi Transit route direction
  * published by the transport department, with the stop sequence, the coordinate
  * of every stop, the polyline the bus actually drives, and the departure
  * timetable.  Build it with scripts/build_transit_data.py.  Nothing invented.
@@ -31,7 +31,6 @@
  * Delhi (OTD GTFS-Realtime) sit behind a government-issued key, so there is no
  * keyless live vehicle position to poll; see the note in src/core/live.js.
  */
-import DATA from '../data/bus-delhi.json';
 
 const R = 6371;
 const rad = (d) => (d * Math.PI) / 180;
@@ -45,11 +44,40 @@ export const haversine = (a, b) => {
 /** Median road/straight ratio measured on real Delhi bus journeys via OSRM. */
 export const ROAD_FACTOR = 1.28;
 
-export const ROUTES = DATA.routes;
-export const STOPS = DATA.stops;
-export const BUILT = DATA.built;
-export const SOURCE = DATA.source || '';
-export const STATS = DATA.stats || {};
+/* The dataset lives outside the bundle: public/data/bus-delhi.json is
+   fetched on first use (and kept by the service worker) instead of being
+   parsed as JS on every cold start. initBusData() installs a dataset and
+   rebuilds every derived index; loadBusData() fetches it — the lazy hub
+   loaders in App.jsx await it before a bus surface can render. Until data
+   lands, the exports read as an empty dataset. */
+const BASE = (import.meta.env?.BASE_URL || '/').replace(/\/+$/, '');
+let DATA = { routes: [], stops: [], built: '', source: '', stats: {}, fare: {} };
+export let ROUTES = DATA.routes;
+export let STOPS = DATA.stops;
+export let BUILT = DATA.built;
+export let SOURCE = DATA.source || '';
+export let STATS = DATA.stats || {};
+
+let busDataPromise = null;
+export function initBusData(json) {
+  if (json) DATA = json;
+  ROUTES = DATA.routes || [];
+  STOPS = DATA.stops || [];
+  BUILT = DATA.built || '';
+  SOURCE = DATA.source || '';
+  STATS = DATA.stats || {};
+  rebuildIndexes();
+  return DATA;
+}
+export function loadBusData() {
+  if (DATA.routes.length) return Promise.resolve(DATA);
+  if (busDataPromise) return busDataPromise;
+  busDataPromise = fetch(`${BASE}/data/bus-delhi.json`)
+    .then((r) => { if (!r.ok) throw new Error(`bus data HTTP ${r.status}`); return r.json(); })
+    .then((j) => initBusData(j))
+    .catch((e) => { busDataPromise = null; throw e; });
+  return busDataPromise;
+}
 export const DAY_PASS = { nonAc: 40, ac: 50 };
 export const PASSES = {
   daily: [40, 50], weekly: [280, 350], fortnight: [560, 700],
@@ -59,30 +87,38 @@ export const PASSES = {
 };
 
 /* ---- stop table: index-based (v2 and v1 files both use indices) ---------- */
-const INDEXED = !DATA.routes.length || typeof DATA.routes[0].s[0] === 'number';
-const AT_IDX = STOPS.map((s, i) => ({ ...s, i }));
-const POS = new Map();
-for (const s of AT_IDX) if (!POS.has(s.n)) POS.set(s.n, s);
+let INDEXED = true;
+let AT_IDX = [];
+let POS = new Map();
+/** stop index (or name for legacy files) -> Set(route index) */
+let AT = new Map();
+let BY_NAME = new Map();
+export let stopNames = [];
 const rec = (v) => (typeof v === 'number' ? AT_IDX[v] : POS.get(v));
 export const nameOf = (v) => rec(v)?.n ?? String(v);
-
-/** stop index (or name for legacy files) -> Set(route index) */
-const AT = new Map();
-ROUTES.forEach((r, i) => {
-  for (const s of r.s) {
-    if (!AT.has(s)) AT.set(s, new Set());
-    AT.get(s).add(i);
-  }
-});
-
-const BY_NAME = new Map();
-for (const s of AT_IDX) {
-  if (!BY_NAME.has(s.n)) BY_NAME.set(s.n, []);
-  BY_NAME.get(s.n).push(s);
-}
-
-export const stopNames = [...BY_NAME.keys()].sort();
 export const isStop = (n) => BY_NAME.has(n);
+
+function rebuildIndexes() {
+  INDEXED = !ROUTES.length || typeof ROUTES[0].s[0] === 'number';
+  AT_IDX = STOPS.map((s, i) => ({ ...s, i }));
+  POS = new Map();
+  for (const s of AT_IDX) if (!POS.has(s.n)) POS.set(s.n, s);
+  AT = new Map();
+  ROUTES.forEach((r, i) => {
+    for (const s of r.s) {
+      if (!AT.has(s)) AT.set(s, new Set());
+      AT.get(s).add(i);
+    }
+  });
+  BY_NAME = new Map();
+  for (const s of AT_IDX) {
+    if (!BY_NAME.has(s.n)) BY_NAME.set(s.n, []);
+    BY_NAME.get(s.n).push(s);
+  }
+  stopNames = [...BY_NAME.keys()].sort();
+  SLABS = DATA.fare || {};
+  FARE_TABLE = SLABS;
+}
 
 function routeCount(name) {
   const set = new Set();
@@ -110,10 +146,11 @@ export function searchStops(q, limit = 8) {
 }
 
 /* ------------------------------------------------------------------ fares */
-const SLABS = DATA.fare || {};
+let SLABS = {};
 /** The published slab tables themselves, so the UI renders data and never a
- *  copy of it that could drift. Each row is [upto-km-or-null, price]. */
-export const FARE_TABLE = SLABS;
+ *  copy of it that could drift. Each row is [upto-km-or-null, price].
+ *  Assigned by rebuildIndexes() whenever a dataset is installed. */
+export let FARE_TABLE = SLABS;
 const slabsFor = (ac) => (ac ? SLABS.ac : SLABS.ordinary) ||
   (ac ? [[4, 10], [8, 15], [12, 20], [null, 25]] : [[4, 5], [10, 10], [null, 15]]);
 

@@ -30,6 +30,13 @@ const DEFAULTS = {
   useBuiltin: true,      // fall back to the bundled relay
   autoRadio: true,       // keep the queue topped up so playback never ends
   sfx: true,             // travel-panel sounds, synthesised locally (core/sfx.js)
+  /* UI-audit additions (consumed by src/ui/readerkit.jsx + Settings >
+     Reading): one text size shared by every book reader, a paper reading
+     surface, and an explicit save-data mode. Defaults keep behaviour
+     exactly as before for existing users. */
+  textSize: 1,           // reader text scale, 0.85–1.35
+  readerPaper: false,    // warm paper surface inside the book readers
+  lowData: false,        // save-data mode: fewer images, no channel index
 };
 
 let cache = null;

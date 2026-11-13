@@ -5,11 +5,17 @@
  * instead of names, because keying stops by name alone merged unrelated places
  * that share a name and produced 20 km phantom hops -> wrong fares.
  */
+import { readFileSync } from 'node:fs';
 import { planBus, busFare, childFare, feederFare, fareSlab, roadDistance, refineFare,
          ROUTES, STOPS, stopNames, routesAt, nearestStops, findRoute, haversine,
          nameOf, routeStops, ROAD_FACTOR, searchStops, isStop,
-         journeyKm, serviceWindow, statusNow, busEta, nextDepartures, fmtTime }
+         journeyKm, serviceWindow, statusNow, busEta, nextDepartures, fmtTime,
+         initBusData }
   from '../src/core/bus-route.js';
+
+/* The dataset is fetched data in the app now; here it is read from disk and
+   installed explicitly (live bindings make the imports above see it). */
+initBusData(JSON.parse(readFileSync(new URL('../public/data/bus-delhi.json', import.meta.url), 'utf8')));
 
 let pass = 0, fail = 0;
 const chk = (n, c, d = '') => { c ? pass++ : fail++; console.log(`  ${c ? 'PASS' : 'FAIL'}  ${n}${d ? '  — ' + d : ''}`); };

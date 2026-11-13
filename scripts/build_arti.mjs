@@ -1,5 +1,5 @@
 /**
- * Build src/data/arti.json from the scraped devotional corpus.
+ * Build public/data/arti.json from the scraped devotional corpus.
  * Quality-gated: only full, clean Devanagari texts survive. Nothing is padded,
  * nothing is truncated, and a failed check drops the item instead of shipping
  * it fixed-up by guesswork.
@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const IN = process.argv[2] || '/home/user/scrape/arti/hinduaarti.ndjson';
 const WIKI = '/home/user/scrape/arti/arti_raw.ndjson';
-const OUT = resolve(ROOT, 'src/data/arti.json');
+const OUT = resolve(ROOT, 'public/data/arti.json');
 
 const KIND = { aartis: 'aarti', chalisa: 'chalisa', mantras: 'mantra', stotrams: 'stotra', bhajans: 'bhajan' };
 const MIN_CHARS = { aarti: 120, chalisa: 200, mantra: 25, stotra: 140, bhajan: 140 };
