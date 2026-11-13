@@ -7,12 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "verify": "npm run verify:data && npm run verify:bus && npm run verify:metro && npm run verify:trip && npm run verify:render",
+    "verify": "npm run verify:data && npm run verify:bus && npm run verify:metro && npm run verify:trip && npm run verify:render && npm run verify:smoke",
     "verify:data": "python3 scripts/verify_transit_data.py --pages 8 --osrm 6",
     "verify:bus": "node --experimental-loader ./scripts/_json_loader.mjs scripts/verify_bus.mjs",
     "verify:metro": "node --experimental-loader ./scripts/_json_loader.mjs scripts/verify_metro.mjs",
     "verify:trip": "node --experimental-loader ./scripts/_json_loader.mjs scripts/verify_trip.mjs",
-    "verify:render": "vite build --ssr scripts/ssr-smoke.jsx --outDir .ssr-smoke --emptyOutDir && node .ssr-smoke/ssr-smoke.js"
+    "verify:render": "vite build --ssr scripts/ssr-smoke.jsx --outDir .ssr-smoke --emptyOutDir && node .ssr-smoke/ssr-smoke.js",
+    "verify:smoke": "node --experimental-loader ./scripts/_smoke_loader.mjs scripts/verify_smoke.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
