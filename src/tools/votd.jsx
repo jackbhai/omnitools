@@ -82,6 +82,7 @@ async function drawCard(entry, dateLabel) {
   for (const ln of lines) { ctx.fillText(ln, W / 2, y); y += size * 1.55; }
   if (mLines.length) {
     y += 46;
+    ctx.direction = 'ltr';  // the meaning is always a left-to-right gloss
     ctx.fillStyle = '#b9cdc4';
     ctx.font = '34px system-ui, sans-serif';
     for (const ln of mLines) { ctx.fillText(ln, W / 2, y); y += 47; }

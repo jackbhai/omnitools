@@ -111,6 +111,8 @@ console.log('\n=== Verse of the Day pool ===');
   for (const e of VOTD_POOL) kinds[e.k] = (kinds[e.k] || 0) + 1;
   chk('pool size 47', VOTD_POOL.length === 47, JSON.stringify(kinds));
   chk('every entry complete', VOTD_POOL.every((e) => e.k && e.ref && e.text && e.meaning && e.go));
+  chk('no KJV marginal notes / pilcrows glued to verses',
+    VOTD_POOL.every((e) => !/\d+\.\d+ \w+…:|Heb\.|^¶/.test(e.text)));
   chk('each kind >= 6', Object.values(kinds).every((n) => n >= 6), JSON.stringify(kinds));
   const d = new Date(2026, 10, 13);
   const p1 = votdPick(VOTD_POOL, d), p2 = votdPick(VOTD_POOL, d);

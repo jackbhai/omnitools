@@ -441,7 +441,7 @@ export const POOL = [
    "book": 18,
    "chapter": 46
   },
-  "text": "God is our refuge and strength, a very present help in trouble.46.1 for: or, of",
+  "text": "God is our refuge and strength, a very present help in trouble.",
   "script": "en",
   "translit": "",
   "meaning": "God is our shelter and our strength, always near when trouble comes."
@@ -454,7 +454,7 @@ export const POOL = [
    "book": 19,
    "chapter": 3
   },
-  "text": "¶ Trust in the LORD with all thine heart; and lean not unto thine own understanding.",
+  "text": "Trust in the LORD with all thine heart; and lean not unto thine own understanding.",
   "script": "en",
   "translit": "",
   "meaning": "Trust God with all your heart instead of relying only on your own understanding."
@@ -467,7 +467,7 @@ export const POOL = [
    "book": 22,
    "chapter": 41
   },
-  "text": "¶ Fear thou not; for I am with thee: be not dismayed; for I am thy God: I will strengthen thee; yea, I will help thee; yea, I will uphold thee with the right hand of my righteousness.",
+  "text": "Fear thou not; for I am with thee: be not dismayed; for I am thy God: I will strengthen thee; yea, I will help thee; yea, I will uphold thee with the right hand of my righteousness.",
   "script": "en",
   "translit": "",
   "meaning": "Do not fear — God is with you, strengthens you and holds you up."
@@ -480,7 +480,7 @@ export const POOL = [
    "book": 23,
    "chapter": 29
   },
-  "text": "For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.29.11 expected…: Heb. end and expectation",
+  "text": "For I know the thoughts that I think toward you, saith the LORD, thoughts of peace, and not of evil, to give you an expected end.",
   "script": "en",
   "translit": "",
   "meaning": "God's plans for you are for good — a future filled with hope."
@@ -493,7 +493,7 @@ export const POOL = [
    "book": 24,
    "chapter": 3
   },
-  "text": "¶ It is of the LORD’s mercies that we are not consumed, because his compassions fail not.",
+  "text": "It is of the LORD’s mercies that we are not consumed, because his compassions fail not.",
   "script": "en",
   "translit": "",
   "meaning": "We are held up only by God's mercy, which never runs out."
@@ -506,7 +506,7 @@ export const POOL = [
    "book": 32,
    "chapter": 6
   },
-  "text": "He hath shewed thee, O man, what is good; and what doth the LORD require of thee, but to do justly, and to love mercy, and to walk humbly with thy God?6.8 walk…: Heb. humble thyself to walk",
+  "text": "He hath shewed thee, O man, what is good; and what doth the LORD require of thee, but to do justly, and to love mercy, and to walk humbly with thy God?",
   "script": "en",
   "translit": "",
   "meaning": "What God asks is simple: act justly, love mercy, and walk humbly with Him."
@@ -519,7 +519,7 @@ export const POOL = [
    "book": 39,
    "chapter": 11
   },
-  "text": "¶ Come unto me, all ye that labour and are heavy laden, and I will give you rest.",
+  "text": "Come unto me, all ye that labour and are heavy laden, and I will give you rest.",
   "script": "en",
   "translit": "",
   "meaning": "Come to Jesus, all who are tired and burdened, and He will give you rest."
@@ -545,7 +545,7 @@ export const POOL = [
    "book": 42,
    "chapter": 3
   },
-  "text": "¶ For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.",
+  "text": "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.",
   "script": "en",
   "translit": "",
   "meaning": "God loved the world so much that He gave His only Son, so that whoever believes in Him has eternal life."

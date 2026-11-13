@@ -117,6 +117,15 @@ for bidx, folder, bname, ch, v, gloss in BIBLE_PICKS:
         cache[(folder, ch)] = d.get('data') or d.get('verses')
     rows = cache[(folder, ch)]
     text = re.sub(r'<[^>]+>', '', str(rows[v - 1]['text'])).strip()
+    # The wldeh KJV data glues the marginal note onto some verses
+    # ("...thy God?6.8 walk...: Heb. humble thyself to walk") — the
+    # note always starts with this verse's own "<ch>.<v> " marker.
+    marker = f'{ch}.{v} '
+    idx = text.rfind(marker)
+    if idx > 10:
+        text = text[:idx].rstrip()
+    # A leading pilcrow is the KJV paragraph mark, noise on a card.
+    text = re.sub(r'^¶\s*', '', text)
     pool.append({'k': 'bible', 'ref': f'{bname} {ch}:{v} · KJV',
                  'go': {'tool': 'bible', 'book': bidx, 'chapter': ch},
                  'text': text, 'script': 'en', 'translit': '', 'meaning': gloss})
