@@ -32,6 +32,11 @@
  * omni:games:best      tools/games*.jsx    best scores for the whole 50-game arcade
  *                                           (one key per game id inside the object;
  *                                           sudoku keeps one per difficulty)
+ * omni:games:daily     core/games-daily.js daily-challenge stamps
+ *                                           ({ done: { 'YYYY-MM-DD': gameId } };
+ *                                           streak/total are computed, never stored)
+ * omni:saraiki:drill   tools/saraiki.jsx   Saraiki practice progress
+ *                                           ({ quiz: { poolKey: best }, seen: { sabaq: count } })
  * omni:news:ed         tools/news.jsx      news edition (country) choice
  * omni:quran:listen    tools/devotional.jsx Quran listen position
  * omni:sid             core/presence.js    anonymous presence session id

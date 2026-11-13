@@ -254,6 +254,125 @@ SABAK.push(
   ] },
 );
 
+/* ------------------------------------------------------------ NEW: 15+ */
+SABAK.push(
+  { n: 15, kind: 'new', title: 'Directions & places in town', note: 'Saraiki names its directions from the sun: چَڑھدا (chaṛhdā, where it climbs — east) and لَہندا (lehndā, where it sinks — west). اُبھا (north) and لَما (south) are the belt’s own words.', items: [
+    I('اُبھا', 'ubhā', 'उत्तर', 'north'),
+    I('لَما', 'lamā', 'दक्षिण', 'south'),
+    I('چَڑھدا پاسَا', 'chaṛhdā pāsā', 'पूरब (जहाँ सूरज चढ़ता है)', 'east (where the sun climbs)'),
+    I('لَہندا پاسَا', 'lehndā pāsā', 'पश्चिम (जहाँ सूरज ढलता है)', 'west (where the sun sinks)'),
+    I('سامھݨے', 'sāmhṇe', 'सामने', 'in front'),
+    I('پِچھّے', 'pichchhe', 'पीछे', 'behind'),
+    I('گَھر دے نَال', 'ghar de nāl', 'घर के पास', 'beside the house'),
+    I('وِچکار', 'vichkār', 'बीच में', 'in the middle'),
+    I('ہَسپتَال', 'haspatāl', 'अस्पताल', 'hospital'),
+    I('سَکُول', 'sakūl', 'स्कूल', 'school'),
+    I('تھَاݨا', 'thāṇā', 'थाना', 'police station'),
+    I('ڈَاکخَانہ', 'ḍākkhānā', 'डाकघर', 'post office'),
+    I('مَسِیت', 'masīt', 'मस्जिद', 'mosque'),
+    I('مَندَر', 'mandar', 'मंदिर', 'temple'),
+    I('چَوک', 'chauk', 'चौक / चौराहा', 'town square / crossing'),
+    I('پُل', 'pul', 'पुल', 'bridge'),
+    I('ہَسپتَال کِتھاں ہے؟', 'Haspatāl kithāṉ hai?', 'अस्पताल कहाँ है?', 'Where is the hospital?'),
+    I('اِیہہ رَستَہ کِتھاں وِیندا ہے؟', 'Ih rastā kithāṉ vendā hai?', 'यह रास्ता कहाँ जाता है?', 'Where does this road go?'),
+    I('پُل تُوں لَنگھ کَے', 'Pul tūṉ langh ke', 'पुल पार करके', 'after crossing the bridge'),
+    I('شَہر دے وِچکار', 'Shahar de vichkār', 'शहर के बीच में', 'in the middle of the city'),
+  ] },
+  { n: 16, kind: 'new', title: 'Health, body & the doctor', note: 'The body first, then how to say what hurts — دَرد (dard) plus the place is the whole pattern.', items: [
+    I('سِر', 'sir', 'सिर', 'head'),
+    I('اَکھ', 'akh', 'आँख', 'eye'),
+    I('نَک', 'nak', 'नाक', 'nose'),
+    I('مُنہ', 'munh', 'मुँह', 'mouth / face'),
+    I('کَن', 'kan', 'कान', 'ear'),
+    I('ڳَل', 'gal', 'गला', 'throat'),
+    I('ہَتھ', 'hath', 'हाथ', 'hand'),
+    I('ٻَانہہ', 'bānh', 'बाँह', 'arm'),
+    I('پَیر', 'pair', 'पैर', 'foot / leg'),
+    I('پِیٹ', 'peṭ', 'पेट', 'stomach'),
+    I('دِل', 'dil', 'दिल', 'heart'),
+    I('ہَڈّی', 'haḍḍī', 'हड्डी', 'bone'),
+    I('مِیݙے سِر وِچ دَرد ہے', 'Meḍe sir vich dard hai', 'मेरे सिर में दर्द है', 'My head hurts'),
+    I('مِیکُوں بُخَار ہے', 'Mekūṉ bukhār hai', 'मुझे बुख़ार है', 'I have a fever'),
+    I('مِیکُوں کھَانگھ آندی ہے', 'Mekūṉ khāngh āndī hai', 'मुझे खाँसी आ रही है', 'I have a cough'),
+    I('مِیکُوں چَکّر آندے ہِن', 'Mekūṉ chakkar ānde hin', 'मुझे चक्कर आ रहे हैं', 'I feel dizzy'),
+    I('ڈَاکٹر کِتھے ٻَہندا ہے؟', 'Ḍākṭar kithe bahndā hai?', 'डॉक्टर कहाँ बैठता है?', 'Where does the doctor see patients?'),
+    I('مِیکُوں ڈَاکٹر کَول وَنڄݨا ہے', 'Mekūṉ ḍākṭar kol vanjṇā hai', 'मुझे डॉक्टर के पास जाना है', 'I have to go to the doctor'),
+    I('اِیہہ دَوَائی ݙِنہہ وِچ تَرے وَار کھَاوݨی ہے', 'Ih davāī ḍinh vich tre vār khāvaṇī hai', 'यह दवाई दिन में तीन बार खानी है', 'Take this medicine three times a day'),
+    I('آرام کَر', 'Ārām kar', 'आराम करो', 'Take rest'),
+    I('تِیݙی طبیعت کِیویں ہے؟', 'Teḍī ṭabīat kīveṉ hai?', 'तुम्हारी तबीयत कैसी है?', 'How is your health?'),
+  ] },
+  { n: 17, kind: 'new', title: 'Phone & nowadays', note: 'The phone has its own small Saraiki — بھیڄ (bhej, send) does most of the work.', items: [
+    I('مُوبَائیل', 'mobāil', 'मोबाइल', 'mobile phone'),
+    I('مِیکُوں کال کَر', 'Mekūṉ call kar', 'मुझे कॉल करो', 'Call me'),
+    I('تِیݙا نَمبَر کِیہہ ہے؟', 'Teḍā number kīh hai?', 'तुम्हारा नंबर क्या है?', 'What is your number?'),
+    I('مَیسِج بَھیڄ', 'Message bhej', 'मैसेज भेजो', 'Send a message'),
+    I('مَیں تُوںکُوں مَیسِج بَھیڄیا ہے', 'Maiṉ tūṉkūṉ message bhejiā hai', 'मैंने तुम्हें मैसेज भेजा है', 'I have sent you a message'),
+    I('تَسوِیر بَھیڄ ݙے', 'Tasvīr bhej ḍe', 'तस्वीर भेज दो', 'Send the photo'),
+    I('تُوں آن لَائن ہیں؟', 'Tūṉ online haiṉ?', 'तुम ऑनलाइन हो?', 'Are you online?'),
+    I('وَٹس ایپ تے ڳال کَرِیساں', 'WhatsApp te gāl karesāṉ', 'व्हाट्सएप पर बात करेंगे', 'We will talk on WhatsApp'),
+    I('مِیݙا فَون بَند تھی ڳِیا ہے', 'Meḍā phone band thī giā hai', 'मेरा फ़ोन बंद हो गया है', 'My phone has switched off'),
+    I('فَون چَارڄ تے لَا', 'Phone charge te lā', 'फ़ोन चार्ज पर लगाओ', 'Put the phone on charge'),
+    I('سِگنَل نَئِیں آندا', 'Signal naīṉ āndā', 'सिग्नल नहीं आ रहा', 'There is no signal'),
+    I('آوَاز صَاف نَئِیں آندی', 'Āvāz sāf naīṉ āndī', 'आवाज़ साफ़ नहीं आ रही', 'Your voice is not clear'),
+    I('وِیڈِیو ݙِکھا', 'Video ḍikhā', 'वीडियो दिखाओ', 'Show the video'),
+    I('مَیں مَصروف ہَاں، وَل ڳال کَرِیساں', 'Maiṉ masrūf hāṉ, val gāl karesāṉ', 'मैं व्यस्त हूँ, फिर बात करेंगे', 'I am busy, we will talk later'),
+    I('رَاتِیں فَون نہ کَر', 'Rātīṉ phone na kar', 'रात को फ़ोन मत करना', 'Do not call at night'),
+  ] },
+  { n: 18, kind: 'new', title: 'Multani food & home cooking', note: 'Multan gives the Saraiki belt two of its prides — سَوہَن حَلوَہ (sohan halwa) and its mangoes. The opinion frames below this Sabaq belong with it: food is where opinions start.', items: [
+    I('سَوہَن حَلوَہ', 'sohan halvā', 'सोहन हलवा', 'sohan halwa (Multan’s famous sweet)'),
+    I('آمب', 'amb', 'आम', 'mango'),
+    I('مُلتان دے آمب ٻَہوں مَشہُور ہِن', 'Multān de amb bahuṉ mashhūr hin', 'मुल्तान के आम बहुत मशहूर हैं', 'Multan’s mangoes are very famous'),
+    I('سَاگ', 'sāg', 'साग', 'saag (cooked greens)'),
+    I('لَسّی', 'lassī', 'लस्सी', 'lassi'),
+    I('مَکھَݨ', 'makkhaṇ', 'मक्खन', 'butter'),
+    I('دَہی', 'dahī', 'दही', 'curd / yoghurt'),
+    I('لوݨ', 'lūṇ', 'नमक', 'salt'),
+    I('مِرچ', 'mirch', 'मिर्च', 'chilli'),
+    I('مِیٹھَا', 'mīṭhā', 'मीठा', 'sweet (in taste)'),
+    I('کَھٹّا', 'khaṭṭā', 'खट्टा', 'sour'),
+    I('کَوڑا', 'kauṛā', 'कड़वा', 'bitter'),
+    I('پَکَاوݨا', 'pakāvaṇā', 'पकाना', 'to cook'),
+    I('اَمّاں نے سَاگ پَکَایا ہے', 'Ammāṉ ne sāg pakāyā hai', 'माँ ने साग पकाया है', 'Mother has cooked saag'),
+    I('کھَاݨا تیار ہے', 'Khāṇā taiyār hai', 'खाना तैयार है', 'The food is ready'),
+    I('ہَتھ دھو گِھن', 'Hath dho ghin', 'हाथ धो लो', 'Wash your hands'),
+    I('مِیکُوں لَسّی پِیوݨی ہے', 'Mekūṉ lassī pīvaṇī hai', 'मुझे लस्सी पीनी है', 'I want to drink lassi'),
+    I('رَوٹی نَال سَاگ', 'Roṭī nāl sāg', 'रोटी के साथ साग', 'saag with roti'),
+  ] },
+);
+
+/**
+ * Feelings & opinion frames — the sentence patterns of “I think…”.
+ * Saraiki builds them on میکُوں لَڳدا ہے جو… (mekūṉ lagdā hai jo…) and
+ * میݙا خیال (meḍā khayāl, my view) — rendered as a block under Sabaq 18.
+ */
+export const OPINIONS = [
+  I('مِیکُوں لَڳدا ہے جو...', 'Mekūṉ lagdā hai jo…', 'मुझे लगता है कि…', 'I think that…'),
+  I('مِیݙا خیال ہے جو اوہ اَڄ آوسِی', 'Meḍā khayāl hai jo oh aj āosī', 'मेरा ख़याल है कि वह आज आएगा', 'I think he will come today'),
+  I('تُہاݙا کِیہہ خیال ہے؟', 'Tuhāḍā kīh khayāl hai?', 'आपका क्या ख़याल है?', 'What do you think?'),
+  I('مِیݙی رَائے وِچ اِیہہ چَنگا ہے', 'Meḍī rāe vich ih changā hai', 'मेरी राय में यह अच्छा है', 'In my opinion, this is good'),
+  I('مِیکُوں یَقِین ہے', 'Mekūṉ yaqīn hai', 'मुझे यक़ीन है', 'I am sure'),
+  I('مِیکُوں خُوشی تھِئی', 'Mekūṉ khushī thīī', 'मुझे ख़ुशी हुई', 'I felt happy'),
+  I('مِیکُوں دُکھ ہویا', 'Mekūṉ dukh hoyā', 'मुझे दुख हुआ', 'I felt sad'),
+  I('مِیکُوں غُصّا آیا', 'Mekūṉ ghussā āyā', 'मुझे ग़ुस्सा आया', 'I got angry'),
+  I('مِیکُوں اِیہہ ڳال پَسَند نَئِیں آئی', 'Mekūṉ ih gāl pasand naīṉ āī', 'मुझे यह बात पसंद नहीं आई', 'I did not like this thing'),
+  I('سَچّی ڳال اِیہہ ہے جو...', 'Sachchī gāl ih hai jo…', 'सच्ची बात यह है कि…', 'The truth is that…'),
+  I('مِیکُوں اُوندی ڳال چَنگی لَڳّی', 'Mekūṉ ūndī gāl changī laggī', 'मुझे उसकी बात अच्छी लगी', 'I liked what he said'),
+];
+
+/* ------------------------------------------------------- drill pools */
+/** Every phrase item, tagged with its Sabaq number. */
+export const ALL_ITEMS = SABAK.flatMap((sb) => sb.items.map((it) => ({ ...it, n: sb.n })));
+/** Number words as drill items (hi/en carry the digit). */
+export const NUMBER_ITEMS = NUMBERS.map(([num, s, r]) => ({
+  s, r, hi: String(num), en: `the number ${num}`, n: num <= 20 ? 4 : 5,
+}));
+/** Verb infinitives as drill items. */
+export const VERB_ITEMS = VERBS.map((v) => ({ ...v.inf, n: 11 }));
+/** The full practice pool: phrases + numbers + verbs + opinion frames. */
+export const VOCAB = [...ALL_ITEMS, ...NUMBER_ITEMS, ...VERB_ITEMS,
+  ...OPINIONS.map((it) => ({ ...it, n: 18 }))];
+
 export const SABAK_BY_ID = Object.fromEntries(SABAK.map((s) => [s.n, s]));
 export const PHRASE_COUNT = SABAK.reduce((n, s) => n + s.items.length, 0)
+  + OPINIONS.length
   + VERBS.reduce((n, v) => n + 4, 0);
