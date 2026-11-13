@@ -52,12 +52,12 @@ export const CHANGE_MIN = 7;          // metro line change: the planner's own fi
 export const BOARD_MIN = 8;           // changing vehicle: alight + walk + board
 export const ACCESS_MIN = 2;          // down to the platform, inside the metro headline
 export const VOT_RPM = 2;            // `value` treats one saved minute as worth ₹2
-export const BUS_KMPM = 0.28;         // the bus planner's fallback speed
+const BUS_KMPM = 0.28;         // the bus planner's fallback speed
 export const MAX_WALK_KM = 2.0;       // how far either end is worth walking to a vehicle
-export const MAX_LINK_WALK_M = 1200;  // the furthest station↔stop link the data measured
+const MAX_LINK_WALK_M = 1200;  // the furthest station↔stop link the data measured
 export const MAX_WALK_MIN = 20;       // and no journey is offered that walks more in total
 export const MAX_LEGS = 7;            // than this many legs of any kind
-export const MAX_MINUTES = 6 * 60;    // a search that only finds a 6-hour journey found nothing
+const MAX_MINUTES = 6 * 60;    // a search that only finds a 6-hour journey found nothing
 
 export const walkMin = (km) => Math.max(1, Math.round((km / WALK_KMH) * 60));
 const BID = (i) => `b#${i}`;
@@ -66,7 +66,6 @@ const MID = (n) => `m#${n}`;
 /* ------------------------------------------------------------------ the graph */
 
 let G = null;
-export function graphInfo() { return G ? { ...G.size, nodes: G.count } : null; }
 
 /**
  * Build once: ~5.6k nodes, ~90k directed edges, all of it from JSON that is
@@ -405,7 +404,7 @@ function chainToKey(run, key) {
  * (journeyKm for the full i0→i1, the route's own speed), so a leg shown here
  * reads the same as the same leg in the bus or metro tool.
  */
-export function legsFromChain(run, chain) {
+function legsFromChain(run, chain) {
   const g = run ? run.g : graph();
   const legs = [];
   const E = (i) => g.edges[i];
@@ -584,7 +583,7 @@ function endsAt(place, wantPos = false) {
   return out;
 }
 
-export const KIND_OF = (legs) => {
+const KIND_OF = (legs) => {
   const metro = legs.some((l) => l.kind === 'metro'), bus = legs.some((l) => l.kind === 'bus');
   return metro && bus ? 'Metro + Bus' : metro ? 'Metro' : 'Bus';
 };

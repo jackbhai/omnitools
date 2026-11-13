@@ -35,7 +35,7 @@ function index() {
  * physically near the station — "Nehru Place" is a name that recurs across the
  * city and matching on name alone would pull in every bus that ever used it.
  */
-export function matchStopIdx(want) {
+function matchStopIdx(want) {
   const idx = index();
   const k = squash(want);
   const exact = idx.get(k);

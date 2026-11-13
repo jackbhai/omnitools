@@ -48,59 +48,10 @@ function mapItems(items) {
 }
 
 /** One provider per mirror so the engine can round-robin + circuit-break them. */
-export const ytSearch = PIPED.map((base, i) => ({
-  id: 'piped-' + i,
-  label: 'Piped ' + new URL(base).hostname.split('.')[1],
-  async run({ q, filter = 'music_songs' }) {
-    const d = await jget(`${base}/search?q=${encodeURIComponent(q)}&filter=${filter}`, { ms: 14000 });
-    const out = mapItems(d.items);
-    if (!out.length) throw new Error('no results');
-    return out;
-  },
-}));
 
 /* ---------------------------------------------------------------- streams */
 
 /** Resolve a YouTube id to { audio, video, qualities, meta } for playback. */
-export async function resolveStream(id) {
-  const url = `https://www.youtube.com/watch?v=${id}`;
-
-  // 1) the resolver chain (relay /yt fast path, then the budgeted proxy
-  //    race) — returns a CORS-enabled, range-capable audio URL. This used
-  //    to be a bare direct fetch, which a browser always refuses (the
-  //    resolver sends no CORS header), so step 1 could never succeed.
-  try {
-    const d = await resolveJson(url);
-    const m = d.mediaInfo || {};
-    if (m.audioUrl || m.videoUrl) {
-      return {
-        audio: m.audioUrl || m.videoUrl,
-        video: m.videoUrl || null,
-        title: m.title, artist: m.author, art: m.thumbnail || m.coverImage,
-        qualities: [], via: 'resolver',
-      };
-    }
-  } catch { /* fall through */ }
-
-  // 2) Piped streams endpoint on any healthy mirror.
-  for (const base of PIPED) {
-    try {
-      const d = await jget(`${base}/streams/${id}`, { ms: 15000 });
-      const a = (d.audioStreams || []).sort((x, y) => (y.bitrate || 0) - (x.bitrate || 0));
-      if (a.length) {
-        return {
-          audio: a[0].url,
-          video: (d.videoStreams || [])[0]?.url || null,
-          title: d.title, artist: d.uploader, art: d.thumbnailUrl,
-          qualities: (d.videoStreams || []).map((v) => ({ q: v.quality, url: v.url, mime: v.mimeType })),
-          audioOptions: a.map((x) => ({ q: `${Math.round((x.bitrate || 0) / 1000)} kbps`, url: x.url, mime: x.mimeType })),
-          via: 'Piped',
-        };
-      }
-    } catch { /* next mirror */ }
-  }
-  throw new Error('No playable stream found for this track');
-}
 
 /* ---------------------------------------------------------------- lyrics */
 export const lyricsPool = [

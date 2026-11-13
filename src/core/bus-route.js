@@ -78,7 +78,6 @@ export function loadBusData() {
     .catch((e) => { busDataPromise = null; throw e; });
   return busDataPromise;
 }
-export const DAY_PASS = { nonAc: 40, ac: 50 };
 export const PASSES = {
   daily: [40, 50], weekly: [280, 350], fortnight: [560, 700],
   monthly: [800, 1000], quarterly: [2280, 2850],
@@ -175,7 +174,6 @@ export function fareSlab(km, ac = false) {
 
 /* --------------------------------------------------------------- distance */
 /** metres along the route's own polyline at stop position i (undefined if none) */
-export const alongMetres = (r, i) => (r.m && r.sm !== 0 ? Math.abs(r.m[i]) : undefined);
 
 /**
  * Distance of a ride from position i to position j on route r.
@@ -194,7 +192,6 @@ export function journeyKm(r, i, j) {
   return { km: +(s * ROAD_FACTOR).toFixed(2), shape: false };
 }
 /** kept for the older call sites / verification scripts */
-export const routeKm = (r, i, j) => journeyKm(r, i, j).km;
 
 /** Full published length of a route, km. */
 export const routeLength = (r) => r.km ?? +(r.s.reduce((s, v, i) =>
@@ -285,7 +282,7 @@ export function statusNow(r, now = new Date()) {
  * Uses the route's own published length and end-to-end time — a proportion of
  * a published number, not a guess from thin air.
  */
-export function arrivalAt(r, pos, depMin) {
+function arrivalAt(r, pos, depMin) {
   if (!r.m || r.sm === 0 || !r.mins) return null;
   const frac = r.m[r.m.length - 1] ? r.m[pos] / r.m[r.m.length - 1] : null;
   if (frac == null) return null;
@@ -550,11 +547,6 @@ export function findRoute(ref) {
 }
 
 /** Distinct route numbers, so the browser can show "1,234 routes". */
-export const routeNumbers = (() => {
-  const s = new Set();
-  for (const r of ROUTES) s.add(norm(r.r));
-  return [...s];
-})();
 
 /** Free-text search over route numbers and both terminals. */
 export function searchRoutes(q, limit = 40) {

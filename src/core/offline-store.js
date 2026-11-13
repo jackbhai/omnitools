@@ -57,7 +57,7 @@ export async function offlineHas(key) {
 }
 
 /** Saved songs, newest first, without the audio bytes attached. */
-export async function offlineList() {
+async function offlineList() {
   try {
     const all = await getAll();
     return all
@@ -67,9 +67,6 @@ export async function offlineList() {
 }
 
 /** One saved song WITH its bytes — for playback. */
-export async function offlineGet(key) {
-  try { return (await getOne(key)) || null; } catch { return null; }
-}
 
 /** Every saved song WITH bytes, newest first — builds the offline queue. */
 export async function offlineAll() {
@@ -83,10 +80,6 @@ export async function offlineDelete(key) {
   try { await del(key); return true; } catch { return false; }
 }
 
-export async function offlineTotal() {
-  const list = await offlineList();
-  return { count: list.length, size: list.reduce((a, r) => a + (r.size || 0), 0) };
-}
 
 /* ------------------------------------------------------------ download */
 /**

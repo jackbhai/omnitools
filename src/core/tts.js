@@ -27,10 +27,10 @@ let studioVoices = null;
 let studioDownUntil = 0;     // circuit breaker
 const blobCache = new Map(); // key -> objectURL, for the session
 
-export function studioReady() { return Date.now() >= studioDownUntil; }
-export function studioMarkDown(sec = 90) { studioDownUntil = Date.now() + sec * 1000; }
+function studioReady() { return Date.now() >= studioDownUntil; }
+function studioMarkDown(sec = 90) { studioDownUntil = Date.now() + sec * 1000; }
 
-export async function loadStudioVoices() {
+async function loadStudioVoices() {
   if (studioVoices) return studioVoices;
   const r = await fetch(VOICES_API, { signal: AbortSignal.timeout(12000) });
   if (!r.ok) throw new Error('voices ' + r.status);
@@ -121,7 +121,7 @@ export function stanzas(lines) {
 }
 
 /** Pack stanzas into studio requests under ~1700 chars (API chunk cap is 1950). */
-export function studioGroups(stz) {
+function studioGroups(stz) {
   const out = [];
   let cur = [];
   let n = 0;

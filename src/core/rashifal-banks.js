@@ -4,7 +4,7 @@
  * reading all day (seeded hash), and it changes the next day. Each field
  * draws with its own salt so combinations stay varied. */
 
-export const RASHIFAL_BANKS = {
+const RASHIFAL_BANKS = {
   hi: {
     overall: [
       'आज का दिन आपके लिए अनुकूल रहेगा। रुके हुए काम गति पकड़ेंगे और मन प्रसन्न रहेगा।',

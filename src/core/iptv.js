@@ -192,7 +192,7 @@ const cache = new Map();
  * kept as broken rows — a channel that cannot possibly play should never
  * reach the grid.
  */
-export function parseM3U(text) {
+function parseM3U(text) {
   const lines = String(text || '').split(/\r?\n/);
   const out = [];
   for (let i = 0; i < lines.length; i++) {
@@ -362,15 +362,6 @@ export const nativeHls = () => {
  * channels: six answered, two timed out, two reset — which is exactly why the
  * viewer should offer the next channel rather than sit on a dead one.
  */
-export async function probeChannel(url, ms = 7000) {
-  const c = new AbortController();
-  const t = setTimeout(() => c.abort(), ms);
-  try {
-    const r = await fetch(url, { signal: c.signal, mode: 'cors' });
-    return r.ok;
-  } catch { return false; }
-  finally { clearTimeout(t); }
-}
 
 /* ------------------------------------------------------- liveness memory
  * The core problem with a public index: a large share of it is dead. Measured

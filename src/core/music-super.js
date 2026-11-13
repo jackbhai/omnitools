@@ -332,9 +332,6 @@ export async function jamendoEnhancedSearch(q, { limit = 8 } = {}) {
  * For now we use SoundCloud search via proxy (if available)
  */
 
-export async function soundCloudSearch(q, { limit = 8 } = {}) {
-  return [];
-}
 
 /* ------------------------------------------------------------- EXTRA TIERS
  * Last.fm, Discogs, Freesound, Mixcloud, Genrenator, Gaana enhanced, Saavn extra
@@ -535,40 +532,4 @@ export async function superSearch(q, { limit = 10 } = {}) {
 }
 
 /* ------------------------------------------------------------- HEALTH */
-export async function superHealth() {
-  const tests = [
-    { id: 'gaana', fn: () => gaanaEnhancedSearch('test', { limit: 1 }).then(r => r.length > 0) },
-    { id: 'deezer', fn: () => deezerSearch('test', { limit: 1 }).then(r => r.length > 0) },
-    { id: 'itunes', fn: () => itunesPreviewSearch('test', { limit: 1 }).then(r => r.length > 0) },
-    { id: 'jamendo-enhanced', fn: () => jamendoEnhancedSearch('test', { limit: 1 }).then(r => r.length > 0) },
-    { id: 'spotify', fn: () => spotifySearch('test', { limit: 1 }).then(r => r.length > 0) },
-  ];
-  
-  const results = await Promise.all(tests.map(async ({ id, fn }) => {
-    const t0 = Date.now();
-    try {
-      const ok = await fn();
-      return { id, ok, ms: Date.now() - t0 };
-    } catch (e) {
-      return { id, ok: false, ms: Date.now() - t0, error: e.message };
-    }
-  }));
-  
-  const alive = results.filter(r => r.ok);
-  return { ok: alive.length > 0, alive: alive.length, total: results.length, routes: results };
-}
 
-export const SUPER_TIERS = [
-  { id: 'K', name: 'Multi-engine Cloudflare', infra: '5 sources in 1 worker (Gaana+Hungama+Wynk+YT+Saavn) 320kbps', relay: false, exact: true },
-  { id: 'T', name: 'Gaana enhanced', infra: 'GaanaAPI 3 mirrors HLS 320k cyberboysumanjay+ZingyTomato', relay: false, exact: true },
-  { id: 'U', name: 'Saavn extra', infra: 'Saavn extra sumit.co + codyandersan', relay: false, exact: true },
-  { id: 'L', name: 'Spotify metadata', infra: 'Spotify public + 30s previews, no key, anti-ban', relay: false, exact: false },
-  { id: 'M', name: 'Deezer+iTunes previews', infra: 'Deezer free no auth + iTunes CORS* 30s', relay: false, exact: false },
-  { id: 'N', name: 'Jamendo enhanced', infra: 'CC music label enhanced + 2 client_ids', relay: false, exact: false },
-  { id: 'O', name: 'Jamendo full', infra: 'Jamendo full API tracks/albums/radios v3.0', relay: false, exact: false },
-  { id: 'P', name: 'Last.fm', infra: 'Last.fm track.search + similar free key', relay: false, exact: false },
-  { id: 'Q', name: 'Discogs', infra: 'Discogs database search 25/min unauth', relay: false, exact: false },
-  { id: 'R', name: 'Mixcloud', infra: 'Mixcloud public CORS* DJ mixes', relay: false, exact: false },
-  { id: 'S', name: 'Freesound', infra: 'Freesound CC samples/loops', relay: false, exact: false },
-  { id: 'V', name: 'Genrenator', infra: 'Genrenator random genre names no key', relay: false, exact: false },
-];

@@ -58,7 +58,7 @@ async function getJson(url, ms = 30000) {
 }
 
 /** Fan a list of feed URLs out through the relay in a single request. */
-export async function readFeeds(urls, { limit = 80, ms = 32000 } = {}) {
+async function readFeeds(urls, { limit = 80, ms = 32000 } = {}) {
   const list = urls.filter(Boolean).slice(0, 12);
   if (!list.length) return { items: [], errors: [] };
   const q = list.map((u) => `u=${enc(u)}`).join('&');

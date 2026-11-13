@@ -83,13 +83,6 @@ export async function searchArtists(q, { limit = 12 } = {}) {
 }
 
 /** Albums matching a name. */
-export async function searchAlbums(q, { limit = 25 } = {}) {
-  const d = await dz(`/search/album?q=${encodeURIComponent(q)}&limit=${limit}`);
-  return (d.data || []).map((a) => ({
-    id: a.id, name: a.title, artist: a.artist?.name || '',
-    art: art(a), tracks: a.nb_tracks || 0,
-  }));
-}
 
 /* ----------------------------------------------------------------- artists */
 /** An artist page: top tracks, albums and similar artists. */

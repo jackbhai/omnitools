@@ -264,7 +264,7 @@ export function latestFor(option, targetMin, { horizon = 300, step = 5 } = {}) {
 }
 
 /** How much of the day a segment of `mins` occupies, for the bar widths. */
-export function widths(legs) {
+function widths(legs) {
   const total = legs.reduce((s, l) => s + (l.mins || 0), 0) || 1;
   return legs.map((l) => (l.mins || 0) / total);
 }

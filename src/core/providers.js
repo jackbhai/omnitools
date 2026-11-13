@@ -176,19 +176,6 @@ export const air = [
 ];
 
 /* ------------------------------------------------------------- TIME */
-export const worldtime = [
-  { id: 'timeapi', label: 'TimeAPI.io', async run({ tz }) {
-      const d = await jget(`https://timeapi.io/api/Time/current/zone?timeZone=${encodeURIComponent(tz)}`);
-      return { tz: d.timeZone, date: d.date, time: d.time, dow: d.dayOfWeek,
-        iso: d.dateTime, dst: d.dstActive }; } },
-  { id: 'local-tz', label: 'Browser (Intl)', async run({ tz }) {
-      const now = new Date();
-      const f = new Intl.DateTimeFormat('en-GB', { timeZone: tz, dateStyle: 'full', timeStyle: 'medium' });
-      const parts = f.format(now);
-      return { tz, date: parts.split(',').slice(0, 2).join(','), time: parts.split(' ').pop(),
-        dow: new Intl.DateTimeFormat('en', { timeZone: tz, weekday: 'long' }).format(now),
-        iso: now.toISOString(), dst: null, offline: true }; } },
-];
 
 export const sun = [
   { id: 'sunrise-sunset', label: 'SunriseSunset.org', async run({ lat, lon }) {
@@ -320,11 +307,6 @@ export const ifsc = [
         state: d.STATE, ifsc: d.IFSC, micr: d.MICR || '', upi: d.UPI, neft: d.NEFT, imps: d.IMPS, rtgs: d.RTGS }; } },
 ];
 
-export const indiaData = [
-  { id: 'worldbank-in', label: 'World Bank', async run({ ind }) {
-      const d = await jget(`https://api.worldbank.org/v2/country/IN/indicator/${ind}?format=json&per_page=20`);
-      return (d[1] || []).filter((x) => x.value != null).map((x) => ({ year: x.date, value: x.value, name: x.indicator.value })); } },
-];
 
 /* ------------------------------------------------------------- KNOWLEDGE */
 export const wiki = [
@@ -507,22 +489,6 @@ export const books = [
 
 /* ------------------------------------------------------------- MUSIC */
 const AUDIUS = 'https://discoveryprovider.audius.co';
-export const musicSearch = [
-  { id: 'audius', label: 'Audius', async run({ q }) {
-      const d = await jget(`${AUDIUS}/v1/tracks/search?query=${encodeURIComponent(q)}&app_name=OmniTools&limit=30`);
-      return (d.data || []).map((t) => ({
-        id: t.id, title: t.title, artist: t.user?.name || '', dur: t.duration,
-        art: t.artwork?.['480x480'] || t.artwork?.['150x150'] || '',
-        stream: `${AUDIUS}/v1/tracks/${t.id}/stream?app_name=OmniTools`,
-        download: t.downloadable ? `${AUDIUS}/v1/tracks/${t.id}/download?app_name=OmniTools` : null,
-        src: 'Audius', plays: t.play_count })); } },
-  { id: 'archive-audio', label: 'Archive.org', async run({ q }) {
-      const d = await jget(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}+AND+mediatype%3A(audio)&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&rows=25&output=json`);
-      return (d.response?.docs || []).map((x) => ({
-        id: x.identifier, title: String(x.title).slice(0, 70), artist: String(x.creator || 'Unknown'),
-        dur: null, art: `https://archive.org/services/img/${x.identifier}`,
-        stream: null, archiveId: x.identifier, download: 'archive', src: 'Archive.org' })); } },
-];
 
 /**
  * Station directory mirrors.
@@ -975,71 +941,7 @@ export const food = [
  * - gita/gita raw (CORS* raw.githubusercontent, 700 verses)
  * - bhagavad-gita-api.vercel.app (Vercel, needs relay, same dataset different host)
  */
-export const gitaChapters = [
-  { id: 'gita-vedic', label: 'Vedic Scriptures Pages', async run() {
-      const d = await jget('https://vedicscriptures.github.io/chapters');
-      if (!Array.isArray(d) || !d.length) throw new Error('no chapters');
-      return d.map((c) => ({
-        number: c.chapter_number, verses: c.verses_count,
-        name: c.name, translit: c.transliteration, translation: c.translation,
-        meaning: c.meaning?.en || c.meaning?.hi || '', summary_en: c.summary?.en || '', summary_hi: c.summary?.hi || '',
-      }));
-    } },
-  { id: 'gita-gita-raw', label: 'Gita JSON Raw', async run() {
-      const d = await jget('https://raw.githubusercontent.com/gita/gita/master/data/chapters.json');
-      if (!Array.isArray(d) || !d.length) throw new Error('no chapters');
-      return d.map((c) => ({
-        number: c.chapter_number, verses: c.verses_count,
-        name: c.name || c.slug || `Chapter ${c.chapter_number}`,
-        translit: c.name_transliterated || '', translation: c.name_translated || '',
-        meaning: c.name_meaning || '', summary_en: c.chapter_summary || '', summary_hi: c.chapter_summary_hindi || '',
-      }));
-    } },
-  { id: 'gita-vercel', label: 'Gita Vercel API', async run() {
-      const d = await jget('https://bhagavad-gita-api.vercel.app/chapters', { proxy: true });
-      if (!Array.isArray(d) || !d.length) throw new Error('no chapters');
-      return d.map((c) => ({
-        number: c.chapter_number || c.id, verses: c.verses_count,
-        name: c.name || `Chapter ${c.chapter_number}`, translit: c.name_transliterated || '',
-        translation: c.name_translated || '', meaning: c.name_meaning || '', summary_en: c.chapter_summary || '', summary_hi: '',
-      }));
-    } },
-];
 
-export const gitaVerses = [
-  { id: 'gita-vedic-slok', label: 'Vedic Slok', async run({ chapter, verse }) {
-      const ch = chapter || 1, vs = verse || 1;
-      const d = await jget(`https://vedicscriptures.github.io/slok/${ch}/${vs}`);
-      if (!d.slok) throw new Error('no slok');
-      return {
-        chapter: d.chapter, verse: d.verse, slok: d.slok,
-        transliteration: d.transliteration || '', tej: d.tej?.ht || '', siva: d.siva?.et || '',
-        siva_hi: d.siva?.hc || '', purohit: d.purohit?.et || '',
-      };
-    } },
-  { id: 'gita-gita-verse', label: 'Gita Verse Raw', async run({ chapter, verse }) {
-      const ch = chapter || 1, vs = verse || 1;
-      // verse.json is 500KB array of all 700 verses — fetch once and find
-      const all = await jget('https://raw.githubusercontent.com/gita/gita/master/data/verse.json');
-      if (!Array.isArray(all) || !all.length) throw new Error('no verses');
-      const found = all.find((v) => v.chapter_number === ch && v.verse_number === vs) || all[(ch-1)*20 + (vs-1)] || all[0];
-      if (!found) throw new Error('not found');
-      return {
-        chapter: found.chapter_number, verse: found.verse_number, slok: found.text,
-        transliteration: found.transliteration || '', tej: found.word_meanings || '', siva: found.verse_number ? `Verse ${found.verse_number}` : '',
-      };
-    } },
-  { id: 'gita-vercel-slok', label: 'Gita Vercel Slok', async run({ chapter, verse }) {
-      const ch = chapter || 1, vs = verse || 1;
-      const d = await jget(`https://bhagavad-gita-api.vercel.app/chapters/${ch}/verses/${vs}`, { proxy: true });
-      const v = d.verse || d;
-      if (!v.text && !v.slok) throw new Error('no slok');
-      return {
-        chapter: ch, verse: vs, slok: v.text || v.slok || '',
-        transliteration: v.transliteration || '', tej: v.word_meanings || v.meaning || '',
-      };
-    } },
-];
 
 /* ------------------------------------------------------------- QURAN
  * Three independent Quran sources, all CORS* verified, 114 surahs 6236 ayahs:
@@ -1084,29 +986,6 @@ export const quranSurahs = [
     } },
 ];
 
-export const quranAyahs = [
-  { id: 'quran-cloud-ayah', label: 'AlQuran Cloud Ayah', async run({ surah, ayah, edition }) {
-      const s = surah || 1, a = ayah || 1, ed = edition || 'en.asad';
-      const d = await jget(`https://api.alquran.cloud/v1/ayah/${s}:${a}/${ed}`);
-      if (!d.data?.text) throw new Error('no ayah');
-      return { number: d.data.number, text: d.data.text, surah: d.data.surah?.englishName || `Surah ${s}`, edition: d.data.edition?.englishName || ed };
-    } },
-  { id: 'quran-ummah-ayah', label: 'UmmahAPI Ayah', async run({ surah, ayah }) {
-      const s = surah || 1, a = ayah || 1;
-      const d = await jget(`https://ummahapi.com/api/quran/surah/${s}/ayah/${a}`);
-      const ay = d.data?.ayah || d.data;
-      if (!ay?.text && !ay?.text_arabic) throw new Error('no ayah');
-      return { number: ay.number || a, text: ay.text || ay.text_arabic || '', surah: d.data?.surah?.name_english || `Surah ${s}`, edition: 'UmmahAPI' };
-    } },
-  { id: 'quran-fawaz-ayah', label: 'Fawaz Quran Ayah', async run({ surah, ayah }) {
-      const s = surah || 1, a = ayah || 1;
-      const d = await jget(`https://cdn.jsdelivr.net/gh/fawazahmed0/quran-api@1/editions/eng-muhammadasad/${s}.json`);
-      const ch = d.chapter || [];
-      const found = ch.find((v) => v.verse === a) || ch[0];
-      if (!found?.text) throw new Error('no ayah');
-      return { number: found.verse, text: found.text, surah: `Surah ${s}`, edition: 'Muhammad Asad' };
-    } },
-];
 
 /* ------------------------------------------------------------- BIBLE
  * Three independent Bible sources, all CORS* verified, 66 books 31102 verses:
@@ -1114,47 +993,7 @@ export const quranAyahs = [
  * - wldeh via jsdelivr (CORS* CDN, 200+ versions)
  * - bolls.life (CORS*, books + verse with Strong's)
  */
-export const bibleBooks = [
-  { id: 'bolls-books', label: 'Bolls Bible Books', async run() {
-      const d = await jget('https://bolls.life/get-books/KJV/');
-      if (!Array.isArray(d) || !d.length) throw new Error('no books');
-      return d.map((b) => ({ id: b.bookid, name: b.name, chapters: b.chapters }));
-    } },
-  { id: 'bible-api-list', label: 'Bible API List', async run() {
-      // bible-api.com doesn't have books list, so use bolls list as real data but via different host for health
-      const d = await jget('https://bolls.life/get-books/KJV/');
-      return d.map((b) => ({ id: b.bookid, name: b.name, chapters: b.chapters, source: 'via Bolls' }));
-    } },
-  { id: 'wldeh-bibles', label: 'Wldeh Bibles', async run() {
-      const d = await jget('https://cdn.jsdelivr.net/gh/wldeh/bible-api/bibles/bibles.json');
-      if (!Array.isArray(d) || !d.length) throw new Error('no bibles');
-      // return books from first bible as proof, but we need 66 books — use bolls books
-      const books = await jget('https://bolls.life/get-books/KJV/');
-      return books.map((b) => ({ id: b.bookid, name: b.name, chapters: b.chapters, source: 'Wldeh CDN' }));
-    } },
-];
 
-export const bibleVerses = [
-  { id: 'bible-api', label: 'Bible API', async run({ book, chapter, verse }) {
-      const b = book || 'john', ch = chapter || 3, vs = verse || 16;
-      const d = await jget(`https://bible-api.com/${b}+${ch}:${vs}`);
-      if (!d.text) throw new Error('no verse');
-      return { reference: d.reference, text: d.text.trim(), book: b, chapter: ch, verse: vs };
-    } },
-  { id: 'wldeh-verse', label: 'Wldeh Bible Verse', async run({ book, chapter, verse }) {
-      const b = (book || 'john').toLowerCase(), ch = chapter || 3, vs = verse || 16;
-      const d = await jget(`https://cdn.jsdelivr.net/gh/wldeh/bible-api/bibles/en-kjv/books/${b}/chapters/${ch}/verses/${vs}.json`);
-      if (!d.text) throw new Error('no verse');
-      return { reference: `${b} ${ch}:${vs}`, text: d.text.trim(), book: b, chapter: ch, verse: vs };
-    } },
-  { id: 'bolls-verse', label: 'Bolls Verse', async run({ book, chapter, verse }) {
-      const b = book || 43, ch = chapter || 3, vs = verse || 16; // 43 = John in Bolls id
-      const d = await jget(`https://bolls.life/get-verse/KJV/${b}/${ch}/${vs}/`);
-      if (!d.text) throw new Error('no verse');
-      const clean = String(d.text).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      return { reference: `Book ${b} ${ch}:${vs}`, text: clean, book: String(b), chapter: ch, verse: vs };
-    } },
-];
 
 /* ------------------------------------------------------------- GURBANI
  * Three independent Gurbani sources, all CORS* verified:
@@ -1162,51 +1001,6 @@ export const bibleVerses = [
  * - api.banidb.com (Khalis Foundation, angs/shabads/hukamnama)
  * - raw github mirror via jsdelivr (same data different CDN)
  */
-export const gurbaniAng = [
-  { id: 'gurbaninow-ang', label: 'GurbaniNow Ang', async run({ ang }) {
-      const a = ang || 1;
-      const d = await jget(`https://api.gurbaninow.com/v2/ang/${a}`);
-      if (!d.page?.length) throw new Error('no ang');
-      return { ang: d.pageno, source: d.source?.english || 'Guru Granth Sahib', count: d.count, lines: d.page.map((p) => ({
-        id: p.line?.id || '', 
-        gurmukhi: p.line?.gurmukhi?.akhar || p.line?.gurmukhi || p.line?.gurmukhi?.unicode || '',
-        unicode: p.line?.gurmukhi?.unicode || p.unicode || p.line?.gurmukhi?.akhar || '',
-        transliteration: p.transliteration?.english || p.transliteration?.english?.default || p.line?.transliteration?.english || '',
-        translation_en: p.translation?.english?.default || p.translation?.english || p.translation?.en?.default || '',
-        translation_pu: p.translation?.punjabi?.default || p.translation?.punjabi || p.translation?.pu?.default || '',
-        translation_es: p.translation?.spanish?.default || p.translation?.spanish || p.translation?.es?.default || '',
-        translation_hi: p.translation?.hindi?.default || p.translation?.hindi || '',
-      })) };
-    } },
-  { id: 'banidb-ang', label: 'BaniDB Ang', async run({ ang }) {
-      const a = ang || 1;
-      const d = await jget(`https://api.banidb.com/v2/angs/${a}`);
-      if (!d.page?.length) throw new Error('no ang');
-      return { ang: d.source?.pageNo || a, source: d.source?.english || 'Guru Granth Sahib', count: d.count, lines: d.page.map((p) => ({
-        id: p.verseId || '', 
-        gurmukhi: p.verse?.gurmukhi || p.verse?.unicode || '',
-        unicode: p.verse?.unicode || p.verse?.gurmukhi || '',
-        transliteration: p.transliteration?.english || p.transliteration?.en?.default || '',
-        translation_en: p.translation?.en?.default || p.translation?.en || p.translation?.english?.default || '',
-        translation_pu: p.translation?.pu?.default || p.translation?.pu || p.translation?.punjabi?.default || '',
-        translation_es: p.translation?.es?.default || p.translation?.es || p.translation?.spanish?.default || '',
-        translation_hi: p.translation?.hi?.default || p.translation?.hi || '',
-      })) };
-    } },
-  { id: 'banidb-jsdelivr', label: 'BaniDB CDN Mirror', async run({ ang }) {
-      const a = ang || 1;
-      const d = await jget(`https://api.banidb.com/v2/angs/${a}`);
-      return { ang: a, source: 'BaniDB CDN', count: d.count || 0, lines: (d.page || []).map((p) => ({
-        id: p.verseId || '', 
-        unicode: p.verse?.unicode || p.verse?.gurmukhi || '',
-        gurmukhi: p.verse?.gurmukhi || p.verse?.unicode || '',
-        transliteration: p.transliteration?.english || '',
-        translation_en: p.translation?.en?.default || p.translation?.en || '',
-        translation_pu: p.translation?.pu?.default || '',
-        translation_es: p.translation?.es?.default || '',
-      })) };
-    } },
-];
 
 export const gurbaniHukamnama = [
   { id: 'gurbaninow-hukam', label: 'GurbaniNow Hukamnama', async run() {
@@ -1286,49 +1080,6 @@ export const gurbaniBanis = [
     } },
 ];
 
-export const gurbaniSearch = [
-  { id: 'gurbaninow-search', label: 'GurbaniNow Search', async run({ q }) {
-      const query = q || 'satnam';
-      const d = await jget(`https://api.gurbaninow.com/v2/search/${encodeURIComponent(query)}`);
-      const res = d.results || d.shabads || d || [];
-      if (!Array.isArray(res) || !res.length) throw new Error('no results');
-      return res.slice(0, 20).map((r) => ({
-        id: r.shabadId || r.id || '', 
-        gurmukhi: r.verse?.gurmukhi || r.gurmukhi || r.verse?.unicode || '',
-        unicode: r.verse?.unicode || r.unicode || r.verse?.gurmukhi || '',
-        transliteration: r.transliteration?.english || r.verse?.transliteration || r.transliteration?.english?.default || '',
-        translation_en: r.translation?.english?.default || r.translation?.en || r.translation?.en?.default || '',
-        translation_pu: r.translation?.punjabi?.default || r.translation?.pu?.default || '',
-        translation_es: r.translation?.spanish?.default || r.translation?.es?.default || '',
-      }));
-    } },
-  { id: 'banidb-search', label: 'BaniDB Search', async run({ q }) {
-      const query = q || 'satnam';
-      const d = await jget(`https://api.banidb.com/v2/search/${encodeURIComponent(query)}`);
-      const res = d.verses || d.results || d.shabads || [];
-      if (!Array.isArray(res) || !res.length) throw new Error('no results');
-      return res.slice(0, 20).map((r) => ({
-        id: r.shabadId || r.verseId || '', 
-        gurmukhi: r.verse?.gurmukhi || r.gurmukhi || r.verse?.unicode || '',
-        unicode: r.verse?.unicode || r.unicode || r.verse?.gurmukhi || '',
-        transliteration: r.transliteration?.english || r.transliteration?.en?.default || '',
-        translation_en: r.translation?.en?.default || r.translation?.en || '',
-        translation_pu: r.translation?.pu?.default || '',
-        translation_es: r.translation?.es?.default || '',
-      }));
-    } },
-  { id: 'banidb-search-mirror', label: 'Search Mirror', async run({ q }) {
-      const query = q || 'satnam';
-      const d = await jget(`https://api.banidb.com/v2/search/${encodeURIComponent(query)}`);
-      const res = d.verses || [];
-      return res.slice(0, 10).map((r) => ({ 
-        unicode: r.verse?.unicode || r.verse?.gurmukhi || '',
-        gurmukhi: r.verse?.gurmukhi || r.verse?.unicode || '',
-        transliteration: r.transliteration?.english || '',
-        translation_en: r.translation?.en?.default || '',
-      }));
-    } },
-];
 
 /* ------------------------------------------------------------- RECIPES DEEP
  * Three independent recipe sources, all verified real data:

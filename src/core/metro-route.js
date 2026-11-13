@@ -107,7 +107,7 @@ const ALIASES = {
 const squash = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 for (const [k, v] of Object.entries(ALIASES)) if (POS.has(v)) ALIASES[squash(k)] = v;
 
-export function resolveAlias(q) {
+function resolveAlias(q) {
   const k = squash(q);
   return ALIASES[k] && POS.has(ALIASES[k]) ? ALIASES[k] : null;
 }
@@ -242,21 +242,8 @@ export function lastTrainAt(base, station, at = minutesOfDay(), toward = null) {
 }
 
 /** Whether a corridor is running right now, with the headway that applies. */
-export function lineStatus(base, at = minutesOfDay()) {
-  const info = lineInfo(base, at);
-  return info;
-}
 
 /** Every line that passes through a station, with its status right now. */
-export function stationStatus(station, at = minutesOfDay()) {
-  const s = POS.get(station);
-  if (!s) return null;
-  return (s.l || []).map((base) => {
-    const info = lineInfo(base, at);
-    if (!info) return null;
-    return { ...info, lastFromHere: lastTrainAt(base, station, at) };
-  }).filter(Boolean);
-}
 
 /* ------------------------------------------------------------------ search */
 /** Dijkstra where each interchange costs `changePenalty` extra minutes. */
@@ -403,6 +390,5 @@ export function nearestStations(lat, lon, n = 5) {
 }
 
 /** Interchange partners of a station: which lines meet here. */
-export const linesAt = (station) => POS.get(station)?.l ?? [];
 /** Bus stops published as being within a walk of this station. */
 export const busStopsNear = (station) => POS.get(station)?.b ?? [];

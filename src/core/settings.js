@@ -80,10 +80,6 @@ export const usingBuiltin = () => !(getSettings().proxyUrl || '').trim() &&
   getSettings().useBuiltin !== false;
 
 /** Wrap a target URL for the user's own proxy. */
-export const viaOwnProxy = (target) => {
-  const b = proxyBase();
-  return b ? `${b}/?url=${encodeURIComponent(target)}` : '';
-};
 
 /**
  * Check that a pasted Worker URL actually works before we rely on it.

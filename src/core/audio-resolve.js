@@ -368,7 +368,7 @@ export function rememberTrack(id, { title, artist, art, dur } = {}) {
   if (META.size > 600) META.delete(META.keys().next().value);
 }
 
-export const trackMeta = (id) => META.get(id) || null;
+const trackMeta = (id) => META.get(id) || null;
 
 export function resolveAudio(id, { onProgress, fresh = false } = {}) {
   // `fresh` forces a re-resolve: the CDN signs its links, so a cached one can
@@ -516,10 +516,8 @@ export function prefetchAudio(id, prio = 1) {
 }
 
 /** Forget everything queued but not started — used when the queue changes. */
-export function clearWarmQueue() { warmQueue = []; }
 
 /** How many of these ids are ready to play instantly. */
-export const warmCount = (ids = []) => ids.filter((i) => i && cacheGet(i)).length;
 
 /**
  * Subscribers notified whenever a stream finishes resolving.

@@ -33,7 +33,7 @@ async function catalogueVoice(languageName) {
   return v ? { index: v.index, name: v.name } : null;
 }
 
-export function chunkText(text, max = 420) {
+function chunkText(text, max = 420) {
   const parts = String(text || '').split(/(?<=[।.!?؟؛])\s+/).filter(Boolean);
   const out = [];
   let cur = '';

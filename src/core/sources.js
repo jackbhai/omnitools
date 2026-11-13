@@ -275,7 +275,7 @@ function fixedStations() {
  * A .pls is a text file listing stream addresses. Handing one to an <audio>
  * element plays nothing, so the first File= line is extracted here.
  */
-export async function resolveStation(st) {
+async function resolveStation(st) {
   if (st.stream) return st.stream;
   if (!st.playlist) return '';
   try {
@@ -345,7 +345,6 @@ export function noteStation(url, ok) {
 }
 
 /** Called by the player when a station genuinely failed to start. */
-export const noteStationFail = (url) => noteStation(url, false);
 
 /**
  * Probe quietly and record what happened.
@@ -418,25 +417,8 @@ const dedupeStations = (rows) => {
   return out;
 };
 
-export async function radioFor(hint, { limit = 8 } = {}) {
-  const q = String(hint || '').trim() || 'bollywood';
-  const rows = await stationDb(q, limit);
-  /* Sorted by what is known to answer, so the fallback tier hands the player
-     a station that works rather than the directory's first guess. */
-  if (rows.length) return sortStations(dedupeStations(rows));
-  const curated = await curatedStations(limit);
-  if (curated.length) return dedupeStations(curated);
-  return fixedStations();
-}
 
 /** Everything, for a browsable radio screen rather than a fallback. */
-export async function allStations(q, { limit = 20 } = {}) {
-  const [db, curated] = await Promise.all([
-    stationDb(String(q || 'bollywood'), limit).catch(() => []),
-    curatedStations(8).catch(() => []),
-  ]);
-  return sortStations(dedupeStations([...db, ...curated, ...fixedStations()]));
-}
 
 /**
  * Genre words for a track we could not find, so radio has something sensible
@@ -974,29 +956,6 @@ export async function lastFmSearch(q, { limit = 8 } = {}) {
   return [];
 }
 
-export async function lastFmSimilar(artist, track, { limit = 6 } = {}) {
-  if (!artist || !track) return [];
-  if (!sourceReady('lastfm-similar')) return [];
-  try {
-    const b = proxyBase();
-    const url = `${LASTFM_BASE}?method=track.getSimilar&artist=${enc(artist)}&track=${enc(track)}&api_key=${LASTFM_KEY}&format=json&limit=${limit}`;
-    const fetchUrl = b ? `${b}/?url=${enc(url)}` : url;
-    const d = await getJson(fetchUrl, 10000);
-    const tracks = d.similartracks?.track || [];
-    const arr = Array.isArray(tracks) ? tracks : [tracks];
-    return arr.slice(0, limit).map((t, i) => ({
-      id: `lastfm-sim:${i}`,
-      title: clean(t.name || ''),
-      artist: clean(t.artist?.name || ''),
-      art: (Array.isArray(t.image) ? t.image[t.image.length-1]?.['#text'] : '') || '',
-      dur: +(t.duration || 0),
-      stream: '',
-      metaOnly: true,
-      src: 'lastfm-similar',
-      exact: false,
-    })).filter(r => r.title);
-  } catch { restSource('lastfm-similar', 60000); return []; }
-}
 
 /* ------------------------------------------------------------- TIER P
  * Discogs API - https://www.discogs.com/developers
@@ -1160,22 +1119,6 @@ export async function genrenatorRandom({ count = 1 } = {}) {
   } catch { restSource('genrenator', 60000); return []; }
 }
 
-export async function genrenatorStory({ count = 1 } = {}) {
-  if (!sourceReady('genrenator-story')) return [];
-  try {
-    const url = count > 1 ? `https://binaryjazz.us/wp-json/genrenator/v1/story/${count}/` : `https://binaryjazz.us/wp-json/genrenator/v1/story/`;
-    const d = await getJson(url, 8000);
-    const stories = Array.isArray(d) ? d : [d];
-    return stories.map((s, i) => ({
-      id: `genrenator-story:${i}`,
-      title: clean(s.slice(0, 80)),
-      story: clean(s),
-      src: 'genrenator-story',
-      exact: false,
-      isStory: true,
-    }));
-  } catch { restSource('genrenator-story', 60000); return []; }
-}
 
 /* ------------------------------------------------------------- TIER T
  * GaanaAPI enhanced - https://github.com/cyberboysumanjay/GaanaAPI
@@ -1335,4 +1278,3 @@ export const TIERS = [
   { id: 'F', name: 'Live radio',         infra: 'independent stations (58k stations, 3 mirrors)',  relay: false, exact: false },
 ];
 
-export const usingRelay = () => !!proxyBase();

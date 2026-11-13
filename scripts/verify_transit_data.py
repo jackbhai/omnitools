@@ -16,7 +16,8 @@ Three kinds of check, all measured, nothing assumed:
 import json, math, os, random, re, sys, urllib.request, html as H
 from collections import Counter
 
-REPO = "/home/user/omnitools"
+import os
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE = "https://www.dtcbusroutes.in"
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
 BUS = json.load(open(f"{REPO}/public/data/bus-delhi.json", encoding="utf-8"))

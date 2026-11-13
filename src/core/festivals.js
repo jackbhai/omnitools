@@ -78,4 +78,3 @@ export const builtinHolidays = {
   },
 };
 
-export const hasBuiltin = (cc, year) => !!TABLES[(cc || '').toUpperCase()]?.[year];

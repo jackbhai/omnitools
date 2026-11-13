@@ -164,7 +164,7 @@ function desBlock(block8, keys) {
 const KEY = new TextEncoder().encode('38346591');
 
 /** Decrypt one base64 `encrypted_media_url` into a plain CDN address. */
-export function decryptUrl(b64) {
+function decryptUrl(b64) {
   if (!b64) return '';
   let raw;
   try { raw = atob(b64); } catch { return ''; }
@@ -386,7 +386,7 @@ const clean = (s) => String(s || '')
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
 
 /** Quality ladder, best first. `_320.mp3` does NOT exist — verified 404. */
-export const QUALITIES = ['_320.mp4', '_160.mp4', '_96.mp4', '_48.mp4'];
+const QUALITIES = ['_320.mp4', '_160.mp4', '_96.mp4', '_48.mp4'];
 
 function streamsFor(base) {
   if (!base) return [];
@@ -510,14 +510,6 @@ export async function search(q, { limit = 20 } = {}) {
 }
 
 /** One song by id — used to re-resolve a link that has gone stale. */
-export async function songById(id) {
-  const d = await call({ __call: 'song.getDetails', pids: id });
-  const row = d[id] || (d.songs || [])[0];
-  if (!row) throw new Error('not in catalogue');
-  const s = shapeSong(row);
-  if (!s.stream) throw new Error('no playable stream');
-  return s;
-}
 
 /**
  * Find a playable stream for a track the app already knows by name.

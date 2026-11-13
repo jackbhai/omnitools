@@ -89,7 +89,7 @@ const titleCase = (s) => s.trim().replace(/\s+/g, ' ')
  * the language it comes from, its native spellings, its meaning, and how many
  * recorded people carry it.
  */
-export async function nameFacts(raw) {
+async function nameFacts(raw) {
   const name = titleCase(raw);
   const q = `
 SELECT ?item ?itemLabel ?desc ?kindLabel ?langLabel ?native ?meaningLabel ?after
@@ -410,7 +410,7 @@ export async function searchDirectory(q, { kind = '', cc = '', lang = '', comm =
 
 let allCache = null;
 /** Every shard, loaded in waves. Only needed for filter-only browsing. */
-export async function allNames() {
+async function allNames() {
   if (allCache) return allCache;
   const letters = 'abcdefghijklmnopqrstuvwxyz'.split('');
   const out = [];
@@ -423,7 +423,7 @@ export async function allNames() {
 }
 
 /** The directory's own record for one exact name, if it has one. */
-export async function directoryEntry(name) {
+async function directoryEntry(name) {
   const rows = await shard(name.trim()[0] || '');
   const t = name.trim().toLowerCase();
   return rows.find((r) => r.n.toLowerCase() === t) || null;
@@ -501,7 +501,7 @@ export async function deepLookup(raw, onPartial) {
 
 
 /** Flag emoji are not used anywhere in this app; countries render as names. */
-export const COUNTRY_NAMES = {
+const COUNTRY_NAMES = {
   IN: 'India', PK: 'Pakistan', BD: 'Bangladesh', NP: 'Nepal', LK: 'Sri Lanka',
   US: 'United States', GB: 'United Kingdom', CA: 'Canada', AU: 'Australia', NZ: 'New Zealand',
   IE: 'Ireland', AE: 'UAE', SA: 'Saudi Arabia', QA: 'Qatar', KW: 'Kuwait', OM: 'Oman',

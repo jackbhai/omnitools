@@ -20,7 +20,11 @@ import { MetroPlanner, MetroNetwork } from '../src/tools/metro-planner.jsx';
 import { BusLive, MetroTimings } from '../src/tools/transit-live.jsx';
 import { MultiModal } from '../src/tools/multimodal.jsx';
 import { BusHub, MetroHub } from '../src/tools/travel-hubs.jsx';
-import { planBus, searchStops, findRoute, nextAtStop, nameOf, stopIndexOn, ROUTES } from '../src/core/bus-route.js';
+import { planBus, searchStops, findRoute, nextAtStop, nameOf, stopIndexOn, ROUTES, initBusData } from '../src/core/bus-route.js';
+/* The dataset is fetch-on-demand in the app (public/data); the smoke loads
+   it from disk and installs it, the same shape the hub loaders produce. */
+import busJson from '../public/data/bus-delhi.json';
+initBusData(busJson);
 import { planRoutes, STATIONS, lineInfo, lastTrainAt } from '../src/core/metro-route.js';
 import { busAtStation, metroNearStop } from '../src/core/transit-link.js';
 

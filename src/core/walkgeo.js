@@ -171,7 +171,7 @@ export async function nearPin(lat, lon, fetchImpl = globalThis.fetch) {
  * from the Delhi trip being planned; the home city of the network is the
  * honest default in that case, and it is stated in the same open sentence.
  */
-export const NETWORK_HOME = { lat: 28.61, lon: 77.21 };   // centre of Delhi NCR's transit map
+const NETWORK_HOME = { lat: 28.61, lon: 77.21 };   // centre of Delhi NCR's transit map
 export function anchorFor(other, loc, home = NETWORK_HOME, radiusKm = 220) {
   const near = (p) => !!p && Number.isFinite(p.lat) && Number.isFinite(p.lon)
     && Math.hypot((p.lat - home.lat) * 111.32,
@@ -204,4 +204,3 @@ export function pickFrame(center, w = 340, h = 190, kmHalf = 0.45) {
 }
 
 /** The frame's metre-per-pixel, for a scale note under a picker. */
-export const frameMetresPerPx = (f) => 111320 / f.s;

@@ -83,11 +83,6 @@ export async function findCountry(q) {
     c.capital.toLowerCase().includes(s));
 }
 
-export async function countryByCode(code) {
-  const list = await allCountries();
-  const c = String(code || '').toUpperCase();
-  return list.find((x) => x.cca2 === c || x.cca3 === c) || null;
-}
 
 /** Find a country from a dialling code, longest prefix first. */
 export async function countryByDial(dial) {

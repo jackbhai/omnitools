@@ -32,7 +32,7 @@ const MED = `${BASE}/med`;
 export const key = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
 /** Normalised salt key: ingredient names only, dosage-insensitive, sorted. */
-export function saltKey(comp) {
+function saltKey(comp) {
   return String(comp || '')
     .toLowerCase()
     .split(/\s*\+\s*/)
@@ -171,12 +171,6 @@ export async function searchMedicines(q, { limit = 60 } = {}) {
 }
 
 /** Re-hydrate one medicine from its shard id (survives a page reload). */
-export async function getMedicine(id) {
-  const [b, i] = String(id).split(':');
-  const d = await shard(b);
-  if (!d || !d.r[i]) return null;
-  return expand(d.r[i], d, b, +i);
-}
 
 /**
  * Clinical text for a composition, borrowed from any brand that has it.
@@ -231,7 +225,7 @@ async function salts() {
  * on every input, so `substitutes()` always fetched the wrong shard and
  * silently returned nothing. This is small enough that both sides cannot drift.
  */
-export function saltShard(sk, n) {
+function saltShard(sk, n) {
   let h = 0x811c9dc5;
   for (let i = 0; i < sk.length; i++) {
     // salt keys are ASCII by construction (see saltKey), so charCodeAt is safe
@@ -270,7 +264,7 @@ export async function substitutes(comp, currentPrice = 0) {
 
 /* ----------------------------------------------------------- global data */
 /** Brand -> generic, so an Indian brand name finds its FDA label. */
-export const BRAND_GENERIC = {
+const BRAND_GENERIC = {
   crocin: 'acetaminophen', dolo: 'acetaminophen', calpol: 'acetaminophen',
   paracip: 'acetaminophen', pacimol: 'acetaminophen', metacin: 'acetaminophen',
   combiflam: 'ibuprofen', brufen: 'ibuprofen', ibugesic: 'ibuprofen',

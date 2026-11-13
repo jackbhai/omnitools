@@ -110,14 +110,13 @@ export const trainsBetween = [
 import STN from '../data/stations-india.json';
 
 export const ALL_STATIONS = STN.stations;
-export const STATIONS_BUILT = STN.built;
 const BY_CODE = new Map(ALL_STATIONS.map((s) => [s.c, s]));
 export const stationByCode = (c) => BY_CODE.get(String(c || '').toUpperCase());
 
 /** Popular stations shown before the user types anything. */
 const POPULAR = ['NDLS','DLI','NZM','ANVT','CSMT','BCT','LTT','HWH','SDAH','MAS','SBC',
   'ASR','LKO','CNB','PNBE','ADI','JP','BPL','NGP','PUNE','SC','BZA','TVC','ERS','GHY','JAT'];
-export const POPULAR_STATIONS = POPULAR.map((c) => BY_CODE.get(c)).filter(Boolean);
+const POPULAR_STATIONS = POPULAR.map((c) => BY_CODE.get(c)).filter(Boolean);
 
 /** Fuzzy search across 8k stations: code prefix first, then name. */
 const MAJOR = /junction|jn\b|central|terminus|terminal|cantt|city\b/i;

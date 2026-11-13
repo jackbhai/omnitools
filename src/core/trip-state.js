@@ -59,7 +59,7 @@ function save() {
   } catch {}
 }
 
-export function pushAlert(a) {
+function pushAlert(a) {
   if (!a) return;
   state = { ...state, log: [{ ...a, at: Date.now() }, ...state.log].slice(0, 10) };
 }
@@ -137,7 +137,6 @@ function finish(how) {
 }
 
 export function stopTrip() { finish('Stopped'); }
-export function clearTrip() { fired = new Set(); state = { ...state, armed: false, trip: null, j: null, log: [] }; save(); emit(); }
 
 /** Read a stored trip back after a reload.  Returns true when one was resumed. */
 export function resumeTrip() {

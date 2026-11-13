@@ -23,10 +23,10 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
 /* Vite injects import.meta.env; the Node verify scripts do not have it, and this
    module is imported by both, so read it defensively. */
 const BASE = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
-export const ICON = BASE + 'icon.svg';
+const ICON = BASE + 'icon.svg';
 
 /* ----------------------------------------------------------------- notifs */
-export function notifSupported() {
+function notifSupported() {
   return isBrowser && 'Notification' in window;
 }
 
@@ -86,13 +86,6 @@ export async function pushNotification({ title, body = '', tag, url }) {
   try { new Notification(title, opt); return 'constructor'; } catch { return 'none'; }
 }
 
-export async function clearNotifications(tag) {
-  try {
-    const reg = await swRegistration();
-    const list = reg && reg.getNotifications ? await reg.getNotifications({ tag }) : [];
-    list.forEach((n) => { try { n.close(); } catch {} });
-  } catch {}
-}
 
 /* ------------------------------------------------------------------ fixes */
 /**
@@ -123,21 +116,6 @@ export function watchFix({ onFix, onError, highAccuracy = true } = {}) {
 }
 
 /** One-shot fix, for "am I even near a stop" checks before arming a trip. */
-export function onceFix({ ms = 9000 } = {}) {
-  return new Promise((resolve) => {
-    if (!isBrowser || !navigator.geolocation) return resolve({ ok: false, why: 'No geolocation in this browser.' });
-    let done = false;
-    const finish = (v) => { if (!done) { done = true; resolve(v); } };
-    const t = setTimeout(() => finish({ ok: false, why: 'No fix within 9 s.' }), ms + 500);
-    try {
-      navigator.geolocation.getCurrentPosition(
-        (p) => { clearTimeout(t); finish({ ok: true, lat: p.coords.latitude, lon: p.coords.longitude,
-                                            accuracy: p.coords.accuracy == null ? null : Math.round(p.coords.accuracy) }); },
-        (e) => { clearTimeout(t); finish({ ok: false, why: e && e.code === 1 ? 'Location permission denied.' : 'No position fix.' }); },
-        { enableHighAccuracy: true, timeout: ms, maximumAge: 0 });
-    } catch (e) { clearTimeout(t); finish({ ok: false, why: e.message }); }
-  });
-}
 
 /* ------------------------------------------------------------------ haptics */
 export function vibrate(pattern = [120, 60, 120]) {
@@ -171,6 +149,3 @@ export function onVisible(cb) {
   return () => { document.removeEventListener('visibilitychange', h); window.removeEventListener('focus', h); };
 }
 
-export function isOnline() {
-  return isBrowser ? navigator.onLine !== false : true;
-}

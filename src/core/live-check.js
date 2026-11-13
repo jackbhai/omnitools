@@ -5,7 +5,7 @@
 
 import { providerStats } from './engine.js';
 
-export const LIVE_CHECK_VERSION = '1.0.0';
+const LIVE_CHECK_VERSION = '1.0.0';
 
 const CHECKS = {
   offline: {

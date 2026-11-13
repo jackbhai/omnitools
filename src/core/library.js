@@ -45,9 +45,6 @@ export function toggleFav(track) {
   write(K_FAV, cur);
   return true;
 }
-export function removeFav(id) {
-  write(K_FAV, favourites().filter((t) => t.id !== id));
-}
 
 /* --------------------------------------------------------------- history */
 export const history = () => read(K_HIST, []);
@@ -90,13 +87,6 @@ export function deletePlaylist(id) {
   write(K_PL, playlists().filter((p) => p.id !== id));
 }
 
-export function renamePlaylist(id, name) {
-  const all = playlists();
-  const p = all.find((x) => x.id === id);
-  if (!p) return;
-  p.name = String(name || '').trim() || p.name;
-  write(K_PL, all);
-}
 
 /** Add a track (or several) to a playlist, skipping duplicates. */
 export function addToPlaylist(id, tracks) {
@@ -124,34 +114,8 @@ export function removeFromPlaylist(id, trackId) {
 }
 
 /** Everything, as one JSON blob the user can save. */
-export function exportLibrary() {
-  return JSON.stringify({
-    v: 1, at: new Date().toISOString(),
-    favourites: favourites(), playlists: playlists(), history: history(),
-  }, null, 2);
-}
 
 /** Merge a previously exported blob back in. Returns a short summary. */
-export function importLibrary(json) {
-  const d = JSON.parse(json);
-  if (!d || d.v !== 1) throw new Error('Not an OmniTools library file');
-  const fav = favourites();
-  const haveFav = new Set(fav.map((t) => t.id));
-  let nf = 0;
-  for (const t of d.favourites || []) if (t?.id && !haveFav.has(t.id)) { fav.push(t); nf++; }
-  write(K_FAV, fav);
-
-  const pls = playlists();
-  const havePl = new Set(pls.map((p) => p.name.toLowerCase()));
-  let np = 0;
-  for (const p of d.playlists || []) {
-    if (!p?.name || havePl.has(p.name.toLowerCase())) continue;
-    pls.push({ ...p, id: `pl_${Date.now().toString(36)}_${np}` });
-    np++;
-  }
-  write(K_PL, pls);
-  return { favourites: nf, playlists: np };
-}
 
 /* ------------------------------------------------------- playlist share
    A playlist travels as a link: name + (id, title, artist) per track,

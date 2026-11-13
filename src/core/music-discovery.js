@@ -32,7 +32,7 @@ const clean = (s) => String(s || '').replace(/&quot;/g, '"').replace(/&amp;/g, '
 const JAMENDO_ID = JAMENDO_IDS[0];
 const JAMENDO_BASE = JAMENDO_API;
 
-export async function jamendoTracks(q, { limit = 10, order = 'popularity_total' } = {}) {
+async function jamendoTracks(q, { limit = 10, order = 'popularity_total' } = {}) {
   if (!sourceReady('jamendo-tracks')) return [];
   try {
     const d = await getJson(`${JAMENDO_BASE}/tracks/?client_id=${JAMENDO_ID}&format=json&limit=${limit}&search=${enc(q)}&include=musicinfo&audioformat=mp32&order=${order}`, 12000);
@@ -54,39 +54,9 @@ export async function jamendoTracks(q, { limit = 10, order = 'popularity_total' 
   } catch { restSource('jamendo-tracks'); return []; }
 }
 
-export async function jamendoAlbums(q, { limit = 6 } = {}) {
-  if (!sourceReady('jamendo-albums')) return [];
-  try {
-    const d = await getJson(`${JAMENDO_BASE}/albums/?client_id=${JAMENDO_ID}&format=json&limit=${limit}&search=${enc(q)}&include=musicinfo`, 12000);
-    return (d.results || []).map(a => ({
-      id: `jamendo-album:${a.id}`,
-      title: clean(a.name),
-      artist: clean(a.artist_name),
-      art: a.image || '',
-      tracks: a.tracks || [],
-      src: 'jamendo-albums',
-      isAlbum: true,
-    })).filter(r => r.title);
-  } catch { restSource('jamendo-albums'); return []; }
-}
 
-export async function jamendoArtists(q, { limit = 6 } = {}) {
-  if (!sourceReady('jamendo-artists')) return [];
-  try {
-    const d = await getJson(`${JAMENDO_BASE}/artists/?client_id=${JAMENDO_ID}&format=json&limit=${limit}&search=${enc(q)}&include=musicinfo`, 12000);
-    return (d.results || []).map(ar => ({
-      id: `jamendo-artist:${ar.id}`,
-      title: clean(ar.name),
-      artist: clean(ar.name),
-      art: ar.image || '',
-      website: ar.website || '',
-      src: 'jamendo-artists',
-      isArtist: true,
-    })).filter(r => r.title);
-  } catch { restSource('jamendo-artists'); return []; }
-}
 
-export async function jamendoRadios(q = '', { limit = 8 } = {}) {
+async function jamendoRadios(q = '', { limit = 8 } = {}) {
   if (!sourceReady('jamendo-radios')) return [];
   try {
     const url = q ? `${JAMENDO_BASE}/radios/?client_id=${JAMENDO_ID}&format=json&limit=${limit}&search=${enc(q)}` : `${JAMENDO_BASE}/radios/?client_id=${JAMENDO_ID}&format=json&limit=${limit}`;
@@ -104,21 +74,6 @@ export async function jamendoRadios(q = '', { limit = 8 } = {}) {
   } catch { restSource('jamendo-radios'); return []; }
 }
 
-export async function jamendoPlaylists(q, { limit = 6 } = {}) {
-  if (!sourceReady('jamendo-playlists')) return [];
-  try {
-    const d = await getJson(`${JAMENDO_BASE}/playlists/?client_id=${JAMENDO_ID}&format=json&limit=${limit}&search=${enc(q)}`, 10000);
-    return (d.results || []).map(p => ({
-      id: `jamendo-pl:${p.id}`,
-      title: clean(p.name),
-      artist: clean(p.user_name || ''),
-      art: p.image || '',
-      tracks: p.tracks || [],
-      src: 'jamendo-playlists',
-      isPlaylist: true,
-    })).filter(r => r.title);
-  } catch { restSource('jamendo-playlists'); return []; }
-}
 
 /* ------------------------------------------------------------- Last.fm
  * https://www.last.fm/api - free API key, generous limits
@@ -129,7 +84,7 @@ export async function jamendoPlaylists(q, { limit = 6 } = {}) {
 
 // LASTFM_KEY comes from music-engines.js (public demo key, fallback via relay)
 
-export async function lastFmTrackSearch(q, { limit = 10 } = {}) {
+async function lastFmTrackSearch(q, { limit = 10 } = {}) {
   if (!sourceReady('lastfm-track')) return [];
   try {
     const b = proxyBase();
@@ -152,76 +107,8 @@ export async function lastFmTrackSearch(q, { limit = 10 } = {}) {
   } catch { restSource('lastfm-track', 60000); return []; }
 }
 
-export async function lastFmArtistSearch(q, { limit = 8 } = {}) {
-  if (!sourceReady('lastfm-artist')) return [];
-  try {
-    const b = proxyBase();
-    const url = `https://ws.audioscrobbler.com/2.0/?method=artist.search&artist=${enc(q)}&api_key=${LASTFM_KEY}&format=json&limit=${limit}`;
-    const fetchUrl = b ? `${b}/?url=${enc(url)}` : url;
-    const d = await getJson(fetchUrl, 10000);
-    const artists = d.results?.artistmatches?.artist || [];
-    const arr = Array.isArray(artists) ? artists : [artists];
-    return arr.slice(0, limit).map((a, i) => ({
-      id: `lastfm-artist:${a.mbid || i}`,
-      title: clean(a.name || ''),
-      artist: clean(a.name || ''),
-      art: Array.isArray(a.image) ? (a.image[a.image.length-1]?.['#text'] || '') : '',
-      listeners: +(a.listeners || 0),
-      url: a.url || '',
-      src: 'lastfm-artist',
-      isArtist: true,
-      metaOnly: true,
-    })).filter(r => r.title);
-  } catch { restSource('lastfm-artist', 60000); return []; }
-}
 
-export async function lastFmSimilarTracks(artist, track, { limit = 8 } = {}) {
-  if (!artist || !track) return [];
-  if (!sourceReady('lastfm-similar')) return [];
-  try {
-    const b = proxyBase();
-    const url = `https://ws.audioscrobbler.com/2.0/?method=track.getSimilar&artist=${enc(artist)}&track=${enc(track)}&api_key=${LASTFM_KEY}&format=json&limit=${limit}`;
-    const fetchUrl = b ? `${b}/?url=${enc(url)}` : url;
-    const d = await getJson(fetchUrl, 10000);
-    const tracks = d.similartracks?.track || [];
-    const arr = Array.isArray(tracks) ? tracks : [tracks];
-    return arr.slice(0, limit).map((t, i) => ({
-      id: `lastfm-sim:${i}`,
-      title: clean(t.name || ''),
-      artist: clean(t.artist?.name || ''),
-      art: Array.isArray(t.image) ? (t.image[t.image.length-1]?.['#text'] || '') : '',
-      dur: +(t.duration || 0),
-      match: +(t.match || 0),
-      url: t.url || '',
-      src: 'lastfm-similar',
-      metaOnly: true,
-      exact: false,
-    })).filter(r => r.title);
-  } catch { restSource('lastfm-similar', 60000); return []; }
-}
 
-export async function lastFmTopTracks({ limit = 20 } = {}) {
-  if (!sourceReady('lastfm-top')) return [];
-  try {
-    const b = proxyBase();
-    const url = `https://ws.audioscrobbler.com/2.0/?method=chart.getTopTracks&api_key=${LASTFM_KEY}&format=json&limit=${limit}`;
-    const fetchUrl = b ? `${b}/?url=${enc(url)}` : url;
-    const d = await getJson(fetchUrl, 10000);
-    const tracks = d.tracks?.track || [];
-    const arr = Array.isArray(tracks) ? tracks : [tracks];
-    return arr.slice(0, limit).map((t, i) => ({
-      id: `lastfm-top:${i}`,
-      title: clean(t.name || ''),
-      artist: clean(t.artist?.name || ''),
-      art: Array.isArray(t.image) ? (t.image[t.image.length-1]?.['#text'] || '') : '',
-      listeners: +(t.listeners || 0),
-      playcount: +(t.playcount || 0),
-      url: t.url || '',
-      src: 'lastfm-top',
-      metaOnly: true,
-    })).filter(r => r.title);
-  } catch { restSource('lastfm-top', 60000); return []; }
-}
 
 /* ------------------------------------------------------------- Deezer Full
  * https://developers.deezer.com/api - free, most read endpoints no auth
@@ -229,7 +116,7 @@ export async function lastFmTopTracks({ limit = 20 } = {}) {
  * Returns 30s preview: preview field is mp3 url, CORS via relay
  */
 
-export async function deezerFullSearch(q, { limit = 10 } = {}) {
+async function deezerFullSearch(q, { limit = 10 } = {}) {
   if (!sourceReady('deezer-full')) return [];
   try {
     const d = await getJson(`https://api.deezer.com/search?q=${enc(q)}&limit=${limit}`, 12000);
@@ -252,43 +139,7 @@ export async function deezerFullSearch(q, { limit = 10 } = {}) {
   } catch { restSource('deezer-full', 60000); return []; }
 }
 
-export async function deezerChart({ limit = 20 } = {}) {
-  if (!sourceReady('deezer-chart')) return [];
-  try {
-    const d = await getJson(`https://api.deezer.com/chart/0/tracks?limit=${limit}`, 10000);
-    return (d.data || []).slice(0, limit).map(t => ({
-      id: `deezer-chart:${t.id}`,
-      title: clean(t.title || ''),
-      artist: clean(t.artist?.name || ''),
-      art: t.album?.cover_medium || '',
-      dur: t.duration || 0,
-      preview: t.preview || '',
-      stream: t.preview || '',
-      src: 'deezer-chart',
-      isPreview: true,
-      exact: false,
-    })).filter(r => r.title && r.stream);
-  } catch { restSource('deezer-chart', 60000); return []; }
-}
 
-export async function deezerArtistTop(artistId, { limit = 10 } = {}) {
-  if (!artistId) return [];
-  if (!sourceReady('deezer-artist')) return [];
-  try {
-    const d = await getJson(`https://api.deezer.com/artist/${artistId}/top?limit=${limit}`, 10000);
-    return (d.data || []).slice(0, limit).map(t => ({
-      id: `deezer-artist:${t.id}`,
-      title: clean(t.title || ''),
-      artist: clean(t.artist?.name || ''),
-      art: t.album?.cover_medium || '',
-      dur: t.duration || 0,
-      preview: t.preview || '',
-      stream: t.preview || '',
-      src: 'deezer-artist-top',
-      isPreview: true,
-    })).filter(r => r.title && r.stream);
-  } catch { restSource('deezer-artist', 60000); return []; }
-}
 
 /* ------------------------------------------------------------- Discogs Full
  * https://www.discogs.com/developers - free with API key, unauth 25/min with User-Agent
@@ -296,7 +147,7 @@ export async function deezerArtistTop(artistId, { limit = 10 } = {}) {
  * Rich metadata: year, genre, style, tracklist, cover_image, community ratings
  */
 
-export async function discogsFullSearch(q, { limit = 8, type = 'release' } = {}) {
+async function discogsFullSearch(q, { limit = 8, type = 'release' } = {}) {
   if (!sourceReady('discogs-full')) return [];
   try {
     const b = proxyBase();
@@ -330,33 +181,6 @@ export async function discogsFullSearch(q, { limit = 8, type = 'release' } = {})
   } catch { restSource('discogs-full', 60000); return []; }
 }
 
-export async function discogsRelease(id) {
-  if (!id) return null;
-  if (!sourceReady('discogs-release')) return null;
-  try {
-    const b = proxyBase();
-    const url = `https://api.discogs.com/releases/${id}`;
-    const fetchUrl = b ? `${b}/?url=${enc(url)}` : url;
-    const c = new AbortController();
-    const t = setTimeout(() => c.abort(), 10000);
-    const r = await fetch(fetchUrl, {
-      headers: { 'User-Agent': 'OmniTools/1.0 +https://jackbhai.github.io/omnitools/' },
-      signal: c.signal,
-    });
-    clearTimeout(t);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const d = await r.json();
-    return {
-      id: `discogs-rel:${d.id}`,
-      title: clean(d.title || ''),
-      artist: clean((d.artists || []).map(a => a.name).join(', ')),
-      year: d.year ? String(d.year) : '',
-      tracklist: (d.tracklist || []).map(tr => ({ title: clean(tr.title), duration: tr.duration })),
-      art: (d.images && d.images[0]?.uri) || '',
-      src: 'discogs-release',
-    };
-  } catch { restSource('discogs-release', 60000); return null; }
-}
 
 /* ------------------------------------------------------------- Freesound Full
  * https://freesound.org/docs/api/ - free, community sound library
@@ -365,33 +189,6 @@ export async function discogsRelease(id) {
  * Use for sound effects, loops, but also music snippets
  */
 
-export async function freesoundFullSearch(q, { limit = 8, filter = 'duration:[0 TO 300]' } = {}) {
-  if (!sourceReady('freesound-full')) return [];
-  // Without token, return empty but structure ready - user can add token in settings
-  // Try with no token via public search page as fallback
-  try {
-    const url = `https://freesound.org/apiv2/search/text/?query=${enc(q)}&page_size=${limit}&fields=id,name,username,previews,images,duration,license,tags,description&filter=${enc(filter)}`;
-    const d = await getJson(url, 8000);
-    return (d.results || []).slice(0, limit).map(x => ({
-      id: `freesound-full:${x.id}`,
-      title: clean(x.name || ''),
-      artist: clean(x.username || ''),
-      art: x.images?.waveform_bw_m || '',
-      dur: Math.round(x.duration || 0),
-      stream: x.previews?.['preview-hq-mp3'] || x.previews?.['preview-lq-mp3'] || '',
-      streams: x.previews ? [{ q: 'hq', url: x.previews['preview-hq-mp3'] }].filter(s => s.url) : [],
-      licence: x.license || '',
-      tags: (x.tags || []).slice(0,5),
-      desc: clean((x.description || '').slice(0,120)),
-      src: 'freesound-full',
-      exact: false,
-      approximate: true,
-    })).filter(r => r.title && r.stream);
-  } catch {
-    // No token - don't bench permanently, just return empty
-    return [];
-  }
-}
 
 /* ------------------------------------------------------------- Mixcloud Full
  * https://www.mixcloud.com/developers/ - free, public endpoints open, CORS enabled
@@ -399,7 +196,7 @@ export async function freesoundFullSearch(q, { limit = 8, filter = 'duration:[0 
  * Returns mixes, DJ sets, radio shows - often 1-2 hours full
  */
 
-export async function mixcloudFullSearch(q, { limit = 10, type = 'cloudcast' } = {}) {
+async function mixcloudFullSearch(q, { limit = 10, type = 'cloudcast' } = {}) {
   if (!sourceReady('mixcloud-full')) return [];
   try {
     const url = `https://api.mixcloud.com/search/?q=${enc(q)}&type=${type}&limit=${limit}`;
@@ -424,39 +221,7 @@ export async function mixcloudFullSearch(q, { limit = 10, type = 'cloudcast' } =
   } catch { restSource('mixcloud-full', 60000); return []; }
 }
 
-export async function mixcloudPopular({ limit = 10 } = {}) {
-  if (!sourceReady('mixcloud-popular')) return [];
-  try {
-    const d = await getJson(`https://api.mixcloud.com/popular/?limit=${limit}`, 10000);
-    return (d.data || []).slice(0, limit).map(x => ({
-      id: `mixcloud-pop:${(x.key || '').replace(/\//g, ':')}`,
-      title: clean(x.name || ''),
-      artist: clean(x.user?.name || ''),
-      art: x.pictures?.large || '',
-      dur: Math.round((x.audio_length || 0)),
-      mixcloudUrl: x.url || '',
-      src: 'mixcloud-popular',
-      isMix: true,
-    })).filter(r => r.title);
-  } catch { restSource('mixcloud-popular', 60000); return []; }
-}
 
-export async function mixcloudTag(tag, { limit = 10 } = {}) {
-  if (!tag) return [];
-  if (!sourceReady('mixcloud-tag')) return [];
-  try {
-    const d = await getJson(`https://api.mixcloud.com/discover/${enc(tag)}/?limit=${limit}`, 10000);
-    const items = d.data || d.items || [];
-    return items.slice(0, limit).map(x => ({
-      id: `mixcloud-tag:${(x.key || x.url || '').slice(0,30)}`,
-      title: clean(x.name || ''),
-      artist: clean(x.user?.name || ''),
-      art: x.pictures?.large || '',
-      src: 'mixcloud-tag',
-      isMix: true,
-    })).filter(r => r.title);
-  } catch { restSource('mixcloud-tag', 60000); return []; }
-}
 
 /* ------------------------------------------------------------- Genrenator Full
  * https://binaryjazz.us/genrenator-api/ - free, no key needed
@@ -483,23 +248,6 @@ export async function genrenatorGenres({ count = 5 } = {}) {
   } catch { restSource('genrenator-genres', 60000); return []; }
 }
 
-export async function genrenatorStories({ count = 3 } = {}) {
-  if (!sourceReady('genrenator-stories')) return [];
-  try {
-    const url = count > 1 ? `https://binaryjazz.us/wp-json/genrenator/v1/story/${count}/` : `https://binaryjazz.us/wp-json/genrenator/v1/story/`;
-    const d = await getJson(url, 8000);
-    const stories = Array.isArray(d) ? d : [d];
-    return stories.slice(0, count).map((s, i) => ({
-      id: `genrenator-story:${i}`,
-      title: clean(s.slice(0, 80)),
-      story: clean(s),
-      art: '',
-      src: 'genrenator-story',
-      isStory: true,
-      exact: false,
-    }));
-  } catch { restSource('genrenator-stories', 60000); return []; }
-}
 
 /* ------------------------------------------------------------- Gaana Full
  * https://github.com/cyberboysumanjay/GaanaAPI - unofficial Python Flask
@@ -513,7 +261,7 @@ const GAANA_MIRRORS = [
   // gaana-api.vercel.app 404 removed 2026-08-30
 ];
 
-export async function gaanaFullSearch(q, { limit = 10 } = {}) {
+async function gaanaFullSearch(q, { limit = 10 } = {}) {
   const query = String(q || '').trim();
   if (!query) return [];
   for (const base of GAANA_MIRRORS) {
@@ -561,7 +309,7 @@ const SAavn_MIRRORS_EXTRA = [
   'https://jiosaavn-api-ashen.vercel.app/api/search/songs?query=',
 ];
 
-export async function saavnFullSearch(q, { limit = 10 } = {}) {
+async function saavnFullSearch(q, { limit = 10 } = {}) {
   const query = String(q || '').trim();
   if (!query) return [];
   for (let i = 0; i < SAavn_MIRRORS_EXTRA.length; i += 2) {
@@ -646,37 +394,4 @@ export async function discoveryMetadata(q, { limit = 8 } = {}) {
   };
 }
 
-export async function discoveryHealth() {
-  const tests = [
-    { id: 'jamendo-tracks', fn: () => jamendoTracks('test', { limit: 1 }).then(r => r.length > 0) },
-    { id: 'jamendo-radios', fn: () => jamendoRadios('', { limit: 1 }).then(r => r.length > 0) },
-    { id: 'lastfm-track', fn: () => lastFmTrackSearch('test', { limit: 1 }).then(r => r.length > 0) },
-    { id: 'deezer-full', fn: () => deezerFullSearch('test', { limit: 1 }).then(r => r.length > 0) },
-    { id: 'discogs-full', fn: () => discogsFullSearch('test', { limit: 1 }).then(r => r.length > 0) },
-    { id: 'mixcloud-full', fn: () => mixcloudFullSearch('test', { limit: 1 }).then(r => r.length > 0) },
-    { id: 'genrenator', fn: () => genrenatorGenres({ count: 1 }).then(r => r.length > 0) },
-    { id: 'gaana-full', fn: () => gaanaFullSearch('test', { limit: 1 }).then(r => r.length > 0) },
-    { id: 'saavn-full', fn: () => saavnFullSearch('test', { limit: 1 }).then(r => r.length > 0) },
-  ];
-  
-  const results = await Promise.all(tests.map(async ({ id, fn }) => {
-    const t0 = Date.now();
-    try { const ok = await fn(); return { id, ok, ms: Date.now() - t0 }; }
-    catch (e) { return { id, ok: false, ms: Date.now() - t0, error: e.message }; }
-  }));
-  
-  const alive = results.filter(r => r.ok);
-  return { ok: alive.length > 0, alive: alive.length, total: results.length, routes: results };
-}
 
-export const DISCOVERY_TIERS = [
-  { id: 'O', name: 'Jamendo full', infra: 'Jamendo v3.0 tracks/albums/artists/radios/playlists', relay: false, exact: false },
-  { id: 'P', name: 'Last.fm metadata', infra: 'Last.fm track.search + similar + top (free key)', relay: false, exact: false },
-  { id: 'Q', name: 'Deezer full', infra: 'Deezer search + chart + artist top (free no auth)', relay: false, exact: false },
-  { id: 'R', name: 'Discogs metadata', infra: 'Discogs database search 25/min unauth + cover', relay: false, exact: false },
-  { id: 'S', name: 'Mixcloud DJ', infra: 'Mixcloud public CORS* cloudcast search + popular', relay: false, exact: false },
-  { id: 'T', name: 'Freesound loops', infra: 'Freesound CC samples/loops previews', relay: false, exact: false },
-  { id: 'U', name: 'Genrenator fun', infra: 'Genrenator random genre + story no key', relay: false, exact: false },
-  { id: 'V', name: 'Gaana full', infra: 'GaanaAPI 3 mirrors HLS 320k cyberboysumanjay', relay: false, exact: true },
-  { id: 'W', name: 'Saavn full extra', infra: 'Saavn extra sumit.co + codyandersan', relay: false, exact: true },
-];

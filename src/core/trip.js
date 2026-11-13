@@ -27,7 +27,7 @@ export const ARRIVE_M = 130;      // at/near this stop: tell the user
 export const NEAR_M = 420;        // approaching: pre-alert ("get ready")
 export const MISSED_M = 900;      // moved this far past it: say you missed it
 export const ACCURACY_MAX = 150;  // worse fix than this => don't trust proximity
-export const WALK_PACE = 1.35;    // m/s, used only for "about N min on foot"
+const WALK_PACE = 1.35;    // m/s, used only for "about N min on foot"
 
 /* ------------------------------------------------------------------ geometry */
 export const metresBetween = (a, b) => {

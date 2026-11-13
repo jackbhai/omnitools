@@ -58,11 +58,6 @@ export function savePreferences(prefs) {
   }
 }
 
-export function updatePreferences(updates) {
-  const current = getPreferences();
-  const updated = { ...current, ...updates };
-  return savePreferences(updated);
-}
 
 export function clearPreferences() {
   try {
@@ -171,34 +166,3 @@ export function getSuggestedArtists(prefs = null) {
  * Check if a track matches user preferences
  * Returns a score (higher = better match)
  */
-export function scoreTrack(track, prefs = null) {
-  const p = prefs || getPreferences();
-  if (!hasPreferences()) return 0;
-  
-  let score = 0;
-  const title = (track.title || '').toLowerCase();
-  const artist = (track.artist || '').toLowerCase();
-  
-  // Language match
-  for (const lang of p.languages) {
-    if (title.includes(lang.toLowerCase()) || artist.includes(lang.toLowerCase())) {
-      score += 10;
-    }
-  }
-  
-  // Artist match
-  for (const art of p.artists) {
-    if (artist.includes(art.toLowerCase())) {
-      score += 20;
-    }
-  }
-  
-  // Genre match
-  for (const genre of p.genres) {
-    if (title.includes(genre.toLowerCase()) || (track.genre || '').toLowerCase().includes(genre.toLowerCase())) {
-      score += 8;
-    }
-  }
-  
-  return score;
-}

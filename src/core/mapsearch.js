@@ -37,7 +37,7 @@ export const norm = (q) => String(q || '').toLowerCase().replace(/\s+/g, ' ').tr
 /** "name, street, locality, city" - first three non-empty parts, capped short.
  *  Both providers return either a full display string or pieces; the pieces are
  *  assembled here so one code path formats both. */
-export function labelOf(p = {}) {
+function labelOf(p = {}) {
   if (p.display_name) return p.display_name.replace(/\s+/g, ' ').trim();
   const bits = [p.name, p.street, p.locality, p.neighbourhood, p.district, p.city, p.county, p.state]
     .map((x) => (x || '').trim()).filter(Boolean);

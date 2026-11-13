@@ -194,7 +194,7 @@ export async function searchRecipes(q) {
   return (d.meals || []).map(shapeMeal);
 }
 
-export async function recipesByLetter(letter) {
+async function recipesByLetter(letter) {
   const d = await getJson(`${MEAL}/search.php?f=${enc(letter)}`, { relay: true });
   return (d.meals || []).map(shapeMeal);
 }
@@ -298,7 +298,7 @@ export const CUISINES = [
 const WB = 'https://api.worldbank.org/v2';
 
 /** Indicators verified to return a recent value for India. */
-export const INDICATORS = [
+const INDICATORS = [
   { id: 'NY.GDP.MKTP.CD',    n: 'GDP',                  unit: 'US$',    fmt: 'money' },
   { id: 'NY.GDP.PCAP.CD',    n: 'GDP per person',       unit: 'US$',    fmt: 'money' },
   { id: 'SP.POP.TOTL',       n: 'Population',           unit: 'people', fmt: 'count' },

@@ -63,7 +63,7 @@ export function isInstalled() {
   }
 }
 
-export function getServiceWorkerStatus() {
+function getServiceWorkerStatus() {
   if (!('serviceWorker' in navigator)) {
     return { supported: false, status: 'Not supported' };
   }
