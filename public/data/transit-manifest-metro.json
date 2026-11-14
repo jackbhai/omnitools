@@ -1,0 +1,110 @@
+[
+ {
+  "id": "ahmedabad",
+  "name": "Ahmedabad Metro",
+  "file": "metro-ahmedabad.json",
+  "lines": 4,
+  "stations": 53,
+  "interchanges": 3,
+  "kb": 5
+ },
+ {
+  "id": "bengaluru",
+  "name": "Namma Metro",
+  "file": "metro-bengaluru.json",
+  "lines": 4,
+  "stations": 88,
+  "interchanges": 3,
+  "kb": 9
+ },
+ {
+  "id": "chennai",
+  "name": "Chennai Metro",
+  "file": "metro-chennai.json",
+  "lines": 2,
+  "stations": 41,
+  "interchanges": 2,
+  "kb": 4
+ },
+ {
+  "id": "hyderabad",
+  "name": "Hyderabad Metro",
+  "file": "metro-hyderabad.json",
+  "lines": 3,
+  "stations": 56,
+  "interchanges": 3,
+  "kb": 6
+ },
+ {
+  "id": "jaipur",
+  "name": "Jaipur Metro",
+  "file": "metro-jaipur.json",
+  "lines": 1,
+  "stations": 11,
+  "interchanges": 0,
+  "kb": 1
+ },
+ {
+  "id": "kanpur",
+  "name": "Kanpur Metro",
+  "file": "metro-kanpur.json",
+  "lines": 1,
+  "stations": 14,
+  "interchanges": 0,
+  "kb": 2
+ },
+ {
+  "id": "kochi",
+  "name": "Kochi Metro",
+  "file": "metro-kochi.json",
+  "lines": 1,
+  "stations": 25,
+  "interchanges": 0,
+  "kb": 2
+ },
+ {
+  "id": "kolkata",
+  "name": "Kolkata Metro",
+  "file": "metro-kolkata.json",
+  "lines": 5,
+  "stations": 55,
+  "interchanges": 3,
+  "kb": 6
+ },
+ {
+  "id": "lucknow",
+  "name": "Lucknow Metro",
+  "file": "metro-lucknow.json",
+  "lines": 1,
+  "stations": 21,
+  "interchanges": 0,
+  "kb": 3
+ },
+ {
+  "id": "mumbai",
+  "name": "Mumbai Metro",
+  "file": "metro-mumbai.json",
+  "lines": 7,
+  "stations": 94,
+  "interchanges": 3,
+  "kb": 9
+ },
+ {
+  "id": "navimumbai",
+  "name": "Navi Mumbai Metro",
+  "file": "metro-navimumbai.json",
+  "lines": 1,
+  "stations": 11,
+  "interchanges": 0,
+  "kb": 1
+ },
+ {
+  "id": "pune",
+  "name": "Pune Metro",
+  "file": "metro-pune.json",
+  "lines": 3,
+  "stations": 44,
+  "interchanges": 1,
+  "kb": 5
+ }
+]

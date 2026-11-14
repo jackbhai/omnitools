@@ -1,0 +1,42 @@
+[
+ {
+  "id": "bengaluru",
+  "name": "Bengaluru",
+  "agency": "BMTC",
+  "file": "bus-bengaluru.json",
+  "routes": 2766,
+  "records": 5108,
+  "stops": 5001,
+  "kb": 2989
+ },
+ {
+  "id": "mumbai",
+  "name": "Mumbai",
+  "agency": "BEST",
+  "file": "bus-mumbai.json",
+  "routes": 429,
+  "records": 850,
+  "stops": 2395,
+  "kb": 913
+ },
+ {
+  "id": "pune",
+  "name": "Pune",
+  "agency": "PMPML",
+  "file": "bus-pune.json",
+  "routes": 315,
+  "records": 628,
+  "stops": 3951,
+  "kb": 646
+ },
+ {
+  "id": "ahmedabad",
+  "name": "Ahmedabad",
+  "agency": "AMTS + BRTS",
+  "file": "bus-ahmedabad.json",
+  "routes": 362,
+  "records": 540,
+  "stops": 3087,
+  "kb": 568
+ }
+]
