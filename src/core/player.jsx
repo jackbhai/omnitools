@@ -548,24 +548,6 @@ export function PlayerProvider({ children }) {
     vocal: vocalLevels(vocalMode, vocalAmt, width),
   };
 
-  /* Android app shell: keep the home-screen music widget in sync and
-     take its commands (window.__omniMusicCmd). Inert on the web — the
-     OmniApp bridge object only exists inside the app. */
-  useEffect(() => {
-    window.__omniMusicCmd = (cmd) => {
-      if (cmd === 'toggle') toggle();
-      else if (cmd === 'next') step(1);
-      else if (cmd === 'prev') step(-1);
-    };
-    try {
-      window.OmniApp?.musicState?.(JSON.stringify({
-        title: track?.title || '',
-        artist: track?.artist || track?.subtitle || '',
-        playing: !!playing,
-        hasTrack: !!track,
-      }));
-    } catch { /* the bridge is best-effort */ }
-  }, [track, playing, toggle, step]);
   const [rate, setRate] = useState(1);
   /* Sleep timer, two shapes: stop after N minutes (with a live countdown),
      or stop at the end of the current track. `sleep` stays the chosen
@@ -933,6 +915,28 @@ export function PlayerProvider({ children }) {
     }
     setIdx(n); play(queue[n], queue);
   }, [queue, idx, shuffle, repeat, play]);
+
+  /* Android app shell: keep the home-screen music widget in sync and
+     take its commands (window.__omniMusicCmd). Inert on the web — the
+     OmniApp bridge object only exists inside the app. This effect MUST
+     stay below the `toggle`/`step` declarations: its dependency array
+     is evaluated during render, and reading those consts earlier is a
+     TDZ ReferenceError that takes the whole app down (2026-11-14). */
+  useEffect(() => {
+    window.__omniMusicCmd = (cmd) => {
+      if (cmd === 'toggle') toggle();
+      else if (cmd === 'next') step(1);
+      else if (cmd === 'prev') step(-1);
+    };
+    try {
+      window.OmniApp?.musicState?.(JSON.stringify({
+        title: track?.title || '',
+        artist: track?.artist || track?.subtitle || '',
+        playing: !!playing,
+        hasTrack: !!track,
+      }));
+    } catch { /* the bridge is best-effort */ }
+  }, [track, playing, toggle, step]);
 
   /** Append more tracks to the queue (used by radio / infinite scroll). */
   const extendQueue = useCallback((more) => {
