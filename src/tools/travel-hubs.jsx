@@ -15,6 +15,8 @@ import * as TL from './transit-live';
 import * as T from './transit';
 import { Hub } from './travel-hub';
 import { TripBar } from './trip-ui.jsx';
+import { CityBusHub } from './bus-cities';
+import { MetroCities } from './metro-cities';
 
 /**
  * The floating get-off bar lives here rather than inside the shared Hub shell:
@@ -26,13 +28,15 @@ const withTripBar = (node) => (<>{node}<TripBar /></>);
 
 export function BusHub() {
   return withTripBar(
-    <Hub icon="bus" title="Delhi Bus" sub="Plan a trip · what is due right now · fares"
-      tabs={[
-        { id: 'plan',   n: 'Plan trip',   i: 'route',  C: BP.BusPlanner },
-        { id: 'live',   n: 'Right now',    i: 'signal', C: TL.BusLive },
-        { id: 'routes', n: 'Routes',       i: 'list',   C: BP.BusRoutesList },
-        { id: 'fare',   n: 'Fares',        i: 'fare',   C: BP.BusFares },
-      ]} />);
+    <CityBusHub>
+      <Hub icon="bus" title="Delhi Bus" sub="Plan a trip · what is due right now · fares"
+        tabs={[
+          { id: 'plan',   n: 'Plan trip',   i: 'route',  C: BP.BusPlanner },
+          { id: 'live',   n: 'Right now',    i: 'signal', C: TL.BusLive },
+          { id: 'routes', n: 'Routes',       i: 'list',   C: BP.BusRoutesList },
+          { id: 'fare',   n: 'Fares',        i: 'fare',   C: BP.BusFares },
+        ]} />
+    </CityBusHub>);
 }
 
 export function MetroHub() {
@@ -43,6 +47,6 @@ export function MetroHub() {
         { id: 'times', n: 'Right now',    i: 'clock', C: TL.MetroTimings },
         { id: 'net',   n: 'Network',      i: 'grid',  C: MP.MetroNetwork },
         { id: 'lines', n: 'Lines',        i: 'metro', C: T.MetroLines },
-        { id: 'city',  n: 'Other cities', i: 'globe', C: T.Metro },
+        { id: 'city',  n: 'Other cities', i: 'globe', C: MetroCities },
       ]} />);
 }

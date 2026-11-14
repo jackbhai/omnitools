@@ -20,6 +20,7 @@ import { MetroPlanner, MetroNetwork } from '../src/tools/metro-planner.jsx';
 import { BusLive, MetroTimings } from '../src/tools/transit-live.jsx';
 import { MultiModal } from '../src/tools/multimodal.jsx';
 import { BusHub, MetroHub } from '../src/tools/travel-hubs.jsx';
+import { MetroCities } from '../src/tools/metro-cities.jsx';
 import { planBus, searchStops, findRoute, nextAtStop, nameOf, stopIndexOn, ROUTES, initBusData } from '../src/core/bus-route.js';
 /* The dataset is fetch-on-demand in the app (public/data); the smoke loads
    it from disk and installs it, the same shape the hub loaders produce. */
@@ -30,7 +31,8 @@ import { busAtStation, metroNearStop } from '../src/core/transit-link.js';
 
 const cases = [['BusPlanner', BusPlanner], ['BusRoutesList', BusRoutesList], ['BusFares', BusFares],
   ['MetroPlanner', MetroPlanner], ['MetroNetwork', MetroNetwork], ['BusLive', BusLive],
-  ['MetroTimings', MetroTimings], ['MultiModal', MultiModal], ['BusHub', BusHub], ['MetroHub', MetroHub]];
+  ['MetroTimings', MetroTimings], ['MultiModal', MultiModal], ['BusHub', BusHub], ['MetroHub', MetroHub],
+  ['MetroCities', MetroCities]];
 let bad = 0;
 for (const [name, C] of cases) {
   try {

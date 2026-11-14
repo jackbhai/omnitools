@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "verify": "npm run verify:data && npm run verify:bus && npm run verify:metro && npm run verify:trip && npm run verify:render && npm run verify:smoke && npm run verify:games && npm run verify:autocache && npm run verify:languages && npm run verify:browser",
+    "verify": "npm run verify:data && npm run verify:bus && npm run verify:metro && npm run verify:trip && npm run verify:render && npm run verify:smoke && npm run verify:games && npm run verify:autocache && npm run verify:languages && npm run verify:transit && npm run verify:browser",
     "verify:languages": "node scripts/verify_languages.mjs",
     "verify:games": "node --experimental-loader ./scripts/_smoke_loader.mjs scripts/verify_games.mjs",
     "verify:daily": "node scripts/verify_daily.mjs",
@@ -21,7 +21,8 @@
     "verify:render": "vite build --ssr scripts/ssr-smoke.jsx --outDir .ssr-smoke --emptyOutDir && node .ssr-smoke/ssr-smoke.js",
     "verify:smoke": "node --experimental-loader ./scripts/_smoke_loader.mjs scripts/verify_smoke.mjs",
     "verify:autocache": "node --experimental-loader ./scripts/_smoke_loader.mjs scripts/verify_autocache.mjs",
-    "verify:browser": "node scripts/verify_render.mjs"
+    "verify:browser": "node scripts/verify_render.mjs",
+    "verify:transit": "node --experimental-loader ./scripts/_json_loader.mjs scripts/verify_transit_cities.mjs"
   },
   "engines": {
     "node": ">=18.0.0"

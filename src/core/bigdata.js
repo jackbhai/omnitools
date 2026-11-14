@@ -121,3 +121,15 @@ export const cricketStats = () => jget('cricket-stats.json');
 export const cricketIntlIndex = () => jget('cricket-intl-index.json');
 export const cricketIntlSeason = (fmt, key) => jget(`cricket-x${fmt}-${key}.json`);
 export const cricketIntlStats = (fmt) => jget(`cricket-stats-${fmt}.json`);
+
+/* ------------------------------------------------- other-city transit
+   Metro shards (one per city) built from OpenStreetMap route relations and
+   cross-checked against each system's published line/station tables; bus
+   shards for four cities converted from community GTFS feeds (see each
+   shard's own `source`).  Both follow the same fetch-once pattern, so a
+   downloaded city works fully offline. */
+export const transitManifestMetro = () => jget('transit-manifest-metro.json');
+export const transitManifestBus = () => jget('transit-manifest-bus.json');
+export const metroCityData = (id) => jget(`metro-${id}.json`);
+export const busCityData = (id) => jget(`bus-${id}.json`);
+export const dataUrl = (file) => `${DATA}/${file}`;
