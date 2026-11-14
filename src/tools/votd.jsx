@@ -178,8 +178,12 @@ export function VerseOfDay() {
       <div className="btnrow" style={{ marginTop: 14 }}>
         <button className="btn" onClick={download} disabled={!!busy}><Icon n="download" size={15} /> Card image</button>
         <button className="btn" onClick={share} disabled={!!busy}><Icon n="repeat" size={15} /> Share</button>
-        <button className="btn ghost" onClick={openReader}><Icon n="book" size={15} /> Read in context</button>
       </div>
+      {/* Own full-width row (user, 2026-11-14): inside the row above, this
+          button rendered ON TOP of Share — it never shares a row again. */}
+      <button className="btn ghost" onClick={openReader} style={{ width: '100%', marginTop: 8 }}>
+        <Icon n="book" size={15} /> Read in context
+      </button>
       <div className="dim sm" style={{ marginTop: 8 }}>
         One verse a day, the same all day, rotating through the Gita, the Quran, the Guru Granth Sahib and
         the Bible — always from the texts this app itself carries. Today's source: {votdKind(today).label}.

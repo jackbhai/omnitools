@@ -290,7 +290,7 @@ export function HomeTab({ player }) {
     {busy && <Spin t="Finding songs for you" />}
     {err && <Err error={err} retry={loadRecs} />}
     {recs?.length > 0 && (<>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 8px' }}>
+      <div className="btnrow" style={{ alignItems: 'center', margin: '6px 0 8px' }}>
         <span className="dim sm" style={{ flex: 1 }}>{recs.length} songs</span>
         <button className="btn ghost sm" onClick={() => playList(recs, 0)}>
           <Icon n="play" size={14} /> Play all</button>

@@ -672,7 +672,14 @@ export function PlayerProvider({ children }) {
     // YouTube tracks -> resolve to a DIRECT audio stream (no ads, keeps
     // playing in the background). The IFrame is only a last-resort fallback
     // if every proxy path fails.
-    if (t.needsResolve && t.id) {
+    /* A stream URL already in hand beats the resolver (2026-11-14): a row
+       that carries a direct, durable CDN link must not wait 8-15 s on
+       resolution legs built for another catalogue's ids. Short-lived
+       signed hosts (googlevideo) are excluded — those still resolve
+       fresh, because the in-hand copy may already be dead. */
+    const inHand = String(t.stream || t.url || '');
+    const inHandOk = /^https?:\/\//.test(inHand) && !/googlevideo/.test(inHand);
+    if (t.needsResolve && t.id && !inHandOk) {
       setYt(null);
       const cached = isCached(t.id);
 

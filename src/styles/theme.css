@@ -179,7 +179,9 @@ a.col,a.row{color:inherit;text-decoration:none}
 .btn.ghost{background:var(--s2);color:var(--fg);border:1px solid var(--line);font-weight:500}
 .btn.sm{padding:7px 12px;font-size:12px}
 .btn:disabled{opacity:.4}
-.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;min-width:0}
+.btnrow>*{min-width:0;max-width:100%}
+.btnrow .btn{white-space:normal;text-align:center}
 .fld{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
 .fld label{font-size:11px;color:var(--fg3);text-transform:uppercase;letter-spacing:.6px;font-weight:600}
 .fld input,.fld select,.fld textarea{
@@ -1398,7 +1400,7 @@ input[type="color"] {
    tool-open flight =================
    Home's browsing surface is one large card per category; a category
    opens as its own view whose tiles cascade in; and opening a tool
-   flies the tapped tile into the top bar (the .ghost below). Every
+   flies the tapped tile into the top bar (the .flywrap below). Every
    motion here is transform/opacity on the house easing curve, and the
    reduced-motion block at the end stills all of it. */
 
@@ -1443,24 +1445,24 @@ input[type="color"] {
 .catview-grid .tile{animation:tilein .38s var(--ease) both;animation-delay:calc(var(--i,0)*38ms)}
 
 /* ---- tool-open flight: the tapped tile's ghost, flown to the top bar ---- */
-.ghost{position:fixed;z-index:200;pointer-events:none;overflow:hidden;
+.flywrap{position:fixed;z-index:200;pointer-events:none;overflow:hidden;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
   background:var(--s1);border:1px solid var(--green);border-radius:var(--r-sm);
   padding:15px 9px;color:var(--fg);text-align:center;
   box-shadow:0 18px 44px rgba(0,0,0,.5);will-change:transform;
   transition:transform .3s var(--ease),opacity .3s var(--ease),border-radius .3s var(--ease)}
-.ghost .ic{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;
+.flywrap .ic{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;
   background:var(--s3);color:var(--green)}
-.ghost-tx{display:flex;flex-direction:column;align-items:center;gap:2px;transition:opacity .08s linear}
-.ghost-tx b{font-size:12px;font-weight:600}
-.ghost-tx small{font-size:10px;color:var(--fg3);line-height:1.25}
+.flywrap-tx{display:flex;flex-direction:column;align-items:center;gap:2px;transition:opacity .08s linear}
+.flywrap-tx b{font-size:12px;font-weight:600}
+.flywrap-tx small{font-size:10px;color:var(--fg3);line-height:1.25}
 
 /* ---- the new home motion, stilled ---- */
 @media(prefers-reduced-motion:reduce){
   .catcard,.catview-grid .tile,.catview-ic,.catview-ic::after{animation:none}
   .catcard{transition:none}
   .catcard:active{transform:none}
-  .ghost{display:none}
+  .flywrap{display:none}
 }
 
 /* ---- wave B: stream bar, recorder, games (radio / podcasts / recorder / games) ---- */

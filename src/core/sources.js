@@ -53,7 +53,7 @@ const COOLDOWN = new Map();
 export const sourceReady = (id) => (COOLDOWN.get(id) || 0) < Date.now();
 export const restSource = (id, ms = 5 * 60000) => COOLDOWN.set(id, Date.now() + ms);
 
-export async function getJson(url, ms = 14000) {
+export async function getJson(url, ms = 8000) {
   const c = new AbortController();
   const t = setTimeout(() => c.abort(), ms);
   try {
@@ -89,7 +89,7 @@ export async function archiveSearch(q, { limit = 6 } = {}) {
   const u = `${ARCHIVE}/advancedsearch.php?q=` +
     enc(`(${query}) AND mediatype:audio AND format:MP3`) +
     `&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&rows=${limit}&output=json`;
-  const d = await getJson(u, 16000);
+  const d = await getJson(u, 8000);
   return (d.response?.docs || []).map((x) => ({
     ident: x.identifier,
     title: clean(Array.isArray(x.title) ? x.title[0] : x.title),
@@ -100,7 +100,7 @@ export async function archiveSearch(q, { limit = 6 } = {}) {
 /** Turn one archive item into a playable url, or null if it is not usable. */
 export async function archiveStream(ident) {
   let m;
-  try { m = await getJson(`${ARCHIVE}/metadata/${enc(ident)}`, 15000); }
+  try { m = await getJson(`${ARCHIVE}/metadata/${enc(ident)}`, 8000); }
   catch { return null; }
   const files = (m.files || []).filter((f) =>
     /\.(mp3|ogg|m4a)$/i.test(f.name || '') && +(f.size || 0) > 200000);
@@ -218,7 +218,7 @@ async function stationDb(q, limit) {
     if (!sourceReady('radio:' + base)) continue;
     for (const path of paths) {
       try {
-        const d = await getJson(base + path, 13000);
+        const d = await getJson(base + path, 8000);
         const rows = (d || []).filter((s) => s.url_resolved || s.url)
           .map((s) => shapeStation(s, 'radio'));
         if (rows.length) return rows;
@@ -236,7 +236,7 @@ async function stationDb(q, limit) {
 async function curatedStations(limit) {
   if (!sourceReady('somafm')) return [];
   try {
-    const d = await getJson('https://somafm.com/channels.json', 14000);
+    const d = await getJson('https://somafm.com/channels.json', 8000);
     const chans = (d.channels || []).slice(0, limit);
     const out = [];
     for (const c of chans) {
@@ -461,7 +461,7 @@ export async function openAudioSearch(q, { limit = 8 } = {}) {
   if (!query) return [];
   if (!sourceReady('openverse')) return [];
   try {
-    const d = await getJson(`${OPENVERSE}/?q=${enc(query)}&page_size=${limit}`, 15000);
+    const d = await getJson(`${OPENVERSE}/?q=${enc(query)}&page_size=${limit}`, 8000);
     const rows = (d.results || []).map((t) => ({
       id: t.id,
       title: clean(t.title || ''),
@@ -566,7 +566,7 @@ export async function communitySearch(q, { limit = 8 } = {}) {
   if (!query) return [];
   if (!sourceReady('hearthis')) return [];
   try {
-    const d = await getJson(`${HEARTHIS}/search?t=${enc(query)}&count=${limit}`, 15000);
+    const d = await getJson(`${HEARTHIS}/search?t=${enc(query)}&count=${limit}`, 8000);
     const rows = (Array.isArray(d) ? d : []).map((t) => ({
       id: String(t.id),
       title: clean(t.title || ''),
@@ -617,71 +617,11 @@ export async function communitySearch(q, { limit = 8 } = {}) {
  * and every play resolves fresh.
  */
 /* ------------------------------------------------------------- TIER K
- * Multi-engine Cloudflare - the best find from GitHub scan
- * 
- * https://github.com/mohd-baquir-qureshi/music-api
- * - Free unofficial API on Cloudflare workers.dev itself - 320kbps direct mp3
- * - Search engines: gaana, saavn, hungama, wynk, ytmusic - 5 sources in one request
- * - Endpoints: /search?q=&searchEngine= and /fetch?id=
- * - Verified: search returns id, title, artist, album, image; fetch returns direct mp3 url
- * - Different companies, different CDNs, different infra - true independence
- * - Already on Cloudflare edge, CORS open, fast
- * 
- * Also: https://github.com/BhaskarPanja93/MusicAPI - YouTube + Spotify + audio streaming + caching
- * And: music45-api, saavn.sumit.co, etc - additional high-quality mirrors
- */
-
-const MULTI_ENGINE = 'https://musicapi.x007.workers.dev';
-const MULTI_ENGINES = ['gaana', 'saavn', 'hungama', 'wynk', 'ytmusic'];
-
-export async function multiEngineSearch(q, { limit = 10, engine = 'saavn' } = {}) {
-  const query = String(q || '').trim();
-  if (!query) return [];
-  if (!sourceReady('multi:' + engine)) return [];
-  try {
-    const d = await getJson(`${MULTI_ENGINE}/search?q=${enc(query)}&searchEngine=${engine}`, 15000);
-    const results = Array.isArray(d) ? d : (d.results || d.data || []);
-    const rows = results.slice(0, limit).map((t, i) => ({
-      id: `multi-${engine}:${t.id || i}`,
-      title: clean(t.title || t.name || t.song || ''),
-      artist: clean(t.artist || t.primaryArtists || t.artists || ''),
-      album: clean(t.album || ''),
-      art: t.image || t.thumbnail || t.artwork || '',
-      dur: +(t.duration || 0),
-      lang: t.language || '',
-      streamId: t.id,
-      stream: t.url || t.link || '', // some return direct
-      engine,
-      src: `multi-${engine}`,
-      exact: true,
-    })).filter(r => r.title);
-    if (!rows.length) restSource('multi:' + engine, 60000);
-    return rows;
-  } catch { restSource('multi:' + engine); return []; }
-}
-
-export async function multiEngineFetch(id) {
-  if (!id) return null;
-  try {
-    const d = await getJson(`${MULTI_ENGINE}/fetch?id=${enc(id)}`, 15000);
-    const url = d.url || d.stream || d.link || d.downloadUrl || '';
-    if (!url) return null;
-    return { stream: url, streams: [{ q: '320k', url }], src: 'multi-fetch', exact: true };
-  } catch { return null; }
-}
-
-export async function multiEngineSearchAll(q, { limit = 10 } = {}) {
-  const query = String(q || '').trim();
-  if (!query) return [];
-  for (let i = 0; i < MULTI_ENGINES.length; i += 2) {
-    const wave = MULTI_ENGINES.slice(i, i + 2);
-    const tries = wave.map(eng => multiEngineSearch(query, { limit, engine: eng }));
-    const results = await Promise.allSettled(tries);
-    const all = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
-    if (all.length) return all;
-  }
-  return [];
-}
+ * REMOVED 2026-11-14: the multi-engine worker (musicapi.x007.workers.dev)
+ * is dead — /search returns 404 on every engine, probed twice. Its three
+ * helpers (multiEngineSearch / multiEngineFetch / multiEngineSearchAll)
+ * and both call sites (here and saavn.js matchTrack) are gone; dead legs
+ * don't get to eat user time. */
 
 /* ------------------------------------------------------------- TIER L
  * Spotify metadata + previews - no API key, public data
@@ -760,7 +700,7 @@ export async function deezerSearch(q, { limit = 8 } = {}) {
   if (!query) return [];
   if (!sourceReady('deezer')) return [];
   try {
-    const d = await getJson(`https://api.deezer.com/search?q=${enc(query)}&limit=${limit}`, 12000);
+    const d = await getJson(`https://api.deezer.com/search?q=${enc(query)}&limit=${limit}`, 8000);
     const rows = (d.data || []).map(t => ({
       id: `deezer:${t.id}`,
       title: clean(t.title || ''),
@@ -789,7 +729,7 @@ export async function itunesPreviewSearch(q, { limit = 8 } = {}) {
     const b = proxyBase();
     const url = `https://itunes.apple.com/search?term=${enc(query)}&media=music&limit=${limit}&country=IN`;
     const fetchUrl = b ? `${b}/?url=${enc(url)}` : url;
-    const d = await getJson(fetchUrl, 12000);
+    const d = await getJson(fetchUrl, 8000);
     const rows = (d.results || []).map(t => ({
       id: `itunes:${t.trackId}`,
       title: clean(t.trackName || ''),
@@ -831,7 +771,7 @@ export async function jamendoFullSearch(q, { limit = 8 } = {}) {
   ];
   for (const url of methods) {
     try {
-      const d = await getJson(url, 12000);
+      const d = await getJson(url, 8000);
       const results = d.results || [];
       const rows = results.map((t) => {
         if (t.audio) {
@@ -880,7 +820,7 @@ export async function jamendoEnhancedSearch(q, { limit = 8 } = {}) {
   if (!sourceReady('jamendo-enhanced')) return [];
   for (const cid of JAMENDO_IDS) {
     try {
-      const d = await getJson(`${JAMENDO_BASE}?client_id=${cid}&format=json&limit=${limit}&search=${enc(query)}&include=musicinfo&audioformat=mp32`, 14000);
+      const d = await getJson(`${JAMENDO_BASE}?client_id=${cid}&format=json&limit=${limit}&search=${enc(query)}&include=musicinfo&audioformat=mp32`, 8000);
       const rows = (d.results || []).map(t => ({
         id: `jamendo:${t.id}`,
         title: clean(t.name || ''),
@@ -930,7 +870,7 @@ export async function lastFmSearch(q, { limit = 8 } = {}) {
     for (const url of urls) {
       try {
         const fetchUrl = b ? `${b}/?url=${enc(url)}` : url;
-        const d = await getJson(fetchUrl, 12000);
+        const d = await getJson(fetchUrl, 8000);
         const tracks = d.results?.trackmatches?.track || d.results?.artistmatches?.artist || [];
         const arr = Array.isArray(tracks) ? tracks : [tracks];
         const rows = arr.slice(0, limit).map((t, i) => ({
@@ -1068,7 +1008,7 @@ export async function mixcloudSearch(q, { limit = 8, type = 'cloudcast' } = {}) 
   if (!sourceReady('mixcloud')) return [];
   try {
     const url = `https://api.mixcloud.com/search/?q=${enc(query)}&type=${type}&limit=${limit}`;
-    const d = await getJson(url, 12000);
+    const d = await getJson(url, 8000);
     const results = d.data || [];
     return results.slice(0, limit).map((x) => ({
       id: `mixcloud:${(x.key || '').replace(/\//g, ':')}`,
@@ -1141,7 +1081,7 @@ export async function gaanaEnhancedSearch(q, { limit = 10 } = {}) {
   for (const base of GAANA_MIRRORS) {
     if (!sourceReady('gaana-enh:' + base)) continue;
     try {
-      const d = await getJson(`${base}/search?q=${enc(query)}`, 12000);
+      const d = await getJson(`${base}/search?q=${enc(query)}`, 8000);
       const rows = (Array.isArray(d?.data) ? d.data : d.results || []).slice(0, limit).map((t, i) => {
         const m = t.music || t;
         const ladder = [m.very_high, m.high, m.medium, m.low, m.url, m.link].filter(Boolean);
@@ -1188,7 +1128,7 @@ export async function saavnExtraSearch(q, { limit = 10 } = {}) {
     if (!sourceReady('saavn-extra:' + entry)) continue;
     try {
       const sep = entry.includes('?') ? '' : '?';
-      const d = await getJson(`${entry}${enc(query)}&limit=${limit}`, 10000);
+      const d = await getJson(`${entry}${enc(query)}&limit=${limit}`, 8000);
       const data = d?.data || d?.results || d;
       const rows = (Array.isArray(data) ? data : data.results || []).slice(0, limit).map((x) => {
         const dl = Array.isArray(x.downloadUrl) ? x.downloadUrl : [];
@@ -1221,7 +1161,7 @@ export async function secondCatalogueSearch(q, { limit = 10 } = {}) {
   if (!query) return [];
   if (!sourceReady('gaana')) return [];
   try {
-    const d = await getJson(`${GAANA}/search?q=${enc(query)}`, 15000);
+    const d = await getJson(`${GAANA}/search?q=${enc(query)}`, 8000);
     const rows = (Array.isArray(d?.data) ? d.data : []).slice(0, limit).map((t, i) => {
       const m = t.music || {};
       /* Best rung first, then down. Every rung is the same signed playlist at

@@ -381,6 +381,41 @@ export function resolveAudio(id, { onProgress, fresh = false } = {}) {
 
   const p = (async () => {
     onProgress?.('Finding ad-free stream…');
+
+    /* Catalogue ids are NOT YouTube ids (2026-11-14). A saved catalogue
+       song carries an id like 'MmXGi1X7' that means nothing on YouTube,
+       yet this resolver used to spend its whole primary chain building a
+       watch?v=<catalogue-id> URL and racing proxies for it before falling
+       back to the name match — saved songs appeared to "never start".
+       For a non-YouTube-shaped id with a known title, the name match IS
+       the primary source; the YouTube chain below remains as last resort. */
+    const meta0 = trackMeta(id);
+    if (!/^[A-Za-z0-9_-]{11}$/.test(String(id)) && meta0?.title) {
+      try {
+        const { matchTrack } = await import('./saavn');
+        const alt = await matchTrack(meta0);
+        if (alt?.stream) {
+          const rec0 = {
+            audio: alt.stream,
+            title: alt.title || meta0.title,
+            artist: alt.artist || meta0.artist || '',
+            art: alt.art || meta0.art || '',
+            dur: alt.dur || meta0.dur || 0,
+            album: alt.album || '',
+            year: alt.year || '',
+            lang: alt.lang || '',
+            expires: Date.now() + TTL,
+            via: alt.approximate ? 'open network (close match)' : 'second catalogue',
+            alt: true,
+            approximate: !!alt.approximate,
+          };
+          cacheSet(id, rec0);
+          notifyWarm(id);
+          return rec0;
+        }
+      } catch { /* the YouTube chain below is the last resort */ }
+    }
+
     const url = `${RESOLVE_API}${encodeURIComponent('https://www.youtube.com/watch?v=' + id)}`;
 
     let rec = null;

@@ -296,6 +296,7 @@ function SearchTab({ player }) {
   const [focused, setFocused] = useState(false);
   const [more, setMore] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [enriching, setEnriching] = useState(false);
   const nextRef = useRef(null);
   const seq = useRef(0);
   const abortRef = useRef(null);
@@ -308,19 +309,32 @@ function SearchTab({ player }) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     const my = ++seq.current;
-    setBusy(true); setErr(''); setTips([]); setFocused(false);
+    setBusy(true); setErr(''); setTips([]); setFocused(false); setEnriching(false);
     // Show immediate feedback: clear old list fast so user knows new search started
     setTracks(null);
+    let painted = false;
+    const warm = (rows) => (rows || []).slice(0, 2).forEach((t, i) => {
+      if (t.id) { rememberTrack(t.id, t); prefetchAudio(t.id, i); }
+    });
     try {
-      // FAST PATH: omni-proxy 34 sources race (0.5-1s) via searchMusic which now uses it
-      const r = await searchMusic(s, { deep: false });
+      /* Progressive: searchMusic calls onPartial the moment the FIRST source
+         returns a solid batch — the list paints then and "Searching…" ends;
+         later sources merge in underneath (2026-11-14 latency fix). */
+      const r = await searchMusic(s, { deep: false, onPartial: (part) => {
+        if (ctrl.signal.aborted || my !== seq.current || !part.tracks?.length) return;
+        painted = true;
+        setTracks(part.tracks);
+        setBusy(false);
+        setEnriching(true);
+        warm(part.tracks);
+      }});
       if (ctrl.signal.aborted || my !== seq.current) return;
       if (r.tracks?.length) {
         setTracks(r.tracks);
         nextRef.current = r.next;
         setMore(r.next ? true : false);
-        // Warm top 2 only
-        r.tracks.slice(0, 2).forEach((t, i) => { if (t.id) { rememberTrack(t.id, t); prefetchAudio(t.id, i); } });
+        // Warm top 2 only (the partial paint already warmed the same rows)
+        if (!painted) warm(r.tracks);
         setBusy(false);
         // Background enrichment: catalogue + second pass without blocking UI
         if (catalogueReady()) {
@@ -340,6 +354,7 @@ function SearchTab({ player }) {
         }
         return;
       }
+      if (painted) return;   // results are on screen; an empty final never wipes them
       // If fast path empty, try deeper
       const r2 = await searchMusic(s, { deep: true });
       if (ctrl.signal.aborted || my !== seq.current) return;
@@ -351,7 +366,7 @@ function SearchTab({ player }) {
       if (ctrl.signal.aborted) return;
       if (my === seq.current) { setErr(e.message || 'Search failed'); setTracks([]); }
     } finally {
-      if (!ctrl.signal.aborted && my === seq.current) setBusy(false);
+      if (!ctrl.signal.aborted && my === seq.current) { setBusy(false); setEnriching(false); }
     }
   }, []);
 
@@ -415,8 +430,8 @@ function SearchTab({ player }) {
     {tracks?.length === 0 && !busy && <Empty t={`Nothing found for "${q}"`} />}
 
     {tracks?.length > 0 && (<>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0 8px' }}>
-        <span className="dim sm" style={{ flex: 1 }}>{tracks.length} songs</span>
+      <div className="btnrow" style={{ alignItems: 'center', margin: '10px 0 8px' }}>
+        <span className="dim sm" style={{ flex: 1 }}>{tracks.length} songs{enriching ? ' · finding more…' : ''}</span>
         <button className="btn ghost sm" onClick={() => playList(player, tracks, 0)}>
           <Icon n="play" size={14} /> Play all</button>
         <button className="btn ghost sm" onClick={() => {

@@ -24,7 +24,7 @@ const COOLDOWN = new Map();
 const usable = (id) => (COOLDOWN.get(id) || 0) < Date.now();
 const bench = (id, ms = 60000) => COOLDOWN.set(id, Date.now() + ms);
 
-async function fetchJson(url, ms = 12000, opts = {}) {
+async function fetchJson(url, ms = 8000, opts = {}) {
   const c = new AbortController();
   const t = setTimeout(() => c.abort(), ms);
   try {
@@ -40,90 +40,11 @@ const clean = (s) => String(s || '')
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
 
 /* ------------------------------------------------------------- TIER K
- * Multi-engine Cloudflare worker - the single most valuable addition from GitHub scan
- * 
- * https://github.com/mohd-baquir-qureshi/music-api
- * - Free unofficial API, 320kbps high quality
- * - Search engines: gaana, hungama, wynk, ytmusic, saavn, etc
- * - Endpoints: /search?q=&searchEngine= and /fetch?id=
- * - Already on Cloudflare workers.dev, so edge fast + CORS open
- * - Direct mp3 file, not HLS (except gaana which is HLS)
- * 
- * Verified: GET https://musicapi.x007.workers.dev/search?q=Pathaan&searchEngine=gaana
- * Returns JSON with id, title, artist, album, image, etc
- * Then /fetch?id= returns stream url
- * 
- * This is 5 sources in one request - different companies, different CDNs
- */
-
-const MULTI_ENGINE = 'https://musicapi.x007.workers.dev';
-const ENGINES = ['gaana', 'saavn', 'hungama', 'wynk', 'ytmusic'];
-
-export async function multiEngineSearch(q, { limit = 10, engine = 'saavn' } = {}) {
-  const query = String(q || '').trim();
-  if (!query) return [];
-  if (!usable('multi:' + engine)) return [];
-  
-  try {
-    const d = await fetchJson(`${MULTI_ENGINE}/search?q=${enc(query)}&searchEngine=${engine}`, 15000);
-    const results = Array.isArray(d) ? d : (d.results || d.data || []);
-    const rows = results.slice(0, limit).map((t, i) => ({
-      id: `multi-${engine}:${t.id || i}`,
-      title: clean(t.title || t.name || t.song || ''),
-      artist: clean(t.artist || t.primaryArtists || t.artists || ''),
-      album: clean(t.album || ''),
-      art: t.image || t.thumbnail || t.artwork || '',
-      dur: +(t.duration || 0),
-      lang: t.language || '',
-      // Will need second fetch to get stream, but some return direct url
-      streamId: t.id,
-      engine,
-      src: `multi-${engine}`,
-      exact: true,
-      needsFetch: true,
-    })).filter(r => r.title);
-    
-    if (!rows.length) bench('multi:' + engine, 60000);
-    return rows;
-  } catch {
-    bench('multi:' + engine);
-    return [];
-  }
-}
-
-export async function multiEngineFetch(id, engine = 'saavn') {
-  if (!id) return null;
-  try {
-    const d = await fetchJson(`${MULTI_ENGINE}/fetch?id=${enc(id)}`, 15000);
-    const url = d.url || d.stream || d.link || d.downloadUrl || '';
-    if (!url) return null;
-    return {
-      stream: url,
-      streams: [{ q: '320k', url }],
-      src: `multi-${engine}`,
-      exact: true,
-    };
-  } catch { return null; }
-}
-
-/* Race all engines in parallel, first win */
-export async function multiEngineSearchAll(q, { limit = 10 } = {}) {
-  const query = String(q || '').trim();
-  if (!query) return [];
-  
-  const waves = [];
-  for (let i = 0; i < ENGINES.length; i += 2) {
-    waves.push(ENGINES.slice(i, i + 2));
-  }
-  
-  for (const wave of waves) {
-    const tries = wave.map(eng => multiEngineSearch(query, { limit, engine: eng }));
-    const results = await Promise.allSettled(tries);
-    const allRows = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
-    if (allRows.length) return allRows;
-  }
-  return [];
-}
+ * REMOVED 2026-11-14: the multi-engine worker (musicapi.x007.workers.dev)
+ * is dead (404 on every engine, probed twice). These local copies of
+ * multiEngineSearch / multiEngineFetch / multiEngineSearchAll had no
+ * callers left — superSearch retired them on 2026-11-12 — so they are
+ * deleted rather than left as a loaded trap. */
 
 /* ------------------------------------------------------------- TIER L
  * SpotifyScraper - No API key, no OAuth, public data
@@ -169,7 +90,7 @@ export async function spotifySearch(q, { limit = 8 } = {}) {
     const token = await getSpotifyToken();
     if (!token) throw new Error('no token');
     
-    const d = await fetchJson(`https://api.spotify.com/v1/search?q=${enc(query)}&type=track&limit=${limit}`, 10000, {
+    const d = await fetchJson(`https://api.spotify.com/v1/search?q=${enc(query)}&type=track&limit=${limit}`, 8000, {
       headers: { Authorization: `Bearer ${token}` }
     });
     
@@ -219,7 +140,7 @@ export async function deezerSearch(q, { limit = 8 } = {}) {
   if (!usable('deezer')) return [];
   
   try {
-    const d = await fetchJson(`https://api.deezer.com/search?q=${enc(query)}&limit=${limit}`, 12000);
+    const d = await fetchJson(`https://api.deezer.com/search?q=${enc(query)}&limit=${limit}`, 8000);
     const tracks = d.data || [];
     const rows = tracks.map(t => ({
       id: `deezer:${t.id}`,
@@ -254,7 +175,7 @@ export async function itunesPreviewSearch(q, { limit = 8 } = {}) {
     const b = proxyBase();
     const url = `https://itunes.apple.com/search?term=${enc(query)}&media=music&limit=${limit}&country=IN`;
     const fetchUrl = b ? `${b}/?url=${enc(url)}` : url;
-    const d = await fetchJson(fetchUrl, 12000);
+    const d = await fetchJson(fetchUrl, 8000);
     const tracks = d.results || [];
     const rows = tracks.map(t => ({
       id: `itunes:${t.trackId}`,
@@ -301,7 +222,7 @@ export async function jamendoEnhancedSearch(q, { limit = 8 } = {}) {
   
   for (const clientId of JAMENDO_IDS) {
     try {
-      const d = await fetchJson(`${JAMENDO_BASE}?client_id=${clientId}&format=json&limit=${limit}&search=${enc(query)}&include=musicinfo&audioformat=mp32`, 14000);
+      const d = await fetchJson(`${JAMENDO_BASE}?client_id=${clientId}&format=json&limit=${limit}&search=${enc(query)}&include=musicinfo&audioformat=mp32`, 8000);
       const tracks = d.results || [];
       const rows = tracks.map(t => ({
         id: `jamendo:${t.id}`,
@@ -346,7 +267,7 @@ export async function lastFmSearch(q, { limit = 8 } = {}) {
     const b = proxyBase();
     const url = `${LASTFM_API}?method=track.search&track=${enc(query)}&api_key=${LASTFM_KEY}&format=json&limit=${limit}`;
     const fetchUrl = b ? `${b}/?url=${enc(url)}` : url;
-    const d = await fetchJson(fetchUrl, 12000);
+    const d = await fetchJson(fetchUrl, 8000);
     const tracks = d.results?.trackmatches?.track || [];
     const arr = Array.isArray(tracks) ? tracks : [tracks];
     return arr.slice(0, limit).map((t, i) => ({
@@ -370,7 +291,7 @@ export async function discogsSearch(q, { limit = 8 } = {}) {
     const url = `https://api.discogs.com/database/search?q=${enc(query)}&type=release&per_page=${limit}`;
     const fetchUrl = b ? `${b}/?url=${enc(url)}` : url;
     const c = new AbortController();
-    const t = setTimeout(() => c.abort(), 12000);
+    const t = setTimeout(() => c.abort(), 8000);
     const r = await fetch(fetchUrl, {
       headers: { 'User-Agent': 'OmniTools/1.0 +https://jackbhai.github.io/omnitools/', 'Accept': 'application/vnd.discogs.v2.json' },
       signal: c.signal,
@@ -395,7 +316,7 @@ export async function mixcloudSearch(q, { limit = 8 } = {}) {
   if (!query) return [];
   if (!usable('mixcloud')) return [];
   try {
-    const d = await fetchJson(`https://api.mixcloud.com/search/?q=${enc(query)}&type=cloudcast&limit=${limit}`, 12000);
+    const d = await fetchJson(`https://api.mixcloud.com/search/?q=${enc(query)}&type=cloudcast&limit=${limit}`, 8000);
     return (d.data || []).slice(0, limit).map((x) => ({
       id: `mixcloud:${(x.key || '').replace(/\//g, ':')}`,
       title: clean(x.name || ''),
@@ -437,7 +358,7 @@ export async function gaanaEnhancedSearch(q, { limit = 10 } = {}) {
   for (const base of mirrors) {
     if (!usable('gaana-enh:' + base)) continue;
     try {
-      const d = await fetchJson(`${base}/search?q=${enc(query)}`, 12000);
+      const d = await fetchJson(`${base}/search?q=${enc(query)}`, 8000);
       const rows = (Array.isArray(d?.data) ? d.data : []).slice(0, limit).map((t, i) => {
         const m = t.music || {};
         const ladder = [m.very_high, m.high, m.medium, m.low].filter(Boolean);

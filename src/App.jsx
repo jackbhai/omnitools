@@ -742,7 +742,7 @@ function ToolGhost({ g, done }) {
     const dy = tr.top + 9 - g.y;
     const sx = 46 / g.w;
     const sy = 46 / g.h;
-    const tx = el.querySelector('.ghost-tx');
+    const tx = el.querySelector('.flywrap-tx');
     const raf = requestAnimationFrame(() => requestAnimationFrame(() => {
       if (tx) tx.style.opacity = '0';
       el.style.transform = `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
@@ -754,10 +754,10 @@ function ToolGhost({ g, done }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [g.k]);
   return (
-    <div className="ghost" ref={ref} aria-hidden="true"
+    <div className="flywrap" ref={ref} aria-hidden="true"
       style={{ left: g.x, top: g.y, width: g.w, height: g.h }}>
       <span className="ic"><Icon n={g.i} size={24} /></span>
-      <span className="ghost-tx"><b>{g.n}</b><small>{g.d}</small></span>
+      <span className="flywrap-tx"><b>{g.n}</b><small>{g.d}</small></span>
     </div>);
 }
 

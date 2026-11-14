@@ -359,7 +359,7 @@ function officialUrl(params) {
   return `${API}?${q}`;
 }
 
-async function call(params, ms = 18000) {
+async function call(params, ms = 8000) {
   const target = officialUrl(params);
   const routes = [];
   const b = proxyBase();
@@ -461,7 +461,7 @@ async function relayRace(query, limit) {
   const b = proxyBase();
   if (!b || !usable('relay-song')) return null;
   try {
-    const d = await fetchJson(`${b}/song?q=${enc(query)}&limit=${limit}`, 9000);
+    const d = await fetchJson(`${b}/song?q=${enc(query)}&limit=${limit}`, 8000);
     const rows = (d?.results || []).map((r) => ({
       ...r,
       lang: r.lang || '',
@@ -475,9 +475,10 @@ async function relayRace(query, limit) {
   } catch { benchRoute('relay-song'); return null; }
 }
 
-async function raceMirrors(query, limit, ms = 4000) {
+async function raceMirrors(query, limit, ms = 4000, shouldStop = null) {
   const live = MIRRORS.filter((m) => usable(m.id));
   for (let i = 0; i < live.length; i += 4) {
+    if (shouldStop && shouldStop()) return null;   // the relay already answered
     const wave = live.slice(i, i + 4);
     const tries = wave.map((m) => fetchJson(`${m.base}${m.path}${enc(query)}&limit=${limit}`, ms)
       .then((d) => {
@@ -497,13 +498,25 @@ export async function search(q, { limit = 20 } = {}) {
   const query = String(q || '').trim();
   if (!query) return [];
 
-  /* Thirty catalogues in one request, including seven this page could never
-     reach on its own. Falls through silently if the relay is unavailable. */
-  const relayed = await relayRace(query, limit);
-  if (relayed) return relayed;
-
-  const won = await raceMirrors(query, limit);
-  if (won) return won;
+  /* Relay and mirrors race CONCURRENTLY (2026-11-14 latency fix).
+     This used to await the relay ALONE first: on a slow network a hanging
+     relay ate its whole timeout (9 s) before the first mirror was even
+     asked, and the mirrors then burned wave after wave the same way —
+     searches stacked to ~25 s on a phone while every individual source
+     was healthy. Now the first solid answer wins; mirror waves stop
+     starting once the relay has answered. */
+  let relayWon = false;
+  const relayP = relayRace(query, limit).then((r) => { if (r) relayWon = true; return r; }, () => null);
+  const mirrorP = raceMirrors(query, limit, 4000, () => relayWon).then((r) => r, () => null);
+  const first = await new Promise((done) => {
+    let pending = 2, best = null;
+    const kick = (v) => {
+      if (v && !best) { best = v; done(v); }
+      else if (--pending === 0) done(best);
+    };
+    relayP.then(kick); mirrorP.then(kick);
+  });
+  if (first) return first;
 
   const d = await call({ __call: 'search.getResults', q: query, n: String(limit), p: '1' });
   return (d.results || []).map(shapeSong).filter((r) => r.stream);
@@ -582,31 +595,11 @@ export async function matchTrack({ title, artist }) {
     }
   } catch { /* the second catalogue is allowed to be down too */ }
 
-  /* Tier K: Multi-engine Cloudflare - 5 sources in one (Gaana+Hungama+Wynk+YT+Saavn)
-     From GitHub scan: mohd-baquir-qureshi/music-api - 320kbps direct mp3
-     This is the best find - different companies, different CDNs, already on Cloudflare edge */
-  try {
-    const { multiEngineSearchAll, multiEngineFetch } = await import('./sources');
-    for (const query of [`${t} ${artist || ''}`.trim(), t]) {
-      let rows = [];
-      try { rows = await multiEngineSearchAll(query, { limit: 10 }); } catch { rows = []; }
-      if (!rows.length) continue;
-      // Try to get stream for rows needing fetch
-      for (const r of rows.slice(0, 2)) {
-        if (r.needsFetch && r.streamId) {
-          try {
-            const fetched = await multiEngineFetch(r.streamId);
-            if (fetched?.stream) {
-              const hit = rank([{ ...r, ...fetched }], 35);
-              if (hit?.stream) return hit;
-            }
-          } catch {}
-        }
-      }
-      const hit = rank(rows.filter(r => r.stream), 35);
-      if (hit?.stream) return hit;
-    }
-  } catch { /* multi-engine allowed to be down */ }
+  /* Tier K (multi-engine x007 worker) REMOVED 2026-11-14: the worker is
+     dead — /search answers 404 on every engine (probed twice, gaana and
+     saavn). It sat in this play-path fallback burning up to 2 x 15 s legs
+     on tracks the live tiers had already missed. Dead legs don't get to
+     eat user time. */
 
   /* Every route to a real catalogue is gone — including the case where
      search() threw rather than returning nothing, which an earlier version

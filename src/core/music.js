@@ -183,36 +183,67 @@ async function omniProxySearch(q, { limit = 20 } = {}) {
 
 /**
  * Search, fanned out across filters, with pagination.
- * NOW: fast path first (omni-proxy 34 sources 0.5s), then piped as fallback.
+ * Progressive since 2026-11-14: legs race, first solid batch paints via
+ * opts.onPartial, the promise resolves with the final merged result.
  * @returns {Promise<{tracks:Array, next:Function|null}>}
  */
-export async function searchMusic(q, { deep = false } = {}) {
+export async function searchMusic(q, { deep = false, onPartial = null } = {}) {
   const query = String(q || '').trim();
   if (!query) return { tracks: [], next: null };
 
   // 1. Try fast cache
-  const cached = cacheGet('music:' + query + ':' + (deep ? 'deep' : 'fast'));
-  if (cached) return cached;
+  const cacheKey = 'music:' + query + ':' + (deep ? 'deep' : 'fast');
+  const cached = cacheGet(cacheKey);
+  if (cached) {
+    if (onPartial && cached.tracks?.length) { try { onPartial(cached); } catch {} }
+    return cached;
+  }
 
-  // 2. Fast path: omni-proxy 34 mirrors (0.5-1s) - primary for Indian music
-  try {
-    const fast = await omniProxySearch(query, { limit: 20 });
-    if (fast.length >= 3) {
-      const result = { tracks: fast, next: null, base: 'omni-proxy' };
-      cacheSet('music:' + query + ':' + (deep ? 'deep' : 'fast'), result);
-      return result;
+  /* 2. PROGRESSIVE (2026-11-14 latency fix): the fast catalogue leg and the
+     multi-source leg run CONCURRENTLY, and the first solid batch is handed
+     to opts.onPartial the moment it lands — the results list paints then,
+     not when the whole cascade settles. This chain used to be strictly
+     sequential (catalogue, THEN a 4 s super race, THEN Piped), so on a
+     slow phone network the waits stacked into ~25 s of "Searching…" while
+     every individual source was healthy. The promise still resolves with
+     the final merged result, exactly as before; later legs merge in
+     (dedupe by title+artist) without clearing what is already shown.
+     Every leg is capped at 8 s. */
+  const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const buckets = { fast: null, super: null };
+  const merged = () => {
+    const seen = new Set(), out = [];
+    for (const b of [buckets.fast, buckets.super]) {
+      for (const t of b || []) {
+        const k = norm(t.title) + '|' + norm(t.artist);
+        if (seen.has(k)) continue;
+        seen.add(k); out.push(t);
+      }
     }
-  } catch {}
+    return out;
+  };
+  const solid = () => (buckets.fast?.length >= 3) || (buckets.super?.length >= 2) || merged().length >= 3;
+  let painted = false;
+  const legLanded = () => {
+    if (painted || !onPartial || !solid()) return;
+    painted = true;
+    try {
+      onPartial({ tracks: merged(), next: null, base: buckets.fast?.length ? 'omni-proxy' : 'super' });
+    } catch {}
+  };
 
-  // 3. Super search (multi-engine + discovery) in parallel - 1-2s
-  try {
-    const { superSearch } = await import('./music-super');
-    const superRows = await Promise.race([
-      superSearch(query, { limit: 15 }),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 4000))
-    ]).catch(() => []);
-    if (superRows?.length) {
-      const shaped = superRows.map(r => ({
+  const fastP = omniProxySearch(query, { limit: 20 })
+    .then((rows) => { buckets.fast = rows; legLanded(); return rows; })
+    .catch(() => { buckets.fast = []; return []; });
+
+  const superP = (async () => {
+    try {
+      const { superSearch } = await import('./music-super');
+      const rows = await Promise.race([
+        superSearch(query, { limit: 15 }),
+        new Promise((res) => setTimeout(() => res([]), 8000)),
+      ]);
+      const shaped = (rows || []).map(r => ({
         id: r.id,
         title: r.title,
         artist: r.artist,
@@ -225,15 +256,25 @@ export async function searchMusic(q, { deep = false } = {}) {
         exact: r.exact ?? true,
         needsResolve: !r.stream || !!r.needsFetch,
       })).filter(t => (t.stream || t.needsResolve) && t.title);
-      if (shaped.length >= 2) {
-        const result = { tracks: shaped, next: null, base: 'super' };
-        cacheSet('music:' + query + ':' + (deep ? 'deep' : 'fast'), result);
-        return result;
-      }
-    }
-  } catch {}
+      buckets.super = shaped; legLanded(); return shaped;
+    } catch { buckets.super = []; return []; }
+  })();
 
-  // 4. Fallback: piped mirrors - reduced timeout 6s not 14s
+  /* The merged stage gets a hard 9 s budget. After a first paint the user
+     is already looking at results; holding the final answer (or the Piped
+     fallback decision) hostage to a straggler leg helps nobody. */
+  await Promise.race([
+    Promise.allSettled([fastP, superP]),
+    new Promise((res) => setTimeout(res, 9000)),
+  ]);
+
+  if (solid()) {
+    const result = { tracks: merged(), next: null, base: buckets.fast?.length ? 'omni-proxy' : 'super' };
+    cacheSet(cacheKey, result);
+    return result;
+  }
+
+  // 3. Fallback: piped mirrors - reduced timeout 6s not 14s
   const enc = encodeURIComponent(query);
   try {
     const primary = await anyMirror(`/search?q=${enc}&filter=music_songs`, {
@@ -270,10 +311,13 @@ export async function searchMusic(q, { deep = false } = {}) {
     };
 
     const result = { tracks, next: token ? next : null, base };
-    cacheSet('music:' + query + ':' + (deep ? 'deep' : 'fast'), result);
+    cacheSet(cacheKey, result);
     return result;
   } catch {
-    return { tracks: [], next: null, base: null };
+    const stragglers = merged();
+    return stragglers.length
+      ? { tracks: stragglers, next: null, base: 'partial' }
+      : { tracks: [], next: null, base: null };
   }
 }
 
